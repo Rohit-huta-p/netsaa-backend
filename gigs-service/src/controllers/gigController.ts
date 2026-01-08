@@ -4,6 +4,7 @@ import Gig from '../models/Gig';
 import GigStats from '../models/GigStats';
 import GigApplication from '../models/GigApplication';
 import SavedGig from '../models/SavedGig';
+import { notificationEvents } from '../notifications/event.emitter';
 
 // Helper for standard response
 const sendResponse = (res: Response, status: number, data: any = null, message: string = 'OK', errors: any[] = []) => {
@@ -260,6 +261,15 @@ export const applyToGig = async (req: AuthRequest, res: Response, next: NextFunc
         await session.commitTransaction();
         session.endSession();
 
+        // Emit event for notification system (fire-and-forget)
+        notificationEvents.emitGigApplicationReceived({
+            gigId: gigId,
+            applicationId: application[0]._id.toString(),
+            gigOwnerId: gig.organizerId.toString(),
+            applicantId: artistId,
+            gigTitle: gig.title,
+        });
+
         sendResponse(res, 200, application[0], 'Application submitted');
 
     } catch (err: any) {
@@ -387,6 +397,17 @@ export const updateApplicationStatus = async (req: AuthRequest, res: Response, n
 
         await session.commitTransaction();
         session.endSession();
+
+        // Emit event for notification system (fire-and-forget)
+        notificationEvents.emitGigApplicationStatusChanged({
+            gigId: gig._id.toString(),
+            applicationId: applicationId,
+            applicantId: application.artistId.toString(),
+            gigOwnerId: organizerId,
+            gigTitle: gig.title,
+            oldStatus: currentStatus as any,
+            newStatus: status as any,
+        });
 
         sendResponse(res, 200, application, 'Application status updated');
 
@@ -519,20 +540,36 @@ export const deleteGig = async (req: AuthRequest, res: Response, next: NextFunct
         }
 
         // Cascade Delete
-        // 1. Delete Applications
+        // 1. Get all applicant IDs before deleting applications (for notification)
+        const applications = await GigApplication.find({ gigId }).session(session);
+        const applicantIds = applications.map(app => app.artistId.toString());
+
+        // 2. Delete Applications
         await GigApplication.deleteMany({ gigId }).session(session);
 
-        // 2. Delete Stats
+        // 3. Delete Stats
         await GigStats.deleteOne({ gigId }).session(session);
 
-        // 3. Delete Saved Gigs
+        // 4. Delete Saved Gigs
         await SavedGig.deleteMany({ gigId }).session(session);
 
-        // 4. Delete Gig
+        // 5. Delete Gig
         await Gig.deleteOne({ _id: gigId }).session(session);
 
         await session.commitTransaction();
         session.endSession();
+
+        // Emit event for notification system (fire-and-forget)
+        // Only notify if there were applicants
+        if (applicantIds.length > 0) {
+            notificationEvents.emitGigCancelled({
+                gigId: gigId,
+                gigOwnerId: organizerId,
+                gigTitle: gig.title,
+                applicantIds: applicantIds,
+                cancellationReason: 'Gig deleted by organizer',
+            });
+        }
 
         sendResponse(res, 200, {}, 'Gig and related data deleted successfully');
     } catch (err: any) {
