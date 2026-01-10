@@ -14,7 +14,6 @@ app.use(cors());
 app.use(express.json());
 
 // API Versioning
-// API Versioning
 app.use('/v1', gigsRoutes);
 import searchRoutes from './routes/search';
 app.use('/v1/search', searchRoutes);

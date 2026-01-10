@@ -19,6 +19,9 @@ export const SOCKET_EVENTS = {
         START: 'typing:start',
         STOP: 'typing:stop',
     },
+    NOTIFICATION: {
+        NEW: 'notification:new',
+    },
     DISCUSSION: {
         JOIN: 'discussion:join',
         NEW: 'discussion:new',
@@ -35,6 +38,15 @@ export interface ServerToClientEvents {
     [SOCKET_EVENTS.PRESENCE.ONLINE]: (payload: { userId: string }) => void;
     [SOCKET_EVENTS.PRESENCE.OFFLINE]: (payload: { userId: string }) => void;
     [SOCKET_EVENTS.PRESENCE.ONLINE_LIST]: (payload: { onlineUserIds: string[] }) => void;
+    [SOCKET_EVENTS.NOTIFICATION.NEW]: (notification: {
+        id: string;
+        type: string;
+        subtype: string;
+        title: string;
+        body: string;
+        data?: any;
+        createdAt: Date;
+    }) => void;
     [SOCKET_EVENTS.ERROR]: (error: { message: string }) => void;
 }
 
