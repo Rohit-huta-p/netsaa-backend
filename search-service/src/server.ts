@@ -11,8 +11,7 @@ const PORT = env.PORT;
 
 const startServer = async () => {
     await connectMongo();
-    await connectMongo();
-    // await connectRedis();
+    await connectRedis();
 
     const server = http.createServer(app);
     const httpTerminator = createHttpTerminator({ server });
@@ -28,7 +27,7 @@ const startServer = async () => {
             await httpTerminator.terminate();
             console.log('HTTP server closed.');
 
-            // await disconnectRedis();
+            await disconnectRedis();
             await disconnectMongo();
 
             process.exit(0);

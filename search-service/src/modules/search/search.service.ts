@@ -24,14 +24,14 @@ export class SearchService {
     /**
      * Orchestrates the search for Gigs.
      */
-    async searchGigs(query: string, filters: any, page: number = 1) {
-        const { results, total } = await searchGigsInDb(query, filters, page, SEARCH_CONFIG.DEFAULT_PAGE_SIZE);
+    async searchGigs(query: string, filters: any, page: number = 1, pageSize: number = SEARCH_CONFIG.DEFAULT_PAGE_SIZE) {
+        const { results, total } = await searchGigsInDb(query, filters, page, pageSize);
 
         return {
             results,
             meta: {
                 page,
-                pageSize: SEARCH_CONFIG.DEFAULT_PAGE_SIZE,
+                pageSize,
                 total,
             },
         };

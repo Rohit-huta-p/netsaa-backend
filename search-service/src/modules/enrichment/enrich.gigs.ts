@@ -18,12 +18,16 @@ export const enrichGigsResults = async (originalIds: string[], viewerId?: string
         .find({ _id: { $in: objectIds } })
         .toArray();
 
+    // DEBUG: Log enrichment results
+    console.log(`[Enrichment] Requested IDs: ${originalIds.length}, Found Docs: ${docs.length}`);
+    if (docs.length === 0) console.log('[Enrichment] IDs:', originalIds);
+
     const docMap = new Map(docs.map((d) => [d._id.toString(), d]));
 
     // 2. Map back to original order and attach context
     return originalIds
         .map((id) => {
-            const doc = docMap.get(id);
+            const doc = docMap.get(id.toString());
             if (!doc) return null;
 
             // Todo: Check if saved/applied

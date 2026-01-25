@@ -8,6 +8,7 @@ import {
     publishEvent,
     getOrganizerEvents,
     saveEvent,
+    getSavedEvents,
 } from '../controllers/events';
 import { createTicketType, getTicketTypesByEvent } from '../controllers/tickets';
 import {
@@ -39,6 +40,7 @@ router.route('/events/:id/register').post(protect, registerForEvent);
 router.route('/events/:id/registrations').get(protect, getEventRegistrations);
 router.route('/registrations/:registrationId/status').patch(protect, updateRegistrationStatus);
 router.route('/users/me/event-registrations').get(protect, getUserRegistrations);
+router.route('/users/me/saved-events').get(protect, getSavedEvents);
 
 // New Reservation & Payment flow
 router.route('/events/:id/reserve').post(protect, reserveTickets);
