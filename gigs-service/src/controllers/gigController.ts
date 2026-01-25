@@ -24,9 +24,24 @@ export interface AuthRequest extends Request {
 // @access  Public
 export const getGigs = async (req: Request, res: Response, next: NextFunction) => {
     try {
-        const { artistType, city, status, featured, page = 1, pageSize = 20 } = req.query;
+        const { artistType, city, status, featured, page = 1, pageSize = 20, q } = req.query;
 
         const query: any = {};
+
+        // Search query - search across multiple fields
+        if (q && typeof q === 'string') {
+            const searchRegex = { $regex: q.trim(), $options: 'i' };
+            query.$or = [
+                { title: searchRegex },
+                { description: searchRegex },
+                { tags: searchRegex },
+                { requiredSkills: searchRegex },
+                { 'organizerSnapshot.displayName': searchRegex },
+                { 'organizerSnapshot.organizationName': searchRegex },
+                { artistTypes: searchRegex },
+                { category: searchRegex }
+            ];
+        }
 
         if (artistType) {
             query.artistTypes = artistType;
@@ -145,7 +160,6 @@ export const getGigById = async (req: Request, res: Response, next: NextFunction
 // @access  Private (Organizer)
 export const createGig = async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
-        console.log(req.user);
         // Basic validation could be done here or middleware (Zod)
         // For now assuming body matches schema roughly
         const { title, description, type, category, location, schedule, compensation, applicationDeadline } = req.body;
@@ -163,7 +177,6 @@ export const createGig = async (req: AuthRequest, res: Response, next: NextFunct
             ...req.body,
             organizerId,
             organizerSnapshot,
-            status: 'draft', // Default to draft, explicit publish needed? Spec says "Creates a new gig"
             createdAt: new Date(),
             updatedAt: new Date()
         });
@@ -575,6 +588,33 @@ export const deleteGig = async (req: AuthRequest, res: Response, next: NextFunct
     } catch (err: any) {
         await session.abortTransaction();
         session.endSession();
+        console.error(err);
+        sendResponse(res, 500, null, 'Server Error', [{ message: err.message }]);
+    }
+};
+
+// @desc    Get user's saved gigs
+// @route   GET /v1/users/me/saved-gigs
+// @access  Private
+export const getSavedGigs = async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+        const userId = req.user.id;
+
+        const savedGigs = await SavedGig.find({ userId })
+            .populate('gigId', 'title type category location schedule compensation applicationDeadline status organizerSnapshot')
+            .sort({ savedAt: -1 })
+            .lean();
+
+        // Format response to include gig details
+        const formattedSavedGigs = savedGigs.map((saved: any) => ({
+            ...saved,
+            gigDetails: saved.gigId,
+            gigId: saved.gigId?._id
+        }));
+
+        sendResponse(res, 200, formattedSavedGigs, 'OK');
+
+    } catch (err: any) {
         console.error(err);
         sendResponse(res, 500, null, 'Server Error', [{ message: err.message }]);
     }

@@ -7,7 +7,7 @@ const app: Express = express();
 
 // Middleware
 app.use(helmet());
-app.use(cors({ origin: ['http://localhost:5173', 'https://netsaa.onrender.com'], credentials: true, allowedHeaders: ['Content-Type', 'Authorization'], exposedHeaders: ['Content-Type', 'Authorization'], methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'], optionsSuccessStatus: 200 }));
+app.use(cors({ origin: ['http://localhost:8081', 'https://netsaa.onrender.com'], credentials: true, allowedHeaders: ['Content-Type', 'Authorization'], exposedHeaders: ['Content-Type', 'Authorization'], methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'], optionsSuccessStatus: 200 }));
 app.use(morgan('dev'));
 app.use(express.json());
 

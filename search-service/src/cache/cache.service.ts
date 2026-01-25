@@ -9,9 +9,6 @@ export const CACHE_TTL = {
  */
 export const cacheService = {
     get: async <T>(key: string): Promise<T | null> => {
-        // TEMPORARILY DISABLED
-        return null;
-        /*
         const data = await cacheClient.get(key);
         if (!data) return null;
         try {
@@ -19,15 +16,11 @@ export const cacheService = {
         } catch (e) {
             return null;
         }
-        */
+
     },
 
     set: async (key: string, value: any, ttlSeconds: number = CACHE_TTL.SEARCH_RESULTS): Promise<void> => {
-        // TEMPORARILY DISABLED
-        return;
-        /*
         const stringValue = JSON.stringify(value);
         await cacheClient.set(key, stringValue, ttlSeconds);
-        */
     },
 };

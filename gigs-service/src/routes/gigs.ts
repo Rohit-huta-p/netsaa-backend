@@ -10,7 +10,8 @@ import {
     deleteGig,
     getGigApplications,
     updateApplicationStatus,
-    getUserApplications
+    getUserApplications,
+    getSavedGigs
 } from '../controllers/gigController';
 import { getGigDiscussion, addGigComment } from '../controllers/gigDiscussionController';
 import { protect, optionalAuth } from '../middleware/auth';
@@ -27,6 +28,7 @@ router.route('/gigs/:id/save').post(protect, saveGig);
 router.route('/organizers/me/gigs/:gigId/applications').get(protect, getGigApplications);
 router.route('/applications/:applicationId/status').patch(protect, updateApplicationStatus);
 router.route('/users/me/gig-applications').get(protect, getUserApplications);
+router.route('/users/me/saved-gigs').get(protect, getSavedGigs);
 
 router.route('/gigs/:id').patch(protect, updateGig).delete(protect, deleteGig);
 

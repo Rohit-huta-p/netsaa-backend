@@ -380,3 +380,37 @@ export const saveEvent = async (req: AuthRequest, res: Response, next: NextFunct
     });
   }
 };
+
+// @desc    Get user's saved events
+// @route   GET /api/grow/users/me/saved-events
+// @access  Private
+export const getSavedEvents = async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const userId = req.user.id;
+
+    const savedEvents = await SavedEvent.find({ userId })
+      .populate('eventId', 'title schedule location category eventType ticketPrice pricingMode maxParticipants status organizerSnapshot')
+      .sort({ savedAt: -1 })
+      .lean();
+
+    // Format response to include event details
+    const formattedSavedEvents = savedEvents.map((saved: any) => ({
+      ...saved,
+      eventDetails: saved.eventId,
+      eventId: saved.eventId?._id
+    }));
+
+    res.status(200).json({
+      meta: { status: 200, message: 'OK', total: savedEvents.length },
+      data: formattedSavedEvents,
+      errors: []
+    });
+
+  } catch (err) {
+    res.status(500).json({
+      meta: { status: 500, message: 'Server Error' },
+      data: null,
+      errors: [{ message: (err as Error).message }]
+    });
+  }
+};
