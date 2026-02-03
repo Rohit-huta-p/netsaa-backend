@@ -30,6 +30,12 @@ export interface SearchResultItemDTO {
      * Additional vertical-specific data
      */
     metadata?: Record<string, any>;
+
+    /**
+     * Full raw document from the database (optional)
+     * Useful when the client needs the full object details immediately
+     */
+    raw?: any;
 }
 
 export interface SearchResponseDTO<T = SearchResultItemDTO> {
@@ -43,4 +49,14 @@ export interface SearchResponseDTO<T = SearchResultItemDTO> {
          */
         latencyMs?: number;
     };
+}
+
+export interface EventSearchResultDTO extends SearchResultItemDTO {
+    coverImage?: string;
+    ticketPrice?: number;
+    eventType?: string;
+    attendeesCount?: number;
+    rating?: number;
+    schedule?: any;
+    location?: any;
 }

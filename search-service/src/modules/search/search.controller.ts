@@ -100,6 +100,76 @@ function flattenGigFilters(nestedFilters: Record<string, any>): Record<string, a
         }
     }
 
+
+    return flat;
+}
+
+/**
+ * Flattens the nested frontend filter structure for Events.
+ */
+function flattenEventFilters(nestedFilters: Record<string, any>): Record<string, any> {
+    const flat: Record<string, any> = {};
+
+    // Direct fields (backward compatibility)
+    const directFields = ['eventType', 'category', 'skillLevel', 'eligibleArtistTypes',
+        'locationType', 'city', 'state', 'country', 'onlineOnly',
+        'startDateAfter', 'startDateBefore', 'registrationDeadlineBefore',
+        'maxPrice', 'freeOnly', 'refundableOnly', 'startDateRange',
+        'featured', 'startingSoon', 'popular', 'lowPrice', 'sortBy', 'sortMode'];
+
+    for (const field of directFields) {
+        if (nestedFilters[field] !== undefined && nestedFilters[field] !== null) {
+            flat[field] = nestedFilters[field];
+        }
+    }
+
+    // Handle nested "advanced" structure
+    if (nestedFilters.advanced && typeof nestedFilters.advanced === 'object') {
+        const adv = nestedFilters.advanced;
+
+        // category & eventType
+        if (adv.eventType) {
+            if (Array.isArray(adv.eventType)) flat.eventType = adv.eventType;
+            else if (Array.isArray(adv.eventType.types)) flat.eventType = adv.eventType.types;
+        }
+
+        if (adv.category) {
+            if (Array.isArray(adv.category)) flat.category = adv.category;
+            else if (Array.isArray(adv.category.categories)) flat.category = adv.category.categories;
+        }
+
+        // If category is under requirements like in Gigs (fallback):
+        if (adv.requirements && adv.requirements.category) {
+            flat.category = adv.requirements.category;
+        }
+
+        // location: { city, locationType, ... }
+        if (adv.location) {
+            if (adv.location.city) flat.city = adv.location.city;
+            if (adv.location.locationType) flat.locationType = adv.location.locationType;
+            if (adv.location.onlineOnly !== undefined) flat.onlineOnly = adv.location.onlineOnly;
+        }
+
+        // date / timing
+        if (adv.date) {
+            if (adv.date.startDateRange) flat.startDateRange = adv.date.startDateRange;
+            if (adv.date.startDateAfter) flat.startDateAfter = adv.date.startDateAfter;
+            if (adv.date.startDateBefore) flat.startDateBefore = adv.date.startDateBefore;
+        }
+
+        // price
+        if (adv.price) {
+            if (adv.price.maxPrice) flat.maxPrice = adv.price.maxPrice;
+            if (adv.price.freeOnly) flat.freeOnly = adv.price.freeOnly;
+        }
+
+        // sorting
+        if (adv.sorting) {
+            if (adv.sorting.sortBy) flat.sortBy = adv.sorting.sortBy;
+            if (adv.sorting.sortMode) flat.sortMode = adv.sorting.sortMode;
+        }
+    }
+
     return flat;
 }
 
@@ -195,7 +265,29 @@ export class SearchController {
             const page = parseInt(req.query.page as string || '1', 10);
             const filters = req.query;
 
+            console.log('[SearchController.searchEvents] Params:', { q, page, filters });
+
             const results = await searchService.searchEvents(q, filters, page);
+            return res.json(results);
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    /**
+     * POST /search/events
+     * Filtered search with complex filters in request body.
+     */
+    async searchEventsFiltered(req: Request, res: Response, next: NextFunction) {
+        try {
+            const { q = '', filters = {}, page = 1 } = req.body;
+
+            console.log('[searchEventsFiltered] Raw Body Filters:', JSON.stringify(filters));
+
+            const flatFilters = flattenEventFilters(filters);
+            console.log('[searchEventsFiltered] Flattened Filters:', JSON.stringify(flatFilters));
+
+            const results = await searchService.searchEvents(q, flatFilters, page);
             return res.json(results);
         } catch (error) {
             next(error);

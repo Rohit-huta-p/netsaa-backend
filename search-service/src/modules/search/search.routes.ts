@@ -15,5 +15,6 @@ router.get('/events', searchController.searchEvents.bind(searchController));
 
 // 3. Filtered Search (POST with body) - for complex filters
 router.post('/gigs', searchController.searchGigsFiltered.bind(searchController));
+router.post('/events', searchController.searchEventsFiltered.bind(searchController));
 
 export const searchRoutes = router;

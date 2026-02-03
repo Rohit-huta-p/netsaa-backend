@@ -34,7 +34,7 @@ export class AtlasClient {
 
         // Check if result is faceted (standard pipeline) or flat (simple pipeline)
         const isFaceted = result.length > 0 && ('data' in result[0] || 'metadata' in result[0]);
-
+        console.log('[Atlas raw result] isFaceted', isFaceted);
         if (isFaceted) {
             const root = result[0] ?? {};
             data = root.data ?? [];

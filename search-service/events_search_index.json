@@ -1,0 +1,57 @@
+{
+    "mappings": {
+        "dynamic": true,
+        "fields": {
+            "eventType": {
+                "type": "token"
+            },
+            "category": {
+                "type": "token"
+            },
+            "skillLevel": {
+                "type": "token"
+            },
+            "eligibleArtistTypes": {
+                "type": "token"
+            },
+            "status": {
+                "type": "token"
+            },
+            "location": {
+                "type": "document",
+                "fields": {
+                    "type": {
+                        "type": "token"
+                    },
+                    "city": {
+                        "type": "string",
+                        "analyzer": "lucene.standard"
+                    },
+                    "venueName": {
+                        "type": "string",
+                        "analyzer": "lucene.standard"
+                    }
+                }
+            },
+            "schedule": {
+                "type": "document",
+                "fields": {
+                    "startDate": {
+                        "type": "date"
+                    }
+                }
+            },
+            "ticketPrice": {
+                "type": "number"
+            },
+            "title": {
+                "type": "string",
+                "analyzer": "lucene.standard"
+            },
+            "description": {
+                "type": "string",
+                "analyzer": "lucene.standard"
+            }
+        }
+    }
+}
