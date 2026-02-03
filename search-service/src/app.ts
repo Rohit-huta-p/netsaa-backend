@@ -14,7 +14,6 @@ app.use(express.json());
 import { searchRoutes } from './modules/search/search.routes';
 
 // Routes
-// Routes
 app.use('/search', searchRoutes);
 app.use('/v1/search', searchRoutes); // Alias for consistency
 

@@ -63,7 +63,7 @@ export const searchGigsInDb = async (
             must.push({
                 text: {
                     query: query.trim(),
-                    path: ['title', 'description', 'artistType', 'city'],
+                    path: ['title', 'description', 'artistTypes', 'tags', 'city'],
                     fuzzy: { maxEdits: 1 },
                 },
             });

@@ -7,6 +7,7 @@ import connectionsRoutes from './connections/connections.routes';
 import conversationsRoutes from './connections/conversations.routes';
 import messagesRoutes from './connections/messages.routes';
 import notificationRoutes from './notifications/notification.routes';
+import usersRoutes from './routes/users';
 import { initSocketServer } from './sockets';
 import { startNotificationWorker } from './notifications';
 
@@ -16,14 +17,15 @@ connectDB();
 
 const app: Application = express();
 
-app.use(cors({ origin: ['http://localhost:8081', 'https://netsaa.onrender.com'], credentials: true, allowedHeaders: ['Content-Type', 'Authorization'], exposedHeaders: ['Content-Type', 'Authorization'], methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'], optionsSuccessStatus: 200 }));
+app.use(cors({ origin: ['http://localhost:8081', 'https://netsaa.onrender.com'], credentials: true, allowedHeaders: ['Content-Type', 'Authorization'], exposedHeaders: ['Content-Type', 'Authorization'], methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'], optionsSuccessStatus: 200 }));
 app.use(express.json());
 
 app.use('/api/auth', authRoutes);
+app.use('/api/users', usersRoutes);
 app.use('/api/connections', connectionsRoutes);
 app.use('/api/conversations', conversationsRoutes);
 app.use('/api/messages', messagesRoutes);
-app.use('/api/users/notifications', notificationRoutes);
+app.use('/api/notifications', notificationRoutes);
 
 const PORT = process.env.PORT || 5001;
 console.log("Welcome to user's service");

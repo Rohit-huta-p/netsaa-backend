@@ -51,6 +51,11 @@ export interface IUser extends Document {
   gender?: string;
   height?: string;
   skinTone?: string;
+
+  // Media URLs (stored as URLs only - no binary data)
+  hasPhotos?: boolean;
+  galleryUrls?: string[];  // Up to 5 photo URLs
+  videoUrls?: string[];    // Up to 3 video URLs
 }
 
 /* ---------- Mongoose Schemas ---------- */
@@ -114,7 +119,12 @@ const UserSchema = new Schema<IUser>(
     age: { type: String },
     gender: { type: String },
     height: { type: String },
-    skinTone: { type: String }
+    skinTone: { type: String },
+
+    // Media URLs (stored as URLs only - no binary data)
+    hasPhotos: { type: Boolean, default: false },
+    galleryUrls: { type: [String], default: [] },  // Up to 5 photo URLs
+    videoUrls: { type: [String], default: [] }     // Up to 3 video URLs
   },
   { timestamps: true }
 );

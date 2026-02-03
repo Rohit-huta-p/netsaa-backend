@@ -186,9 +186,15 @@ export const updateMe = async (req: AuthRequest, res: Response) => {
       return res.status(401).json({ msg: 'Not authorized' });
     }
 
+    console.log("AUTH CONTROLLER: updateMe body:", req.body);
+
     const {
       displayName,
       profileImageUrl,
+      // Media fields (URLs only - no binary data)
+      galleryUrls,
+      videoUrls,
+      hasPhotos,
       // Profile fields
       bio,
       location,
@@ -206,6 +212,11 @@ export const updateMe = async (req: AuthRequest, res: Response) => {
     const updateFields: any = {};
     if (displayName !== undefined) updateFields.displayName = displayName;
     if (profileImageUrl !== undefined) updateFields.profileImageUrl = profileImageUrl;
+    // Media fields
+    if (galleryUrls !== undefined) updateFields.galleryUrls = galleryUrls;
+    if (videoUrls !== undefined) updateFields.videoUrls = videoUrls;
+    if (hasPhotos !== undefined) updateFields.hasPhotos = hasPhotos;
+    // Profile fields
     if (bio !== undefined) updateFields.bio = bio;
     if (location !== undefined) updateFields.location = location;
     if (skills !== undefined) updateFields.skills = skills;
@@ -217,15 +228,19 @@ export const updateMe = async (req: AuthRequest, res: Response) => {
     if (height !== undefined) updateFields.height = height;
     if (skinTone !== undefined) updateFields.skinTone = skinTone;
 
+    console.log("AUTH CONTROLLER: updating fields:", updateFields);
+
     const user = await User.findByIdAndUpdate(
-      req.user.id,
+      req.user._id,
       { $set: updateFields },
       { new: true, runValidators: true }
     ).select('-passwordHash');
 
+    console.log("AUTH CONTROLLER: updated user successfully");
     res.json(user);
   } catch (err: any) {
-    console.error(err.message);
+    console.error("AUTH CONTROLLER UPDATE ERROR:", err.message);
+    console.error(err);
     res.status(500).send('Server error');
   }
 };

@@ -16,5 +16,11 @@ export const mapGigToSearchResult = (doc: any): SearchResultItemDTO => {
             date: doc.eventDate || doc.date,
             expiresAt: doc.expiresAt,
         },
+        raw: {
+            ...doc,
+            // Ensure ID is string
+            _id: doc._id.toString(),
+            id: doc._id.toString(),
+        },
     };
 };
