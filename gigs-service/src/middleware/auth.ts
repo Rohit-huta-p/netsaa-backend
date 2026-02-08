@@ -2,6 +2,8 @@ import { Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { AuthRequest } from '../controllers/gigController';
 
+export type UserRole = 'artist' | 'organizer' | 'admin';
+
 export const protect = async (req: AuthRequest, res: Response, next: NextFunction) => {
     let token;
 
@@ -20,9 +22,16 @@ export const protect = async (req: AuthRequest, res: Response, next: NextFunctio
             // In a microservice, we might not have direct database access to Users.
             // We rely on the token payload (if it contains user info) 
             // OR we validly assume the ID is correct if signature matches.
-            // The token payload from users-service is { user: { id: ... } }
+            // The token payload from users-service is { user: { id: ..., role: ... } }
             // We flatten it so req.user.id works as expected.
-            req.user = decoded.user || decoded;
+            const userPayload = decoded.user || decoded;
+
+            // Ensure role is present, default to 'artist' if missing (backward compatibility)
+            if (!userPayload.role) {
+                userPayload.role = 'artist';
+            }
+
+            req.user = userPayload;
 
             next();
         } catch (error) {
@@ -38,6 +47,17 @@ export const protect = async (req: AuthRequest, res: Response, next: NextFunctio
         res.status(401).json({
             meta: { status: 401, message: 'Not authorized, no token' },
             errors: [{ message: 'No token provided' }]
+        });
+    }
+};
+
+export const requireOrganizer = (req: AuthRequest, res: Response, next: NextFunction) => {
+    if (req.user && (req.user.role === 'organizer' || req.user.role === 'admin')) {
+        next();
+    } else {
+        res.status(403).json({
+            meta: { status: 403, message: 'Forbidden: Organizer access required' },
+            errors: [{ message: 'User is not an organizer' }]
         });
     }
 };

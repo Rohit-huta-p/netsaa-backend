@@ -119,7 +119,144 @@ export const s3Client = new S3Client({
 
 ---
 
-## 5. Lifecycle Rules
+## 5. CORS Configuration
+
+> [!IMPORTANT]
+> CORS is **required** for browser-based uploads using pre-signed URLs. Without it, browsers will block the PUT request.
+
+### Production CORS Policy
+
+```json
+[
+  {
+    "ID": "AllowFrontendUploads",
+    "AllowedOrigins": [
+      "https://netsa.app",
+      "https://www.netsa.app",
+      "https://admin.netsa.app"
+    ],
+    "AllowedMethods": [
+      "GET",
+      "PUT",
+      "HEAD"
+    ],
+    "AllowedHeaders": [
+      "Content-Type",
+      "Content-Length",
+      "x-amz-acl",
+      "x-amz-meta-*"
+    ],
+    "ExposeHeaders": [
+      "ETag",
+      "x-amz-meta-*"
+    ],
+    "MaxAgeSeconds": 3600
+  }
+]
+```
+
+### Development CORS Policy
+
+For local development, use a more permissive policy:
+
+```json
+[
+  {
+    "ID": "AllowLocalDevelopment",
+    "AllowedOrigins": [
+      "http://localhost:3000",
+      "http://localhost:8081",
+      "http://localhost:19006",
+      "exp://192.168.*.*:*"
+    ],
+    "AllowedMethods": [
+      "GET",
+      "PUT",
+      "HEAD"
+    ],
+    "AllowedHeaders": [
+      "*"
+    ],
+    "ExposeHeaders": [
+      "ETag"
+    ],
+    "MaxAgeSeconds": 3600
+  }
+]
+```
+
+### What Each Setting Does
+
+| Setting | Value | Purpose |
+|---------|-------|---------|
+| **AllowedOrigins** | Your frontend domains | Only these origins can make requests |
+| **AllowedMethods** | GET, PUT, HEAD | GET for downloads, PUT for uploads, HEAD for checks |
+| **AllowedHeaders** | Content-Type, etc. | Headers the browser can send |
+| **ExposeHeaders** | ETag | Headers the browser can read from response |
+| **MaxAgeSeconds** | 3600 | Cache preflight response for 1 hour |
+
+### AWS CLI Command (Production)
+
+```bash
+aws s3api put-bucket-cors \
+  --bucket netsa-media-prod \
+  --cors-configuration '{
+    "CORSRules": [
+      {
+        "ID": "AllowFrontendUploads",
+        "AllowedOrigins": ["https://netsa.app", "https://www.netsa.app"],
+        "AllowedMethods": ["GET", "PUT", "HEAD"],
+        "AllowedHeaders": ["Content-Type", "Content-Length", "x-amz-acl", "x-amz-meta-*"],
+        "ExposeHeaders": ["ETag", "x-amz-meta-*"],
+        "MaxAgeSeconds": 3600
+      }
+    ]
+  }'
+```
+
+### AWS CLI Command (Development)
+
+```bash
+aws s3api put-bucket-cors \
+  --bucket netsa-media-dev \
+  --cors-configuration '{
+    "CORSRules": [
+      {
+        "ID": "AllowLocalDevelopment",
+        "AllowedOrigins": ["http://localhost:3000", "http://localhost:8081", "http://localhost:19006"],
+        "AllowedMethods": ["GET", "PUT", "HEAD"],
+        "AllowedHeaders": ["*"],
+        "ExposeHeaders": ["ETag"],
+        "MaxAgeSeconds": 3600
+      }
+    ]
+  }'
+```
+
+### Verify CORS Configuration
+
+```bash
+# Check current CORS config
+aws s3api get-bucket-cors --bucket netsa-media-prod
+
+# Test CORS preflight (should return CORS headers)
+curl -I -X OPTIONS \
+  -H "Origin: https://netsa.app" \
+  -H "Access-Control-Request-Method: PUT" \
+  https://netsa-media-prod.s3.ap-south-1.amazonaws.com/test.jpg
+```
+
+### Common CORS Errors
+
+| Error | Cause | Fix |
+|-------|-------|-----|
+| `No 'Access-Control-Allow-Origin' header` | Origin not in AllowedOrigins | Add your domain to the list |
+| `Method PUT is not allowed` | PUT not in AllowedMethods | Add PUT to AllowedMethods |
+| `Request header field X is not allowed` | Header not in AllowedHeaders | Add the header or use `*` |
+
+---
+
+## 6. Lifecycle Rules
 
 ### Rule 1: Abort Incomplete Multipart Uploads (Required)
 
@@ -176,7 +313,7 @@ For future cost optimization, consider moving old media to cheaper storage:
 
 ---
 
-## 6. IAM Policy for Media-Service
+## 7. IAM Policy for Media-Service
 
 The media-service should use an IAM user/role with these minimal permissions:
 
@@ -205,7 +342,7 @@ The media-service should use an IAM user/role with these minimal permissions:
 
 ---
 
-## 7. Production Environment Variables
+## 8. Production Environment Variables
 
 ```bash
 # Production .env for media-service
@@ -217,7 +354,7 @@ PRESIGN_EXPIRY_SECONDS=300  # Shorter for security (5 minutes)
 
 ---
 
-## 8. Verification Checklist
+## 9. Verification Checklist
 
 Use this checklist to verify your configuration in AWS Console:
 
@@ -240,6 +377,8 @@ Use this checklist to verify your configuration in AWS Console:
 
 - [ ] **Access Control List**: Disabled (grayed out)
 
+- [ ] **CORS Configuration**: Configured with allowed origins
+
 ### S3 → netsa-media-prod → Management
 - [ ] **Lifecycle rule**: AbortIncompleteMultipartUploads enabled (7 days)
 
@@ -249,7 +388,7 @@ Use this checklist to verify your configuration in AWS Console:
 
 ---
 
-## 9. Testing Commands
+## 10. Testing Commands
 
 ```bash
 # 1. Test public read (should work)
