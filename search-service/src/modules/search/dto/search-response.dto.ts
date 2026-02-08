@@ -22,6 +22,21 @@ export interface SearchResultItemDTO {
     image?: string;
 
     /**
+     * Direct URL to profile image (for people search)
+     */
+    profileImageUrl?: string;
+
+    /**
+     * Artist type (for people search)
+     */
+    artistType?: string;
+
+    /**
+     * City (for people search)
+     */
+    city?: string;
+
+    /**
      * Relevance score from the search engine
      */
     score?: number;

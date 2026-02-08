@@ -34,6 +34,7 @@ export const registerWithEmail = async (req: Request, res: Response) => {
     const payload = {
       user: {
         id: user.id,
+        role: user.role,
       },
     };
 
@@ -76,6 +77,7 @@ export const loginWithEmail = async (req: Request, res: Response) => {
     const payload = {
       user: {
         id: user.id,
+        role: user.role,
       },
     };
 
@@ -146,6 +148,7 @@ export const verifyOtpAndLogin = async (req: Request, res: Response) => {
     const payload = {
       user: {
         id: user.id,
+        role: user.role,
       },
     };
 

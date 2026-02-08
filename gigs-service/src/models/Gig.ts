@@ -85,6 +85,7 @@ export interface IGig extends Document {
   expiresAt?: Date;
   createdAt: Date;
   updatedAt: Date;
+  termsAndConditions?: string;
 }
 
 const GigSchema = new Schema<IGig>({
@@ -155,7 +156,9 @@ const GigSchema = new Schema<IGig>({
       enum: ['fixed', 'hourly', 'per-day'],
       required: true
     },
-    amount: { type: Number, required: true },
+    amount: { type: Number, required: false }, // Made optional
+    minAmount: { type: Number },
+    maxAmount: { type: Number },
     currency: { type: String, default: 'INR' },
     negotiable: { type: Boolean, default: false },
     perks: [String]
@@ -183,6 +186,7 @@ const GigSchema = new Schema<IGig>({
 
   publishedAt: Date,
   expiresAt: { type: Date, index: true }, // Index for expiration cleanup
+  termsAndConditions: String,
 }, { timestamps: true });
 
 // Compound Indexes from Spec

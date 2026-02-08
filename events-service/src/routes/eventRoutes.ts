@@ -20,13 +20,13 @@ import {
 import { reserveTickets, cancelReservation } from '../controllers/eventReservationController';
 import { createPaymentIntent, finalizeRegistration } from '../controllers/eventRegistrationController';
 import { getEventDiscussion, addEventComment } from '../controllers/eventDiscussionController';
-import { protect, optionalAuth } from '../middleware/auth';
+import { protect, optionalAuth, requireOrganizer } from '../middleware/auth';
 
 const router = express.Router();
 
 // Events Routes
 router.route('/organizers/me/events').get(protect, getOrganizerEvents);
-router.route('/events').get(getEvents).post(protect, createEvent);
+router.route('/events').get(getEvents).post(protect, requireOrganizer, createEvent);
 router.route('/events/:id').get(optionalAuth, getEventById).patch(protect, updateEvent).delete(protect, deleteEvent);
 router.route('/events/:id/publish').post(protect, publishEvent);
 router.route('/events/:id/save').post(protect, saveEvent);

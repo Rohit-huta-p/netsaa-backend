@@ -121,9 +121,34 @@ export const getOrganizerGigs = async (req: AuthRequest, res: Response, next: Ne
 // @access  Public
 export const getGigById = async (req: Request, res: Response, next: NextFunction) => {
     try {
-        const gig = await Gig.findById(req.params.id);
+        let gig = await Gig.findById(req.params.id);
         if (!gig) {
             return sendResponse(res, 404, null, 'Gig not found');
+        }
+
+        // Populate organizer details from User collection if possible
+        // We cast to any because we want to check if population worked
+        await gig.populate('organizerId', 'displayName profileImageUrl cached kycStatus');
+
+        const organizer = gig.organizerId as any;
+
+        let organizerSnapshot = gig.organizerSnapshot;
+
+        // If we successfully populated the user, use fresh data
+        if (organizer && organizer._id) {
+            organizerSnapshot = {
+                displayName: organizer.displayName || organizerSnapshot.displayName,
+                organizationName: organizerSnapshot.organizationName, // Keep original or fetch if stored in User
+                profileImageUrl: organizer.profileImageUrl || organizerSnapshot.profileImageUrl,
+                rating: organizer.cached?.averageRating || organizerSnapshot.rating,
+                // Add verification status
+                // @ts-ignore - Adding dynamic property not in original schema interface for response
+                isVerified: organizer.kycStatus === 'approved'
+            };
+        } else {
+            // Fallback if population fails or user deleted
+            // @ts-ignore
+            organizerSnapshot.isVerified = false;
         }
 
         // Increment views (fire and forget / async)
@@ -144,11 +169,15 @@ export const getGigById = async (req: Request, res: Response, next: NextFunction
             viewerContext = { hasApplied: !!hasApplied };
         }
 
-        sendResponse(res, 200, {
+        // Construct response object
+        const responseData = {
             ...gig.toObject(),
+            organizerSnapshot, // Override with fresh/enhanced snapshot
             stats: stats ? stats.toObject() : null,
             viewerContext
-        });
+        };
+
+        sendResponse(res, 200, responseData);
     } catch (err: any) {
         console.error(err);
         sendResponse(res, 500, null, 'Server Error', [{ message: err.message }]);

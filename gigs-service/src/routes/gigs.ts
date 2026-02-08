@@ -14,13 +14,13 @@ import {
     getSavedGigs
 } from '../controllers/gigController';
 import { getGigDiscussion, addGigComment } from '../controllers/gigDiscussionController';
-import { protect, optionalAuth } from '../middleware/auth';
+import { protect, optionalAuth, requireOrganizer } from '../middleware/auth';
 
 const router = express.Router();
 
 
 // Public routes and refactored protected routes
-router.route('/gigs').get(getGigs).post(protect, createGig);
+router.route('/gigs').get(getGigs).post(protect, requireOrganizer, createGig);
 router.route('/organizers/me/gigs').get(protect, getOrganizerGigs); // Access as /v1/organizers/me/gigs
 router.route('/gigs/:id').get(optionalAuth, getGigById);
 router.route('/gigs/:id/apply').post(protect, applyToGig);
