@@ -11,7 +11,8 @@ import {
     getGigApplications,
     updateApplicationStatus,
     getUserApplications,
-    getSavedGigs
+    getSavedGigs,
+    getOrganizerStats
 } from '../controllers/gigController';
 import { getGigDiscussion, addGigComment } from '../controllers/gigDiscussionController';
 import { protect, optionalAuth, requireOrganizer } from '../middleware/auth';
@@ -36,5 +37,8 @@ router.route('/gigs/:id').patch(protect, updateGig).delete(protect, deleteGig);
 router.route('/gigs/:gigId/discussion')
     .get(protect, getGigDiscussion)
     .post(protect, addGigComment);
+
+// Organizer Stats Route (public - for trust card)
+router.route('/users/:userId/organizer-stats').get(getOrganizerStats);
 
 export default router;

@@ -648,3 +648,40 @@ export const getSavedGigs = async (req: AuthRequest, res: Response, next: NextFu
         sendResponse(res, 500, null, 'Server Error', [{ message: err.message }]);
     }
 };
+
+// @desc    Get organizer stats (for trust card)
+// @route   GET /v1/users/:userId/organizer-stats
+// @access  Public
+export const getOrganizerStats = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const { userId } = req.params;
+
+        if (!userId || !mongoose.Types.ObjectId.isValid(userId)) {
+            return sendResponse(res, 400, null, 'Valid user ID required');
+        }
+
+        // Count gigs hosted by this organizer (published, closed, or expired)
+        const gigsHosted = await Gig.countDocuments({
+            organizerId: userId,
+            status: { $in: ['published', 'closed', 'expired'] }
+        });
+
+        // Count total artists hired across all gigs
+        const hiredCount = await GigApplication.countDocuments({
+            status: 'hired'
+        }).then(async () => {
+            // Get gigs by this organizer
+            const organizerGigs = await Gig.find({ organizerId: userId }).select('_id');
+            const gigIds = organizerGigs.map(g => g._id);
+            return GigApplication.countDocuments({ gigId: { $in: gigIds }, status: 'hired' });
+        });
+
+        sendResponse(res, 200, {
+            gigsHosted,
+            totalArtistsHired: hiredCount,
+        });
+    } catch (err: any) {
+        console.error(err);
+        sendResponse(res, 500, null, 'Server Error', [{ message: err.message }]);
+    }
+};
