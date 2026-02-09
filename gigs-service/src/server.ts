@@ -17,6 +17,8 @@ app.use(express.json());
 app.use('/v1', gigsRoutes);
 import searchRoutes from './routes/search';
 app.use('/v1/search', searchRoutes);
+import aiRoutes from './routes/ai';
+app.use('/v1/ai', aiRoutes);
 
 const PORT = process.env.PORT || 5002;
 
