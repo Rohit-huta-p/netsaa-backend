@@ -38,12 +38,16 @@ export interface IUser extends Document {
   createdAt: Date;
   updatedAt: Date;
 
+  // Registration personalization
+  intent?: ('find_gigs' | 'hire_artists' | 'learn_workshops' | 'host_events')[];
+  experienceLevel?: 'beginner' | 'intermediate' | 'professional';
+
   // Profile Fields
   bio?: string;
   location?: string;
   skills?: string[];
   experience?: string[];
-  artistType?: string;
+  artistType?: string[]; // Multi-select
   instagramHandle?: string;
 
   // Physical Attributes
@@ -107,12 +111,20 @@ const UserSchema = new Schema<IUser>(
     otp: { type: String },
     otpExpires: { type: Date },
 
+    // Registration personalization
+    intent: {
+      type: [String],
+      enum: ['find_gigs', 'hire_artists', 'learn_workshops', 'host_events'],
+      default: []
+    },
+    experienceLevel: { type: String, enum: ['beginner', 'intermediate', 'professional'], default: null },
+
     // Profile Fields
     bio: { type: String },
     location: { type: String },
     skills: { type: [String], default: [] },
     experience: { type: [String], default: [] },
-    artistType: { type: String },
+    artistType: { type: [String], default: [] }, // Multi-select
     instagramHandle: { type: String },
 
     // Physical Attributes

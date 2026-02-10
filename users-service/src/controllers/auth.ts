@@ -2,11 +2,17 @@ import { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import User, { IUser } from '../models/User';
+import Artist from '../models/Artist';
+import Organizer from '../models/Organizer';
 import { AuthRequest } from '../middleware/auth';
 
 export const registerWithEmail = async (req: Request, res: Response) => {
   try {
-    const { name, email, password, userType, phoneNumber } = req.body;
+    const {
+      name, email, password, userType, phoneNumber, location,
+      // New personalization fields
+      intent, experienceLevel, instagramHandle, artistType, organizationType
+    } = req.body;
 
     if (!email || !password) {
       return res.status(400).json({ msg: 'Please provide email and password' });
@@ -17,19 +23,47 @@ export const registerWithEmail = async (req: Request, res: Response) => {
       return res.status(400).json({ msg: 'User already exists' });
     }
 
+    const role = userType || 'artist';
+
     user = new User({
-      displayName: name, // mapped to new schema
+      displayName: name,
       email,
       phoneNumber,
-      passwordHash: password, // temporarily storing plain or will hash below
-      role: userType || 'artist', // mapped to new schema
-      authProvider: 'email'
+      location: location || null,
+      passwordHash: password,
+      role,
+      authProvider: 'email',
+      // Personalization fields (all nullable)
+      intent: intent || null,
+      experienceLevel: experienceLevel || null,
+      instagramHandle: instagramHandle || null,
+      artistType: (role === 'artist' && artistType) ? artistType : undefined,
     });
 
     const salt = await bcrypt.genSalt(10);
     user.passwordHash = await bcrypt.hash(password, salt);
 
     await user.save();
+
+    // Create role-specific records
+    try {
+      if (role === 'artist') {
+        await Artist.create({
+          userId: user._id,
+          userName: name,
+          ...(artistType && { specialities: [artistType] }),
+        });
+      } else if (role === 'organizer') {
+        await Organizer.create({
+          userId: user._id,
+          organizationName: name,
+          ...(organizationType && { organizationType }),
+        });
+      }
+    } catch (roleErr: any) {
+      // Non-blocking: user is created even if role record fails
+      console.error('Failed to create role record:', roleErr.message);
+    }
 
     const payload = {
       user: {

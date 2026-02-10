@@ -14,7 +14,7 @@ export interface IOrganizerStats {
 export interface IOrganizer extends Document {
     userId: mongoose.Types.ObjectId; // link to users._id
     organizationName?: string;
-    organizationType?: string;
+    organizationType?: string[]; // Multi-select
     organizationWebsite?: string;
     billingDetails?: Record<string, any>;
     organizerStats?: IOrganizerStats;
@@ -42,7 +42,7 @@ const OrganizerSchema = new Schema<IOrganizer>(
     {
         userId: { type: Schema.Types.ObjectId, ref: 'User', required: true, unique: true, index: true },
         organizationName: { type: String, index: true },
-        organizationType: { type: String },
+        organizationType: { type: [String], default: [] }, // Multi-select
         organizationWebsite: { type: String },
         billingDetails: { type: Schema.Types.Mixed, default: {} },
         organizerStats: { type: OrganizerStatsSchema, default: {} },
