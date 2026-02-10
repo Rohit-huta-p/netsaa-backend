@@ -46,7 +46,12 @@ export interface IUser extends Document {
   bio?: string;
   location?: string;
   skills?: string[];
-  experience?: string[];
+  experience?: Array<{
+    title: string;
+    role?: string;
+    venue?: string;
+    date?: string;
+  }>;
   artistType?: string[]; // Multi-select
   instagramHandle?: string;
 
@@ -81,6 +86,16 @@ const UserCachedSchema = new Schema(
     featured: { type: Boolean, default: false },
     averageRating: { type: Number, default: 0 },
     totalReviews: { type: Number, default: 0 }
+  },
+  { _id: false }
+);
+
+const ExperienceSubSchema = new Schema(
+  {
+    title: { type: String, required: true },
+    role: { type: String },
+    venue: { type: String },
+    date: { type: String },
   },
   { _id: false }
 );
@@ -123,7 +138,7 @@ const UserSchema = new Schema<IUser>(
     bio: { type: String },
     location: { type: String },
     skills: { type: [String], default: [] },
-    experience: { type: [String], default: [] },
+    experience: { type: [ExperienceSubSchema], default: [] },
     artistType: { type: [String], default: [] }, // Multi-select
     instagramHandle: { type: String },
 
