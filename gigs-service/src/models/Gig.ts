@@ -28,6 +28,12 @@ export interface IGig extends Document {
   };
 
   genderPreference: 'any' | 'male' | 'female' | 'other';
+
+  heightRequirements?: {
+    male: { min: string; max: string };
+    female: { min: string; max: string };
+  };
+
   physicalRequirements?: string;
 
   // Location
@@ -90,14 +96,14 @@ export interface IGig extends Document {
 
 const GigSchema = new Schema<IGig>({
   title: { type: String, required: true },
-  description: { type: String, required: true },
+  description: { type: String },
 
   type: {
     type: String,
     enum: ['one-time', 'recurring', 'contract'],
     required: true
   },
-  category: { type: String, required: true },
+  category: { type: String, required: false },
   tags: [String],
 
   organizerId: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true }, // Index for finding gigs by organizer
@@ -126,6 +132,18 @@ const GigSchema = new Schema<IGig>({
     enum: ['any', 'male', 'female', 'other'],
     default: 'any'
   },
+
+  heightRequirements: {
+    male: {
+      min: String,
+      max: String
+    },
+    female: {
+      min: String,
+      max: String
+    }
+  },
+
   physicalRequirements: String,
 
   location: {
