@@ -164,8 +164,11 @@ export const getGigById = async (req: Request, res: Response, next: NextFunction
         // Check for viewer context (if artist)
         // Check req.user which is populated by optionalAuth
         const user = (req as AuthRequest).user;
+        console.log('[getGigById] optionalAuth user:', user ? { id: user.id, role: user.role } : 'NO USER (token missing or invalid)');
+        console.log('[getGigById] Authorization header present:', !!req.headers.authorization);
         if (user) {
             const hasApplied = await GigApplication.exists({ gigId: gig._id, artistId: user.id });
+            console.log('[getGigById] hasApplied query result:', hasApplied, 'for artistId:', user.id, 'gigId:', gig._id);
             viewerContext = { hasApplied: !!hasApplied };
         }
 
@@ -275,7 +278,7 @@ export const applyToGig = async (req: AuthRequest, res: Response, next: NextFunc
             session.endSession();
             return sendResponse(res, 400, null, 'Already applied');
         }
-
+        console.log("[GIG APPLY] USER: ", req.user)
         // Create Application
         const artistSnapshot = {
             displayName: req.user.displayName || req.user.name || 'Artist',
@@ -344,7 +347,7 @@ export const getGigApplications = async (req: AuthRequest, res: Response, next: 
         }
 
         const applications = await GigApplication.find({ gigId }).sort({ appliedAt: -1 });
-
+        console.log(applications);
         sendResponse(res, 200, applications);
     } catch (err: any) {
         console.error(err);

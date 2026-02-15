@@ -69,6 +69,11 @@ export const registerWithEmail = async (req: Request, res: Response) => {
       user: {
         id: user.id,
         role: user.role,
+        displayName: user.displayName,
+        email: user.email,
+        profileImageUrl: user.profileImageUrl,
+        primaryCity: user.cached?.primaryCity,
+        kycStatus: user.kycStatus,
       },
     };
 
@@ -112,6 +117,11 @@ export const loginWithEmail = async (req: Request, res: Response) => {
       user: {
         id: user.id,
         role: user.role,
+        displayName: user.displayName,
+        email: user.email,
+        profileImageUrl: user.profileImageUrl,
+        primaryCity: user.cached?.primaryCity,
+        kycStatus: user.kycStatus,
       },
     };
 
@@ -183,6 +193,11 @@ export const verifyOtpAndLogin = async (req: Request, res: Response) => {
       user: {
         id: user.id,
         role: user.role,
+        displayName: user.displayName,
+        email: user.email,
+        profileImageUrl: user.profileImageUrl,
+        primaryCity: user.cached?.primaryCity,
+        kycStatus: user.kycStatus,
       },
     };
 
