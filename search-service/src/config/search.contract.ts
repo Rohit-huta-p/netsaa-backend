@@ -17,6 +17,7 @@ export const PEOPLE_SEARCH_CONTRACT = {
         'blocked',
         'role',
         'cached.primaryCity',
-        'cached.featured'
+        'cached.featured',
+        'settings.privacy.profileVisibility'
     ]
 };

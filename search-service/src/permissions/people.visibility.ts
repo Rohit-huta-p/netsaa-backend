@@ -2,7 +2,7 @@
  * Builds mandatory visibility filters for People.
  * Enforces:
  * - Blocked users exclusion
- * - Privacy flags (if applicable)
+ * - Privacy flags (profileVisibility setting)
  */
 export const buildPeopleVisibility = (context: { blockedUserIds?: string[] } = {}) => {
     const filter: any[] = [];
@@ -18,19 +18,15 @@ export const buildPeopleVisibility = (context: { blockedUserIds?: string[] } = {
         });
     }
 
-    // Mandatory: Only show verified or public profiles if such flags exist.
-    // For Phase 1, we assume all indexed 'users' are public enough to be searched, 
-    // or we rely on an 'isPublic' flag if added later. 
-    // Design doc mentions "Respect privacy flags".
-    // Adding a placeholder for future 'isPublic' check behavior.
-    /*
-    filter.push({
-        term: {
-            path: 'isPublic',
-            value: true
-        }
+    // Exclude private profiles from search results.
+    // Users without a settings field default to 'public' at the schema level,
+    // so only explicitly-set 'private' profiles are excluded.
+    mustNot.push({
+        text: {
+            path: 'settings.privacy.profileVisibility',
+            query: 'private',
+        },
     });
-    */
 
     return { filter, mustNot };
 };
