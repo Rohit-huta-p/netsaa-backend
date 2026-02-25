@@ -143,6 +143,25 @@ class ConnectionsService {
         return connection;
     }
 
+    async removeConnection(connectionId: string, currentUserId: string) {
+        const connection = await Connection.findById(connectionId);
+
+        if (!connection) {
+            throw new Error('Connection not found.');
+        }
+
+        const isParticipant =
+            connection.recipientId.toString() === currentUserId ||
+            connection.requesterId.toString() === currentUserId;
+
+        if (!isParticipant) {
+            throw new Error('You are not authorized to remove this connection.');
+        }
+
+        await Connection.findByIdAndDelete(connectionId);
+
+        return connection;
+    }
 
     async listAcceptedConnections(userId: string) {
         const connections = await Connection.find({

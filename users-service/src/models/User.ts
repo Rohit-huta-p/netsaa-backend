@@ -13,6 +13,43 @@ export interface IUserCached {
   totalReviews?: number;
 }
 
+/* ── Settings sub-interfaces ── */
+
+export interface IPrivacySettings {
+  profileVisibility: 'public' | 'connections_only' | 'private';
+  showEmail: boolean;
+  showPhone: boolean;
+  showLocation: boolean;
+}
+
+export interface INotificationSettings {
+  emailNotifications: boolean;
+  pushNotifications: boolean;
+  allowConnectionRequests: boolean;
+  messages: boolean;
+  gigUpdates: boolean;
+  eventUpdates: boolean;
+  marketing: boolean;
+}
+
+export interface IMessagingSettings {
+  allowMessagesFrom: 'connections' | 'anyone' | 'none';
+  readReceipts: boolean;
+}
+
+export interface IAccountSettings {
+  language: string;
+  timezone: string;
+  currency: string;
+}
+
+export interface IUserSettings {
+  privacy: IPrivacySettings;
+  notifications: INotificationSettings;
+  messaging: IMessagingSettings;
+  account: IAccountSettings;
+}
+
 export interface IUser extends Document {
   displayName?: string;
   email: string;
@@ -33,10 +70,13 @@ export interface IUser extends Document {
     appVersion?: string;
   }>;
   cached?: IUserCached; // denormalized quick-read fields
+  settings?: IUserSettings; // user-configurable preferences
   otp?: string; // legacy support / simple phone auth
   otpExpires?: number | Date; // legacy support
   createdAt: Date;
   updatedAt: Date;
+  deletedAt?: Date;      // soft-delete timestamp
+  deleteReason?: string; // optional reason provided by user
 
   // Registration personalization
   intent?: ('find_gigs' | 'hire_artists' | 'learn_workshops' | 'host_events')[];
@@ -54,6 +94,9 @@ export interface IUser extends Document {
   }>;
   artistType?: string[]; // Multi-select
   instagramHandle?: string;
+  youtubeUrl?: string;
+  spotifyUrl?: string;
+  soundcloudUrl?: string;
 
   // Physical Attributes
   age?: string;
@@ -76,7 +119,7 @@ const DeviceSubSchema = new Schema(
     lastActive: { type: Date },
     appVersion: { type: String }
   },
-  { _id: false }
+  { _id: true }
 );
 
 const UserCachedSchema = new Schema(
@@ -100,6 +143,58 @@ const ExperienceSubSchema = new Schema(
   { _id: false }
 );
 
+/* ── Settings sub-schemas ── */
+
+const PrivacySettingsSchema = new Schema(
+  {
+    profileVisibility: { type: String, enum: ['public', 'connections_only', 'private'], default: 'public' },
+    showEmail: { type: Boolean, default: false },
+    showPhone: { type: Boolean, default: false },
+    showLocation: { type: Boolean, default: true },
+  },
+  { _id: false }
+);
+
+const NotificationSettingsSchema = new Schema(
+  {
+    emailNotifications: { type: Boolean, default: true },
+    pushNotifications: { type: Boolean, default: true },
+    allowConnectionRequests: { type: Boolean, default: true },
+    messages: { type: Boolean, default: true },
+    gigUpdates: { type: Boolean, default: true },
+    eventUpdates: { type: Boolean, default: true },
+    marketing: { type: Boolean, default: false },
+  },
+  { _id: false }
+);
+
+const MessagingSettingsSchema = new Schema(
+  {
+    allowMessagesFrom: { type: String, enum: ['connections', 'anyone', 'none'], default: 'connections' },
+    readReceipts: { type: Boolean, default: true },
+  },
+  { _id: false }
+);
+
+const AccountSettingsSchema = new Schema(
+  {
+    language: { type: String, default: 'en' },
+    timezone: { type: String, default: 'Asia/Kolkata' },
+    currency: { type: String, default: 'INR' },
+  },
+  { _id: false }
+);
+
+const UserSettingsSchema = new Schema(
+  {
+    privacy: { type: PrivacySettingsSchema, default: () => ({}) },
+    notifications: { type: NotificationSettingsSchema, default: () => ({}) },
+    messaging: { type: MessagingSettingsSchema, default: () => ({}) },
+    account: { type: AccountSettingsSchema, default: () => ({}) },
+  },
+  { _id: false }
+);
+
 const UserSchema = new Schema<IUser>(
   {
     email: { type: String, required: true, unique: true, index: true },
@@ -116,11 +211,15 @@ const UserSchema = new Schema<IUser>(
 
     kycStatus: { type: String, enum: ['none', 'pending', 'approved', 'rejected'], default: 'none', index: true },
     blocked: { type: Boolean, default: false },
+    deletedAt: { type: Date, default: null, index: true },
+    deleteReason: { type: String },
     referralCode: { type: String, index: true },
 
     devices: { type: [DeviceSubSchema], default: [] },
 
     cached: { type: UserCachedSchema, default: {} },
+
+    settings: { type: UserSettingsSchema, default: () => ({}) },
 
     // Legacy / simple phone auth fields
     otp: { type: String },
@@ -132,7 +231,7 @@ const UserSchema = new Schema<IUser>(
       enum: ['find_gigs', 'hire_artists', 'learn_workshops', 'host_events'],
       default: []
     },
-    experienceLevel: { type: String, enum: ['beginner', 'intermediate', 'professional'], default: null },
+    experienceLevel: { type: String, enum: ['beginner', 'intermediate', 'professional'], default: undefined },
 
     // Profile Fields
     bio: { type: String },
@@ -141,6 +240,9 @@ const UserSchema = new Schema<IUser>(
     experience: { type: [ExperienceSubSchema], default: [] },
     artistType: { type: [String], default: [] }, // Multi-select
     instagramHandle: { type: String },
+    youtubeUrl: { type: String },
+    spotifyUrl: { type: String },
+    soundcloudUrl: { type: String },
 
     // Physical Attributes
     age: { type: String },

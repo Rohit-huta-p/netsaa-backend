@@ -171,6 +171,33 @@ class ConnectionsController {
             });
         }
     }
+
+    async removeConnection(req: AuthRequest, res: Response) {
+        try {
+            if (!req.user) {
+                return res.status(401).json({ success: false, message: 'Not authorized' });
+            }
+
+            const { connectionId } = req.params;
+            const currentUserId = req.user._id.toString();
+
+            const connection = await ConnectionsService.removeConnection(
+                connectionId,
+                currentUserId
+            );
+
+            return res.status(200).json({
+                success: true,
+                message: 'Connection removed successfully',
+                data: connection,
+            });
+        } catch (error: any) {
+            return res.status(400).json({
+                success: false,
+                message: error.message,
+            });
+        }
+    }
 }
 
 export default new ConnectionsController();

@@ -1,31 +1,12 @@
-import express, { Application } from 'express';
-import cors from 'cors';
 import dotenv from 'dotenv';
 import connectDB from './config/db';
-import authRoutes from './routes/auth';
-import connectionsRoutes from './connections/connections.routes';
-import conversationsRoutes from './connections/conversations.routes';
-import messagesRoutes from './connections/messages.routes';
-import notificationRoutes from './notifications/notification.routes';
-import usersRoutes from './routes/users';
+import app from './app';
 import { initSocketServer } from './sockets';
 import { startNotificationWorker } from './notifications';
 
 dotenv.config();
 
 connectDB();
-
-const app: Application = express();
-
-app.use(cors({ origin: ['http://localhost:8081', 'https://netsaa.onrender.com'], credentials: true, allowedHeaders: ['Content-Type', 'Authorization'], exposedHeaders: ['Content-Type', 'Authorization'], methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'], optionsSuccessStatus: 200 }));
-app.use(express.json());
-
-app.use('/api/auth', authRoutes);
-app.use('/api/users', usersRoutes);
-app.use('/api/connections', connectionsRoutes);
-app.use('/api/conversations', conversationsRoutes);
-app.use('/api/messages', messagesRoutes);
-app.use('/api/notifications', notificationRoutes);
 
 const PORT = process.env.PORT || 5001;
 console.log("Welcome to user's service");
@@ -42,4 +23,3 @@ const server = app.listen(PORT, () => {
         .then(() => console.log('Notification worker started'))
         .catch((err) => console.error('Failed to start notification worker:', err));
 });
-
