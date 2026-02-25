@@ -1,79 +1,105 @@
 import { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import mongoose from 'mongoose';
 import User, { IUser } from '../models/User';
 import Artist from '../models/Artist';
 import Organizer from '../models/Organizer';
 import { AuthRequest } from '../middleware/auth';
+import { registerSchema } from '../validators/register.dto';
 
 export const registerWithEmail = async (req: Request, res: Response) => {
+  /* -------- Validate incoming payload -------- */
+  const parsed = registerSchema.safeParse(req.body);
+
+  if (!parsed.success) {
+    const errors = parsed.error.flatten();
+    return res.status(400).json({ msg: 'Validation failed', errors });
+  }
+
+  const { user: userInput, organizerProfile } = parsed.data;
+
+  /* -------- Check for duplicate email (before opening session) -------- */
+  const existing = await User.findOne({ email: userInput.email });
+  if (existing) {
+    return res.status(400).json({ msg: 'User already exists' });
+  }
+
+  /* -------- Hash password -------- */
+  const salt = await bcrypt.genSalt(10);
+  const passwordHash = await bcrypt.hash(userInput.password, salt);
+
+  const role = userInput.role || 'artist';
+
+  /* ════════════════════════════════════════════════════ */
+  /*  Transaction: User + Role-specific record           */
+  /* ════════════════════════════════════════════════════ */
+  const session = await mongoose.startSession();
+
   try {
-    const {
-      name, email, password, userType, phoneNumber, location,
-      // New personalization fields
-      intent, experienceLevel, instagramHandle, artistType, organizationType
-    } = req.body;
+    let savedUser: any;
 
-    if (!email || !password) {
-      return res.status(400).json({ msg: 'Please provide email and password' });
-    }
+    await session.withTransaction(async () => {
+      /* -------- 1. Create User document -------- */
+      const [user] = await User.create(
+        [
+          {
+            displayName: userInput.displayName,
+            email: userInput.email,
+            phoneNumber: userInput.phoneNumber || null,
+            passwordHash,
+            role,
+            authProvider: 'email',
+            ...(role === 'organizer' && organizerProfile?.intent && {
+              intent: organizerProfile.intent,
+            }),
+          },
+        ],
+        { session }
+      );
 
-    let user = await User.findOne({ email });
-    if (user) {
-      return res.status(400).json({ msg: 'User already exists' });
-    }
+      /* -------- 2. Create role-specific record -------- */
+      if (role === 'artist') {
+        await Artist.create(
+          [
+            {
+              userId: user._id,
+              userName: userInput.displayName,
+            },
+          ],
+          { session }
+        );
+      } else if (role === 'organizer' && organizerProfile) {
+        await Organizer.create(
+          [
+            {
+              userId: user._id,
+              organizerTypeCategory: organizerProfile.organizerTypeCategory,
+              organizationName: organizerProfile.organizationName,
+              organizationType: organizerProfile.organizationType || [],
+              organizationWebsite: organizerProfile.organizationWebsite,
+              logoUrl: organizerProfile.logoUrl,
+              primaryContact: organizerProfile.primaryContact,
+              billingDetails: organizerProfile.billingDetails || {},
+            },
+          ],
+          { session }
+        );
+      }
 
-    const role = userType || 'artist';
-
-    user = new User({
-      displayName: name,
-      email,
-      phoneNumber,
-      location: location || null,
-      passwordHash: password,
-      role,
-      authProvider: 'email',
-      // Personalization fields (all nullable)
-      intent: intent || null,
-      experienceLevel: experienceLevel || null,
-      instagramHandle: instagramHandle || null,
-      artistType: (role === 'artist' && artistType) ? artistType : undefined,
+      savedUser = user;
     });
 
-    const salt = await bcrypt.genSalt(10);
-    user.passwordHash = await bcrypt.hash(password, salt);
-
-    await user.save();
-
-    // Create role-specific records
-    try {
-      if (role === 'artist') {
-        await Artist.create({
-          userId: user._id,
-          userName: name,
-          ...(artistType && { specialities: [artistType] }),
-        });
-      } else if (role === 'organizer') {
-        await Organizer.create({
-          userId: user._id,
-          organizationName: name,
-          ...(organizationType && { organizationType }),
-        });
-      }
-    } catch (roleErr: any) {
-      // Non-blocking: user is created even if role record fails
-      console.error('Failed to create role record:', roleErr.message);
-    }
-
+    /* -------- Issue JWT -------- */
     const payload = {
       user: {
-        id: user.id,
-        role: user.role,
-        displayName: user.displayName,
-        email: user.email,
-        profileImageUrl: user.profileImageUrl,
-        primaryCity: user.cached?.primaryCity,
-        kycStatus: user.kycStatus,
+        id: savedUser._id,
+        role: savedUser.role,
+        displayName: savedUser.displayName,
+        email: savedUser.email,
+        profileImageUrl: savedUser.profileImageUrl,
+        primaryCity: savedUser.cached?.primaryCity,
+        kycStatus: savedUser.kycStatus,
       },
     };
 
@@ -83,13 +109,15 @@ export const registerWithEmail = async (req: Request, res: Response) => {
       { expiresIn: 360000 },
       (err, token) => {
         if (err) throw err;
-        const userObj = user.toObject();
-        res.json({ token, user: { ...userObj, id: user._id } });
+        const userObj = savedUser.toObject();
+        res.json({ token, user: { ...userObj, id: savedUser._id } });
       }
     );
   } catch (err: any) {
-    console.error(err.message);
-    res.status(500).send('Server error');
+    console.error('Registration transaction failed:', err.message);
+    res.status(500).json({ msg: 'Registration failed. Please try again.' });
+  } finally {
+    await session.endSession();
   }
 };
 
@@ -254,6 +282,9 @@ export const updateMe = async (req: AuthRequest, res: Response) => {
       experience,
       artistType,
       instagramHandle,
+      youtubeUrl,
+      spotifyUrl,
+      soundcloudUrl,
       age,
       gender,
       height,
@@ -275,6 +306,9 @@ export const updateMe = async (req: AuthRequest, res: Response) => {
     if (experience !== undefined) updateFields.experience = experience;
     if (artistType !== undefined) updateFields.artistType = artistType;
     if (instagramHandle !== undefined) updateFields.instagramHandle = instagramHandle;
+    if (youtubeUrl !== undefined) updateFields.youtubeUrl = youtubeUrl;
+    if (spotifyUrl !== undefined) updateFields.spotifyUrl = spotifyUrl;
+    if (soundcloudUrl !== undefined) updateFields.soundcloudUrl = soundcloudUrl;
     if (age !== undefined) updateFields.age = age;
     if (gender !== undefined) updateFields.gender = gender;
     if (height !== undefined) updateFields.height = height;

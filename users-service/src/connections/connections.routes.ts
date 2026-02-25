@@ -11,5 +11,6 @@ router.patch('/:connectionId/block', protect, ConnectionsController.blockConnect
 router.get('/requests/sent', protect, ConnectionsController.listSentRequests);
 router.get('/requests', protect, ConnectionsController.listRequests);
 router.get('/', protect, ConnectionsController.listConnections);
+router.delete('/:connectionId', protect, ConnectionsController.removeConnection);
 
 export default router;

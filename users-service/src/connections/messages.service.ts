@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import Message, { IMessage } from './messages.model';
 import Conversation from './conversations.model';
 import Connection from './connections.model'; // Need this to validate connection status
+import User from '../models/User';
 import { notificationEvents } from '../notifications';
 
 class MessagesService {
@@ -57,6 +58,18 @@ class MessagesService {
 
         if (!connection) {
             throw new Error('Cannot send message. Connection is not active.');
+        }
+
+        // 3b. Enforce recipient's messaging preference
+        // - 'connections': already satisfied by step 3 (accepted connection exists)
+        // - 'anyone': no restriction
+        // - 'none': reject outright
+        // NOTE: This does NOT block message history (getMessages) or conversation listing.
+        const recipient = await User.findById(otherParticipantId).select('settings.messaging');
+        const allowFrom = recipient?.settings?.messaging?.allowMessagesFrom ?? 'connections';
+
+        if (allowFrom === 'none') {
+            throw new Error('MESSAGING_BLOCKED');
         }
 
         // 4. Enforce Idempotency

@@ -141,6 +141,7 @@ class NotificationService {
                 .sort({ createdAt: -1 }) // Most recent first
                 .skip(skip)
                 .limit(limit)
+                .populate('actorId', 'displayName profileImageUrl artistType')
                 .lean(), // Use lean for better performance
             Notification.countDocuments(query),
         ]);

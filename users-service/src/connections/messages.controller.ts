@@ -38,9 +38,13 @@ class MessagesController {
                 data: message,
             });
         } catch (error: any) {
-            return res.status(400).json({
+            const status = error.message === 'MESSAGING_BLOCKED' ? 403 : 400;
+            const msg = error.message === 'MESSAGING_BLOCKED'
+                ? 'This user has disabled incoming messages'
+                : error.message;
+            return res.status(status).json({
                 success: false,
-                message: error.message,
+                message: msg,
             });
         }
     }
