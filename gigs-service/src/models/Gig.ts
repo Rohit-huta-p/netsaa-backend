@@ -15,6 +15,12 @@ export interface IGig extends Document {
     organizationName: string;
     profileImageUrl: string;
     rating: number;
+    testimonials?: {
+      text: string;
+      author: string;
+      role?: string;
+      rating?: number;
+    }[];
   };
 
   // Artist Requirements
@@ -111,7 +117,13 @@ const GigSchema = new Schema<IGig>({
     displayName: String,
     organizationName: String,
     profileImageUrl: String,
-    rating: Number
+    rating: Number,
+    testimonials: [{
+      text: String,
+      author: String,
+      role: String,
+      rating: Number
+    }]
   },
 
   artistTypes: { type: [String], required: true, index: true }, // Index for filtering by artist type

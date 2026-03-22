@@ -26,8 +26,12 @@ Contains the logic for the social graph and messaging features. This directory u
   - **Messages**: Logic for individual messages within conversations.
 
 #### `src/controllers/`
-Contains general controllers, primarily for authentication.
+Contains general controllers for various features like auth, security, organizers, and user management.
 - `auth.ts`: Authentication-related request handlers.
+- `danger.controller.ts`: Controllers handling destructive account actions (deactivate, delete, restore).
+- `organizer.controller.ts`: Controller for organizer profile operations.
+- `security.controller.ts`: Security-related controllers (e.g., password change).
+- `users.controller.ts`: General user profile and management controllers.
 
 #### `src/models/`
 Contains the core Mongoose models for the different user types.
@@ -39,6 +43,10 @@ Contains the core Mongoose models for the different user types.
 Contains the main route definitions.
 - `auth.ts`: Authentication routes.
 - `connections.ts`: Entry point for connection-related routes (delegates to `src/connections`).
+- `danger.routes.ts`: Routes for account deactivation, deletion, and restoration.
+- `organizer.routes.ts`: Routes for organizer profiles.
+- `security.routes.ts`: Security and account settings routes.
+- `users.ts`: User management routes.
 
 #### `src/middleware/`
 Express middleware functions (e.g., authentication checks, error handling).

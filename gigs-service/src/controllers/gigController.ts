@@ -128,7 +128,7 @@ export const getGigById = async (req: Request, res: Response, next: NextFunction
 
         // Populate organizer details from User collection if possible
         // We cast to any because we want to check if population worked
-        await gig.populate('organizerId', 'displayName profileImageUrl cached kycStatus');
+        await gig.populate('organizerId', 'displayName profileImageUrl cached kycStatus testimonials');
 
         const organizer = gig.organizerId as any;
 
@@ -141,6 +141,7 @@ export const getGigById = async (req: Request, res: Response, next: NextFunction
                 organizationName: organizerSnapshot.organizationName, // Keep original or fetch if stored in User
                 profileImageUrl: organizer.profileImageUrl || organizerSnapshot.profileImageUrl,
                 rating: organizer.cached?.averageRating || organizerSnapshot.rating,
+                testimonials: organizer.testimonials || organizerSnapshot.testimonials || [],
                 // Add verification status
                 // @ts-ignore - Adding dynamic property not in original schema interface for response
                 isVerified: organizer.kycStatus === 'approved'
@@ -151,19 +152,23 @@ export const getGigById = async (req: Request, res: Response, next: NextFunction
             organizerSnapshot.isVerified = false;
         }
 
-        // Increment views (fire and forget / async)
-        GigStats.findOneAndUpdate(
-            { gigId: gig._id },
-            { $inc: { views: 1 }, $set: { lastViewedAt: new Date() } }
-        ).exec();
+        // Check req.user which is populated by optionalAuth
+        const user = (req as AuthRequest).user;
+        const isOwner = user && organizer && organizer._id && user.id === organizer._id.toString();
+
+        // Increment views (fire and forget / async) if the viewer is not the owner
+        if (!isOwner) {
+            GigStats.findOneAndUpdate(
+                { gigId: gig._id },
+                { $inc: { views: 1 }, $set: { lastViewedAt: new Date() } }
+            ).exec();
+        }
 
         // Fetch Stats
         const stats = await GigStats.findOne({ gigId: gig._id });
 
         let viewerContext = null;
         // Check for viewer context (if artist)
-        // Check req.user which is populated by optionalAuth
-        const user = (req as AuthRequest).user;
         console.log('[getGigById] optionalAuth user:', user ? { id: user.id, role: user.role } : 'NO USER (token missing or invalid)');
         console.log('[getGigById] Authorization header present:', !!req.headers.authorization);
         if (user) {
@@ -202,7 +207,8 @@ export const createGig = async (req: AuthRequest, res: Response, next: NextFunct
             displayName: req.user.displayName || req.user.name || 'Organizer',
             organizationName: req.user.organizationName || 'TBD',
             profileImageUrl: req.user.profileImageUrl || '',
-            rating: 0 // Default or fetch
+            rating: 0, // Default or fetch
+            testimonials: (req.user as any)?.testimonials || []
         };
 
         const newGig = await Gig.create({

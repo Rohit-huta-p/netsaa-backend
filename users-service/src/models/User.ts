@@ -1,9 +1,19 @@
 import mongoose, { Schema, Document, Model } from 'mongoose';
+import { required } from 'zod/v4/core/util.cjs';
 
 /* ---------- TypeScript interfaces ---------- */
 
 export type AuthProvider = 'email' | 'google' | 'apple' | 'phone';
 export type Role = 'artist' | 'organizer' | 'admin';
+export type AccountStatus = 'active' | 'deactivated' | 'scheduled_for_deletion' | 'permanently_deleted';
+export type MarketingConsentSource = 'registration' | 'settings';
+
+export interface IMarketingConsent {
+  accepted: boolean;
+  acceptedAt?: Date | null;
+  source?: MarketingConsentSource;
+  policyVersion?: string;
+}
 
 export interface IUserCached {
   slug?: string;
@@ -71,26 +81,35 @@ export interface IUser extends Document {
   }>;
   cached?: IUserCached; // denormalized quick-read fields
   settings?: IUserSettings; // user-configurable preferences
-  otp?: string; // legacy support / simple phone auth
-  otpExpires?: number | Date; // legacy support
   createdAt: Date;
   updatedAt: Date;
+  accountStatus?: AccountStatus;
   deletedAt?: Date;      // soft-delete timestamp
+  deletionScheduledAt?: Date;
+  originalEmail?: string;
+  mediaPurged?: boolean;
   deleteReason?: string; // optional reason provided by user
+  marketingConsent?: IMarketingConsent;
 
   // Registration personalization
   intent?: ('find_gigs' | 'hire_artists' | 'learn_workshops' | 'host_events')[];
   experienceLevel?: 'beginner' | 'intermediate' | 'professional';
 
   // Profile Fields
+  headline: string;
   bio?: string;
   location?: string;
   skills?: string[];
   experience?: Array<{
-    title: string;
+    title?: string;
     role?: string;
+    projectName?: string;
+    organization?: string;
     venue?: string;
+    location?: string;
+    description?: string;
     date?: string;
+    mediaLink?: string;
   }>;
   artistType?: string[]; // Multi-select
   instagramHandle?: string;
@@ -135,10 +154,15 @@ const UserCachedSchema = new Schema(
 
 const ExperienceSubSchema = new Schema(
   {
-    title: { type: String, required: true },
+    title: { type: String },
     role: { type: String },
+    projectName: { type: String },
+    organization: { type: String },
     venue: { type: String },
-    date: { type: String },
+    location: { type: String },
+    description: { type: String },
+    date: { type: String, required: true },
+    mediaLink: { type: String },
   },
   { _id: false }
 );
@@ -195,6 +219,17 @@ const UserSettingsSchema = new Schema(
   { _id: false }
 );
 
+// Marketing consent – stored at top level for easy querying / compliance exports
+const MarketingConsentSchema = new Schema(
+  {
+    accepted: { type: Boolean, required: true, default: false },
+    acceptedAt: { type: Date, default: null },
+    source: { type: String, enum: ['registration', 'settings'] },
+    policyVersion: { type: String },
+  },
+  { _id: false }
+);
+
 const UserSchema = new Schema<IUser>(
   {
     email: { type: String, required: true, unique: true, index: true },
@@ -211,8 +246,17 @@ const UserSchema = new Schema<IUser>(
 
     kycStatus: { type: String, enum: ['none', 'pending', 'approved', 'rejected'], default: 'none', index: true },
     blocked: { type: Boolean, default: false },
+    accountStatus: {
+      type: String,
+      enum: ['active', 'deactivated', 'scheduled_for_deletion', 'permanently_deleted'],
+      default: 'active'
+    },
     deletedAt: { type: Date, default: null, index: true },
+    deletionScheduledAt: { type: Date },
+    originalEmail: { type: String },
+    mediaPurged: { type: Boolean },
     deleteReason: { type: String },
+    marketingConsent: { type: MarketingConsentSchema, default: () => ({ accepted: false, acceptedAt: null }) },
     referralCode: { type: String, index: true },
 
     devices: { type: [DeviceSubSchema], default: [] },
@@ -220,10 +264,6 @@ const UserSchema = new Schema<IUser>(
     cached: { type: UserCachedSchema, default: {} },
 
     settings: { type: UserSettingsSchema, default: () => ({}) },
-
-    // Legacy / simple phone auth fields
-    otp: { type: String },
-    otpExpires: { type: Date },
 
     // Registration personalization
     intent: {
@@ -234,6 +274,7 @@ const UserSchema = new Schema<IUser>(
     experienceLevel: { type: String, enum: ['beginner', 'intermediate', 'professional'], default: undefined },
 
     // Profile Fields
+    headline: { type: String },
     bio: { type: String },
     location: { type: String },
     skills: { type: [String], default: [] },

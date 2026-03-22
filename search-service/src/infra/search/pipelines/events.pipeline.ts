@@ -161,6 +161,27 @@ export const buildEventsPipeline = (
     return [
         searchStage,
         {
+            $lookup: {
+                from: 'organizers',
+                localField: 'organizerId',
+                foreignField: '_id',
+                as: 'organizerDoc'
+            }
+        },
+        {
+            $lookup: {
+                from: 'users',
+                localField: 'organizerDoc.userId',
+                foreignField: '_id',
+                as: 'organizerUser'
+            }
+        },
+        {
+            $match: {
+                'organizerUser.accountStatus': 'active'
+            }
+        },
+        {
             $addFields: {
                 score: { $meta: 'searchScore' },
             },

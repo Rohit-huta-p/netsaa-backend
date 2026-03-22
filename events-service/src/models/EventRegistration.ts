@@ -1,5 +1,12 @@
 import mongoose, { Schema, Document, Model } from 'mongoose';
 
+export interface IAttendeeInfo {
+    fullName: string;
+    email?: string;
+    phone: string;
+    notes?: string;
+}
+
 export interface IEventRegistration extends Document {
     eventId: mongoose.Types.ObjectId;
     userId: mongoose.Types.ObjectId;
@@ -7,7 +14,18 @@ export interface IEventRegistration extends Document {
     status: 'registered' | 'cancelled' | 'attended' | 'no-show';
     registeredAt: Date;
     quantity: number;
+    attendees?: IAttendeeInfo[];
 }
+
+const attendeeInfoSchema = new Schema(
+    {
+        fullName: { type: String, required: true },
+        email: { type: String },
+        phone: { type: String, required: true },
+        notes: { type: String },
+    },
+    { _id: false }
+);
 
 const eventRegistrationSchema = new Schema<IEventRegistration>({
     eventId: { type: Schema.Types.ObjectId, ref: 'Event', required: true },
@@ -20,6 +38,7 @@ const eventRegistrationSchema = new Schema<IEventRegistration>({
         default: 'registered',
     },
     registeredAt: { type: Date, default: Date.now },
+    attendees: [attendeeInfoSchema],
 });
 
 // Indexes

@@ -201,3 +201,68 @@ export const updateSettings = async (req: AuthRequest, res: Response) => {
         });
     }
 };
+
+/* ═══════════════════════════════════════════════════
+ *  PATCH /users/me/marketing-consent
+ *  Idempotent — safe to call multiple times with the same value.
+ * ═══════════════════════════════════════════════════ */
+
+const CURRENT_POLICY_VERSION = 'v1.0';
+
+export const updateMarketingConsent = async (req: AuthRequest, res: Response) => {
+    try {
+        if (!req.user) {
+            return res.status(401).json({
+                meta: { success: false, message: 'Not authorized' },
+                data: null,
+            });
+        }
+
+        const { accepted } = req.body;
+
+        if (typeof accepted !== 'boolean') {
+            return res.status(400).json({
+                meta: { success: false, message: '`accepted` must be a boolean' },
+                data: null,
+            });
+        }
+
+        const consentUpdate = accepted
+            ? {
+                'marketingConsent.accepted': true,
+                'marketingConsent.acceptedAt': new Date(),
+                'marketingConsent.source': 'settings',
+                'marketingConsent.policyVersion': CURRENT_POLICY_VERSION,
+            }
+            : {
+                'marketingConsent.accepted': false,
+                'marketingConsent.acceptedAt': null,
+                'marketingConsent.source': 'settings',
+                'marketingConsent.policyVersion': CURRENT_POLICY_VERSION,
+            };
+
+        const updatedUser = await User.findByIdAndUpdate(
+            req.user._id,
+            { $set: consentUpdate },
+            { new: true, runValidators: true }
+        ).select('marketingConsent');
+
+        if (!updatedUser) {
+            return res.status(404).json({
+                meta: { success: false, message: 'User not found' },
+                data: null,
+            });
+        }
+
+        return res.json({
+            meta: { success: true },
+            data: { marketingConsent: updatedUser.marketingConsent },
+        });
+    } catch (err: any) {
+        console.error('updateMarketingConsent error:', err.message);
+        return res.status(500).json({
+            meta: { success: false, message: 'Server error' },
+            data: null,
+        });
+    }
+};
