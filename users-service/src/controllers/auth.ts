@@ -1,12 +1,53 @@
 import { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import mongoose from 'mongoose';
 import User, { IUser } from '../models/User';
 import Artist from '../models/Artist';
 import Organizer from '../models/Organizer';
+import PasswordResetSession from '../models/PasswordResetSession';
 import { AuthRequest } from '../middleware/auth';
 import { registerSchema } from '../validators/register.dto';
+import { emailQueue } from '../email/email.queue';
+
+export const checkEmail = async (req: Request, res: Response) => {
+  try {
+    const { email } = req.body;
+    if (!email) {
+      return res.status(400).json({ msg: 'Email is required' });
+    }
+
+    const existing = await User.findOne({ email });
+    if (existing) {
+      return res.json({ exists: true });
+    }
+
+    return res.json({ exists: false });
+  } catch (err: any) {
+    console.error('Check email failed:', err.message);
+    res.status(500).json({ msg: 'Server error while checking email' });
+  }
+};
+
+export const checkPhone = async (req: Request, res: Response) => {
+  try {
+    const { phone } = req.body;
+    if (!phone) {
+      return res.status(400).json({ msg: 'Phone number is required' });
+    }
+
+    const existing = await User.findOne({ phoneNumber: phone });
+    if (existing) {
+      return res.json({ exists: true });
+    }
+
+    return res.json({ exists: false });
+  } catch (err: any) {
+    console.error('Check phone failed:', err.message);
+    res.status(500).json({ msg: 'Server error while checking phone' });
+  }
+};
 
 export const registerWithEmail = async (req: Request, res: Response) => {
   /* -------- Validate incoming payload -------- */
@@ -50,6 +91,14 @@ export const registerWithEmail = async (req: Request, res: Response) => {
             passwordHash,
             role,
             authProvider: 'email',
+            marketingConsent: userInput.marketingConsent
+              ? {
+                accepted: true,
+                acceptedAt: new Date(),
+                source: 'registration' as const,
+                policyVersion: 'v1.0',
+              }
+              : { accepted: false, acceptedAt: null },
             ...(role === 'organizer' && organizerProfile?.intent && {
               intent: organizerProfile.intent,
             }),
@@ -76,10 +125,11 @@ export const registerWithEmail = async (req: Request, res: Response) => {
               userId: user._id,
               organizerTypeCategory: organizerProfile.organizerTypeCategory,
               organizationName: organizerProfile.organizationName,
-              organizationType: organizerProfile.organizationType || [],
+              organizationType: organizerProfile.organizationType,
+              isCustomCategory: organizerProfile.isCustomCategory ?? false,
+              customCategoryLabel: organizerProfile.customCategoryLabel,
               organizationWebsite: organizerProfile.organizationWebsite,
               logoUrl: organizerProfile.logoUrl,
-              primaryContact: organizerProfile.primaryContact,
               billingDetails: organizerProfile.billingDetails || {},
             },
           ],
@@ -89,6 +139,14 @@ export const registerWithEmail = async (req: Request, res: Response) => {
 
       savedUser = user;
     });
+
+    /* -------- Enqueue welcome email (non-blocking) -------- */
+    emailQueue.add('welcome-email', {
+      userId: String(savedUser._id),
+      email: savedUser.email,
+      displayName: savedUser.displayName ?? savedUser.email,
+      role: savedUser.role,
+    }).catch((err) => console.error('[Auth] Failed to enqueue welcome-email:', err.message));
 
     /* -------- Issue JWT -------- */
     const payload = {
@@ -103,13 +161,21 @@ export const registerWithEmail = async (req: Request, res: Response) => {
       },
     };
 
+    const userObj = savedUser.toObject() as any;
+    if (savedUser.role === 'organizer') {
+      const organizerDetails = await Organizer.findOne({ userId: savedUser._id });
+      if (organizerDetails) userObj.organizerDetails = organizerDetails;
+    } else if (savedUser.role === 'artist') {
+      const artistDetails = await Artist.findOne({ userId: savedUser._id });
+      if (artistDetails) userObj.artistDetails = artistDetails;
+    }
+
     jwt.sign(
       payload,
       process.env.JWT_SECRET as string,
       { expiresIn: 360000 },
       (err, token) => {
         if (err) throw err;
-        const userObj = savedUser.toObject();
         res.json({ token, user: { ...userObj, id: savedUser._id } });
       }
     );
@@ -140,6 +206,12 @@ export const loginWithEmail = async (req: Request, res: Response) => {
       return res.status(400).json({ msg: 'Invalid credentials' });
     }
 
+    if (user.accountStatus === 'deactivated') {
+      user.accountStatus = 'active';
+      user.blocked = false;
+      await user.save();
+    }
+
 
     const payload = {
       user: {
@@ -152,6 +224,15 @@ export const loginWithEmail = async (req: Request, res: Response) => {
         kycStatus: user.kycStatus,
       },
     };
+
+    const userObj = user.toObject() as any;
+    if (user.role === 'organizer') {
+      const organizerDetails = await Organizer.findOne({ userId: user._id });
+      if (organizerDetails) userObj.organizerDetails = organizerDetails;
+    } else if (user.role === 'artist') {
+      const artistDetails = await Artist.findOne({ userId: user._id });
+      if (artistDetails) userObj.artistDetails = artistDetails;
+    }
 
     jwt.sign(
       payload,
@@ -160,7 +241,7 @@ export const loginWithEmail = async (req: Request, res: Response) => {
       (err, token) => {
         if (err) throw err;
         console.log("AUTH CONTROLLER: Login successful")
-        res.json({ token, user: { ...user.toObject(), id: user._id } });
+        res.json({ token, user: { ...userObj, id: user._id } });
       }
     );
   } catch (err: any) {
@@ -169,80 +250,7 @@ export const loginWithEmail = async (req: Request, res: Response) => {
   }
 };
 
-export const registerWithPhone = async (req: Request, res: Response) => {
-  try {
-    const { phone, name, userType } = req.body;
 
-    let user = await User.findOne({ phoneNumber: phone });
-    if (user) {
-      return res.status(400).json({ msg: 'User already exists' });
-    }
-
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
-
-    user = new User({
-      displayName: name,
-      phoneNumber: phone,
-      role: userType || 'artist',
-      otp,
-      otpExpires: new Date(Date.now() + 10 * 60 * 1000), // 10 minutes
-      authProvider: 'phone'
-    });
-
-    await user.save();
-
-    console.log(`OTP for ${phone} is ${otp}`);
-
-    res.json({ msg: 'OTP sent to your phone' });
-  } catch (err: any) {
-    console.error(err.message);
-    res.status(500).send('Server error');
-  }
-};
-
-export const verifyOtpAndLogin = async (req: Request, res: Response) => {
-  try {
-    const { phone, otp } = req.body;
-
-    let user = await User.findOne({ phoneNumber: phone });
-    if (!user) {
-      return res.status(400).json({ msg: 'User not found' });
-    }
-
-    if (user.otp !== otp || (user.otpExpires && user.otpExpires < new Date())) {
-      return res.status(400).json({ msg: 'Invalid or expired OTP' });
-    }
-
-    user.otp = undefined;
-    user.otpExpires = undefined;
-    await user.save();
-
-    const payload = {
-      user: {
-        id: user.id,
-        role: user.role,
-        displayName: user.displayName,
-        email: user.email,
-        profileImageUrl: user.profileImageUrl,
-        primaryCity: user.cached?.primaryCity,
-        kycStatus: user.kycStatus,
-      },
-    };
-
-    jwt.sign(
-      payload,
-      process.env.JWT_SECRET as string,
-      { expiresIn: 360000 },
-      (err, token) => {
-        if (err) throw err;
-        res.json({ token });
-      }
-    );
-  } catch (err: any) {
-    console.error(err.message);
-    res.status(500).send('Server error');
-  }
-};
 
 export const getMe = async (req: AuthRequest, res: Response) => {
   try {
@@ -253,7 +261,21 @@ export const getMe = async (req: AuthRequest, res: Response) => {
     // Or fetch explicitly if needed (though middleware did that).
     // The middleware attached the full user document.
     const user = await User.findById(req.user.id).select('-passwordHash');
-    res.json(user);
+    if (!user) {
+      return res.status(404).json({ msg: 'User not found' });
+    }
+
+    const userObj = user.toObject() as any;
+    if (user.role === 'organizer') {
+      const organizerDetails = await Organizer.findOne({ userId: user._id });
+      if (organizerDetails) userObj.organizerDetails = organizerDetails;
+
+    } else if (user.role === 'artist') {
+      const artistDetails = await Artist.findOne({ userId: user._id });
+      if (artistDetails) userObj.artistDetails = artistDetails;
+    }
+    console.log("AUTH CONTROLLER: getMe userObj:", userObj);
+    res.json(userObj);
   } catch (err: any) {
     console.error(err.message);
     res.status(500).send('Server error');
@@ -288,7 +310,8 @@ export const updateMe = async (req: AuthRequest, res: Response) => {
       age,
       gender,
       height,
-      skinTone
+      skinTone,
+      headline
     } = req.body;
 
     // Build update object
@@ -313,6 +336,7 @@ export const updateMe = async (req: AuthRequest, res: Response) => {
     if (gender !== undefined) updateFields.gender = gender;
     if (height !== undefined) updateFields.height = height;
     if (skinTone !== undefined) updateFields.skinTone = skinTone;
+    if (headline !== undefined) updateFields.headline = headline;
 
     console.log("AUTH CONTROLLER: updating fields:", updateFields);
 
@@ -328,5 +352,130 @@ export const updateMe = async (req: AuthRequest, res: Response) => {
     console.error("AUTH CONTROLLER UPDATE ERROR:", err.message);
     console.error(err);
     res.status(500).send('Server error');
+  }
+};
+
+/* ════════════════════════════════════════════════════════════ */
+/*  PASSWORD RESET                                             */
+/* ════════════════════════════════════════════════════════════ */
+
+/**
+ * @desc    Request a password-reset code via email
+ * @route   POST /auth/forgot-password
+ * @access  Public
+ */
+export const forgotPassword = async (req: Request, res: Response) => {
+  try {
+    const { email } = req.body;
+    if (!email) {
+      return res.status(400).json({ msg: 'Email is required' });
+    }
+
+    // Always return success to prevent email enumeration
+    const user = await User.findOne({ email });
+    if (!user) {
+      console.log(`[forgotPassword] No account for email: ${email} — returning generic success`);
+      return res.json({ msg: 'If an account exists, a reset code has been sent.' });
+    }
+
+    // Rate limit: max 3 active sessions per email in the last 10 minutes
+    const recentCount = await PasswordResetSession.countDocuments({
+      email,
+      createdAt: { $gte: new Date(Date.now() - 10 * 60 * 1000) },
+    });
+    if (recentCount >= 3) {
+      return res.status(429).json({ msg: 'Too many reset requests. Please wait 10 minutes.' });
+    }
+
+    // Generate 6-digit code and hash it
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    const codeHash = crypto.createHash('sha256').update(code).digest('hex');
+
+    // Create reset session (10-minute expiry)
+    await PasswordResetSession.create({
+      email,
+      codeHash,
+      expiresAt: new Date(Date.now() + 10 * 60 * 1000),
+      attempts: 0,
+      isUsed: false,
+    });
+
+    // Enqueue password-reset email
+    emailQueue.add('password-reset', {
+      userId: String(user._id),
+      email: user.email,
+      displayName: user.displayName ?? user.email,
+      code,
+    }).catch((err) => console.error('[Auth] Failed to enqueue password-reset email:', err.message));
+
+    console.log(`[forgotPassword] Reset code enqueued for ${email}`);
+    return res.json({ msg: 'If an account exists, a reset code has been sent.' });
+  } catch (err: any) {
+    console.error('[forgotPassword] Error:', err.message);
+    res.status(500).json({ msg: 'Server error' });
+  }
+};
+
+/**
+ * @desc    Reset password using the emailed code
+ * @route   POST /auth/reset-password
+ * @access  Public
+ */
+export const resetPassword = async (req: Request, res: Response) => {
+  try {
+    const { email, code, newPassword } = req.body;
+
+    if (!email || !code || !newPassword) {
+      return res.status(400).json({ msg: 'Email, code, and new password are required.' });
+    }
+
+    if (newPassword.length < 8) {
+      return res.status(400).json({ msg: 'Password must be at least 8 characters.' });
+    }
+
+    // Find the latest unused session
+    const session = await PasswordResetSession.findOne({
+      email,
+      isUsed: false,
+    }).sort({ createdAt: -1 });
+
+    if (!session) {
+      return res.status(400).json({ msg: 'No active reset session found. Please request a new code.' });
+    }
+
+    if (session.expiresAt < new Date()) {
+      return res.status(400).json({ msg: 'Reset code has expired. Please request a new one.' });
+    }
+
+    if (session.attempts >= 5) {
+      return res.status(429).json({ msg: 'Too many attempts. Please request a new code.' });
+    }
+
+    // Hash incoming code and compare
+    const incomingHash = crypto.createHash('sha256').update(code.toString()).digest('hex');
+    if (incomingHash !== session.codeHash) {
+      session.attempts += 1;
+      await session.save();
+      return res.status(400).json({ msg: 'Invalid code. Please try again.' });
+    }
+
+    // Mark session as used
+    session.isUsed = true;
+    await session.save();
+
+    // Hash the new password and update user
+    const salt = await bcrypt.genSalt(10);
+    const passwordHash = await bcrypt.hash(newPassword, salt);
+
+    await User.findOneAndUpdate(
+      { email },
+      { $set: { passwordHash } }
+    );
+
+    console.log(`[resetPassword] Password updated for ${email}`);
+    return res.json({ msg: 'Password has been reset successfully. You can now sign in.' });
+  } catch (err: any) {
+    console.error('[resetPassword] Error:', err.message);
+    res.status(500).json({ msg: 'Server error' });
   }
 };

@@ -34,6 +34,14 @@ export function buildPeoplePipeline({
         }
     });
 
+    // Only show active accounts
+    mustClauses.push({
+        text: {
+            path: 'accountStatus',
+            query: 'active'
+        }
+    });
+
     // Role filter (default = artist search)
     // Role filter (default = artist search)
     // Use 'text' instead of 'equals' because dynamic mapping indexes strings as text, not tokens.

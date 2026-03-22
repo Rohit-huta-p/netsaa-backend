@@ -56,11 +56,12 @@ export interface IVerification {
 export interface IOrganizer extends Document {
     userId: mongoose.Types.ObjectId; // link to users._id
     organizationName?: string;
-    organizationType?: string[]; // Multi-select
+    organizationType?: string;          // 'individual' | 'company' — extensible string
+    isCustomCategory?: boolean;          // true → customCategoryLabel is used
+    customCategoryLabel?: string;        // free-text label when isCustomCategory
     organizationWebsite?: string;
     organizerTypeCategory: OrganizerTypeCategory;
     logoUrl?: string;
-    primaryContact: IPrimaryContact;
     billingDetails?: IBillingDetails;
     organizerStats?: IOrganizerStats;
     verification: IVerification;
@@ -78,16 +79,6 @@ const OrganizerStatsSchema = new Schema(
         averageRating: { type: Number, default: 0 },
         totalReviews: { type: Number, default: 0 },
         responseRate: { type: Number, default: 0 }
-    },
-    { _id: false }
-);
-
-const PrimaryContactSchema = new Schema(
-    {
-        fullName: { type: String, required: true },
-        designation: { type: String },
-        phone: { type: String, required: true },
-        email: { type: String, required: true }
     },
     { _id: false }
 );
@@ -125,7 +116,9 @@ const OrganizerSchema = new Schema<IOrganizer>(
     {
         userId: { type: Schema.Types.ObjectId, ref: 'User', required: true, unique: true, index: true },
         organizationName: { type: String, index: true },
-        organizationType: { type: [String], default: [] }, // Multi-select
+        organizationType: { type: String },                  // 'individual' | 'company'
+        isCustomCategory: { type: Boolean, default: false },
+        customCategoryLabel: { type: String },
         organizationWebsite: { type: String },
         organizerTypeCategory: {
             type: String,
@@ -133,7 +126,6 @@ const OrganizerSchema = new Schema<IOrganizer>(
             required: true
         },
         logoUrl: { type: String },
-        primaryContact: { type: PrimaryContactSchema, required: true },
         billingDetails: { type: BillingDetailsSchema, default: {} },
         organizerStats: { type: OrganizerStatsSchema, default: {} },
         verification: { type: VerificationSchema, default: () => ({}) }

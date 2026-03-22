@@ -1,5 +1,7 @@
 import { Request, Response } from 'express';
 import User from '../models/User';
+import Organizer from '../models/Organizer';
+import Artist from '../models/Artist';
 
 export const getUserById = async (req: Request, res: Response) => {
     try {
@@ -16,7 +18,16 @@ export const getUserById = async (req: Request, res: Response) => {
             return res.status(404).json({ msg: 'User not found' });
         }
 
-        res.json(user);
+        const userObj = user.toObject() as any;
+        if (user.role === 'organizer') {
+            const organizerDetails = await Organizer.findOne({ userId: user._id });
+            if (organizerDetails) userObj.organizerDetails = organizerDetails;
+        } else if (user.role === 'artist') {
+            const artistDetails = await Artist.findOne({ userId: user._id });
+            if (artistDetails) userObj.artistDetails = artistDetails;
+        }
+
+        res.json(userObj);
     } catch (err: any) {
         console.error(err.message);
         if (err.kind === 'ObjectId') {

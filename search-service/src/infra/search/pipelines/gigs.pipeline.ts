@@ -191,6 +191,19 @@ export const buildGigsPipeline = (
     return [
         searchStage,
         {
+            $lookup: {
+                from: 'users',
+                localField: 'organizerId',
+                foreignField: '_id',
+                as: 'organizer'
+            }
+        },
+        {
+            $match: {
+                'organizer.accountStatus': 'active'
+            }
+        },
+        {
             $addFields: {
                 score: { $meta: 'searchScore' },
             },

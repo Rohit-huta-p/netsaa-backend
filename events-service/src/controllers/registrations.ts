@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import EventRegistration from '../models/EventRegistration';
+import EventTicket from '../models/EventTicket';
 import Event from '../models/Event';
 import { AuthRequest } from '../middleware/auth';
 
@@ -9,7 +10,7 @@ import { AuthRequest } from '../middleware/auth';
 export const registerForEvent = async (req: Request, res: Response, next: NextFunction) => {
     try {
         // TODO: Verify ticket availability and process payment (mock for now)
-        const { ticketTypeId, quantity } = req.body; // Using quantity is tricky if we need individual records
+        const { ticketTypeId, quantity, attendeeInfo } = req.body; // Using quantity is tricky if we need individual records
         // Assume quantity=1 for simple registration or loop
         // But schema `event_registrations` is one document per user per event.
         // So likely just creating one registration.
@@ -17,8 +18,9 @@ export const registerForEvent = async (req: Request, res: Response, next: NextFu
         const registration = await EventRegistration.create({
             eventId: req.params.id,
             userId: req.body.userId, // Should come from auth middleware
-            ticketTypeId: ticketTypeId,
+            ticketTypeId: `ticketTypeId`,
             status: 'registered',
+            ...(attendeeInfo && { attendees: attendeeInfo }),
         });
 
         res.status(201).json({
@@ -40,12 +42,30 @@ export const registerForEvent = async (req: Request, res: Response, next: NextFu
 // @access  Private (Organizer)
 export const getEventRegistrations = async (req: Request, res: Response, next: NextFunction) => {
     try {
+        const page = parseInt(req.query.page as string, 10) || 1;
+        const limit = parseInt(req.query.limit as string, 10) || 20;
+        const skip = (page - 1) * limit;
+
+        const total = await EventRegistration.countDocuments({ eventId: req.params.id });
+
         const registrations = await EventRegistration.find({ eventId: req.params.id })
             .populate('userId', 'displayName email phoneNumber') // Populate user details
-            .populate('ticketTypeId', 'name price');
+            .populate('ticketTypeId', 'name price')
+            .sort({ registeredAt: -1 })
+            .skip(skip)
+            .limit(limit);
 
         res.status(200).json({
-            meta: { status: 200, message: 'OK' },
+            meta: {
+                status: 200,
+                message: 'OK',
+                pagination: {
+                    page,
+                    limit,
+                    total,
+                    pages: Math.ceil(total / limit)
+                }
+            },
             data: registrations,
             errors: [],
         });
@@ -58,30 +78,57 @@ export const getEventRegistrations = async (req: Request, res: Response, next: N
     }
 };
 
-// @desc    Get user's registrations
+// @desc    Get user's registrations (with tickets)
 // @route   GET /api/grow/users/me/event-registrations
+// @query   ?status=registered (optional filter)
 // @access  Private
 export const getUserRegistrations = async (req: Request, res: Response, next: NextFunction) => {
     try {
-        // Assuming req.query.userId or similar for now, usually req.user._id
-        const userId = (req as AuthRequest).user.id;
+        console.log("Hello");
+        const user = (req as AuthRequest).user;
+        const userId = user?.id || user?._id || user?.userId;
+        console.log("[getUserRegistrations] UserID: ", userId);
+
         if (!userId) {
             return res.status(400).json({
                 meta: { status: 400, message: 'User ID required' },
                 data: null,
                 errors: [{ message: 'User ID required' }]
-            })
+            });
         }
 
-        const registrations = await EventRegistration.find({ userId: userId })
-            .populate('eventId', 'title schedule location')
+        // Build query — optionally filter by status
+        const filter: any = { userId };
+        if (req.query.status && typeof req.query.status === 'string') {
+            filter.status = req.query.status;
+        }
+        console.log(`[getUserRegistrations] Querying for userId: ${userId}, token user._id: ${(req as AuthRequest).user?.id}, filter:`, filter);
+
+        const registrations = await EventRegistration.find(filter)
+            .populate('eventId', 'title schedule location category registrationDeadline status')
             .populate('ticketTypeId', 'name price')
+            .sort({ registeredAt: -1 })
             .lean();
+        console.log("[getUserRegistrations] Registrations: ", registrations);
+        // Collect all registration IDs to batch-fetch tickets
+        const registrationIds = registrations.map((r: any) => r._id);
+        const allTickets = await EventTicket.find({ registrationId: { $in: registrationIds } })
+            .select('ticketId registrationId attendeeName qrCode status checkedInAt')
+            .lean();
+
+        // Group tickets by registrationId
+        const ticketsByReg: Record<string, any[]> = {};
+        for (const t of allTickets) {
+            const key = t.registrationId.toString();
+            if (!ticketsByReg[key]) ticketsByReg[key] = [];
+            ticketsByReg[key].push(t);
+        }
 
         const formattedRegistrations = registrations.map((reg: any) => ({
             ...reg,
-            eventDetails: reg.eventId,
-            eventId: reg.eventId?._id
+            event: reg.eventId,            // populated event object
+            eventId: reg.eventId?._id,      // keep raw ObjectId string
+            tickets: ticketsByReg[reg._id.toString()] || [],
         }));
 
         res.status(200).json({
@@ -90,6 +137,7 @@ export const getUserRegistrations = async (req: Request, res: Response, next: Ne
             errors: [],
         });
     } catch (err) {
+        console.error('[getUserRegistrations] Error:', err);
         res.status(500).json({
             meta: { status: 500, message: 'Server Error' },
             data: null,

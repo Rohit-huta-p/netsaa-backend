@@ -1,7 +1,10 @@
 import { Request, Response } from 'express';
 import mongoose from 'mongoose';
+import { v4 as uuidv4 } from 'uuid';
+import QRCode from 'qrcode';
 import EventReservation from '../models/EventReservation';
 import EventRegistration from '../models/EventRegistration';
+import EventTicket from '../models/EventTicket';
 import EventStats from '../models/EventStats';
 import Event from '../models/Event';
 
@@ -66,6 +69,19 @@ export const createPaymentIntent = async (req: Request, res: Response) => {
     }
 };
 
+interface FinalizeRegistrationRequest extends Request {
+    body: {
+        reservationId: string;
+        paymentIntentId?: string;
+        attendeeInfo?: {
+            fullName: string;
+            email?: string;
+            phone: string;
+            notes?: string;
+        }[];
+    };
+}
+
 /**
  * Finalize Registration.
  * - For FREE events: call directly with reservationId.
@@ -73,13 +89,15 @@ export const createPaymentIntent = async (req: Request, res: Response) => {
  * 
  * Verifies reservation validity and converts to EventRegistration.
  */
-export const finalizeRegistration = async (req: Request, res: Response) => {
+export const finalizeRegistration = async (req: FinalizeRegistrationRequest, res: Response) => {
     const session = await mongoose.startSession();
     session.startTransaction();
 
     try {
-        const { reservationId, paymentIntentId } = req.body;
+        const { reservationId, paymentIntentId, attendeeInfo } = req.body;
         const userId = (req as any).user.id;
+
+        console.log(`[finalizeRegistration] Payload received for reservationId ${reservationId}:`, JSON.stringify(req.body, null, 2));
 
         const reservation = await EventReservation.findOne({ _id: reservationId, userId }).session(session);
 
@@ -129,10 +147,39 @@ export const finalizeRegistration = async (req: Request, res: Response) => {
             ticketTypeId: reservation.ticketTypeId,
             quantity: reservation.quantity,
             status: 'registered',
-            registeredAt: new Date()
+            registeredAt: new Date(),
+            ...(attendeeInfo && { attendees: attendeeInfo })
         }], { session });
 
-        // 3. Update Stats
+        // 3. Generate Tickets for each attendee
+        const attendees = registration.attendees || [];
+        const ticketDocs = await Promise.all(
+            attendees.map(async (attendee) => {
+                const ticketId = uuidv4();
+                const qrPayload = JSON.stringify({
+                    ticketId,
+                    eventId: reservation.eventId.toString(),
+                    userId: reservation.userId.toString(),
+                });
+                const qrCode = await QRCode.toDataURL(qrPayload);
+
+                return {
+                    ticketId,
+                    eventId: reservation.eventId,
+                    registrationId: registration._id,
+                    userId: reservation.userId,
+                    attendeeName: attendee.fullName,
+                    qrCode,
+                    status: 'issued' as const,
+                };
+            })
+        );
+
+        const tickets = ticketDocs.length > 0
+            ? await EventTicket.create(ticketDocs, { session })
+            : [];
+
+        // 4. Update Stats
         await EventStats.findOneAndUpdate(
             { eventId: reservation.eventId },
             { $inc: { registrations: reservation.quantity } },
@@ -143,7 +190,7 @@ export const finalizeRegistration = async (req: Request, res: Response) => {
 
         res.status(201).json({
             success: true,
-            data: registration,
+            data: { registration, tickets },
             message: 'Registration successful'
         });
 
