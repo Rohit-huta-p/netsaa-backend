@@ -1,0 +1,58 @@
+/**
+ * State Machine for Transactions and Contracts
+ * From System Design v2 (lines 521-542)
+ *
+ * Validates that a status transition is legal.
+ * Throws an error on invalid transition.
+ */
+
+export type TransactionStatus = 'created' | 'paid' | 'confirmed' | 'completed' | 'disputed' | 'refunded' | 'failed';
+export type OfflineStatus = 'recorded' | 'confirmed' | 'disputed' | 'expired' | 'completed';
+export type ContractStatus = 'draft' | 'sent' | 'accepted' | 'active' | 'performed' | 'completed' | 'declined' | 'disputed' | 'cancelled' | 'breached';
+
+// On-platform transaction transitions
+const TRANSACTION_TRANSITIONS: Record<string, string[]> = {
+    created: ['paid', 'failed'],
+    paid: ['confirmed', 'disputed'],
+    confirmed: ['completed'],
+    disputed: ['completed', 'refunded'],
+    failed: ['created'], // retry
+};
+
+// Offline transaction transitions
+const OFFLINE_TRANSITIONS: Record<string, string[]> = {
+    recorded: ['confirmed', 'disputed', 'expired'],
+    confirmed: ['completed'],
+    disputed: ['confirmed', 'completed'],
+};
+
+// Contract lifecycle transitions
+const CONTRACT_TRANSITIONS: Record<string, string[]> = {
+    draft: ['sent'],
+    sent: ['accepted', 'declined'],
+    accepted: ['active'],
+    active: ['performed', 'disputed', 'cancelled'],
+    performed: ['completed'],
+    disputed: ['completed', 'breached'],
+};
+
+export function validateTransition(
+    current: string,
+    next: string,
+    type: 'transaction' | 'offline' | 'contract'
+): boolean {
+    const map = type === 'transaction'
+        ? TRANSACTION_TRANSITIONS
+        : type === 'offline'
+            ? OFFLINE_TRANSITIONS
+            : CONTRACT_TRANSITIONS;
+
+    const allowed = map[current];
+    if (!allowed) {
+        throw new Error(`Invalid current status: ${current} for type: ${type}`);
+    }
+    if (!allowed.includes(next)) {
+        throw new Error(`Invalid transition: ${current} -> ${next} for type: ${type}. Allowed: ${allowed.join(', ')}`);
+    }
+    return true;
+}
