@@ -4,9 +4,23 @@ import { required } from 'zod/v4/core/util.cjs';
 /* ---------- TypeScript interfaces ---------- */
 
 export type AuthProvider = 'email' | 'google' | 'apple' | 'phone';
-export type Role = 'artist' | 'organizer' | 'admin';
+export type TrustTier = 'new' | 'rising' | 'trusted' | 'verified';
 export type AccountStatus = 'active' | 'deactivated' | 'scheduled_for_deletion' | 'permanently_deleted';
 export type MarketingConsentSource = 'registration' | 'settings';
+export type GuardianStatus = 'none' | 'pending' | 'confirmed' | 'revoked';
+export type GuardianRelationship = 'parent' | 'legal_guardian' | 'other';
+
+export interface IGuardian {
+  name: string;
+  phone: string;
+  email?: string;
+  confirmedAt?: Date;
+  confirmedFromIp?: string;
+  confirmedFromDeviceId?: string;
+  invitedAt?: Date;
+  inviteToken?: string;
+  relationship?: GuardianRelationship;
+}
 
 export interface IMarketingConsent {
   accepted: boolean;
@@ -60,6 +74,16 @@ export interface IUserSettings {
   account: IAccountSettings;
 }
 
+export interface IUserContext {
+  enabled: boolean;
+  profileComplete: boolean;
+}
+
+export interface IUserContexts {
+  artist: IUserContext;
+  hirer: IUserContext;
+}
+
 export interface IUser extends Document {
   displayName?: string;
   email: string;
@@ -68,9 +92,21 @@ export interface IUser extends Document {
   passwordHash?: string; // optional (SSO flows)
   emailVerifiedAt?: Date;
   phoneVerifiedAt?: Date;
-  role: Role;
+
+  // Two-context model (PRD v4): replaces fixed 'role' field
+  // Every user can be BOTH artist and hirer. Context is page-based.
+  contexts: IUserContexts;
+  isAdmin: boolean;
+
   profileImageUrl?: string; // small avatar
-  kycStatus?: 'none' | 'pending' | 'approved' | 'rejected';
+
+  // Trust Engine (PRD v4)
+  trustScore: number;         // 0-100
+  trustTier: TrustTier;       // derived from trustScore
+  profileCompletionScore: number; // 0-100
+
+  // KYC levels (PRD v4): 0=unverified, 1=phone+email, 2=ID verified, 3=enhanced
+  kycLevel: number;
   blocked?: boolean;
   referralCode?: string;
   devices?: Array<{
@@ -90,6 +126,13 @@ export interface IUser extends Document {
   mediaPurged?: boolean;
   deleteReason?: string; // optional reason provided by user
   marketingConsent?: IMarketingConsent;
+
+  // Age-gate fields (PRD v4 §8.1.1 / §8.3.2)
+  dateOfBirth?: Date;
+  isMinor: boolean;
+  ageYears?: number;          // computed integer years from dateOfBirth; see pre-save hook
+  guardian?: IGuardian;
+  guardianStatus?: GuardianStatus;
 
   // Registration personalization
   intent?: ('find_gigs' | 'hire_artists' | 'learn_workshops' | 'host_events')[];
@@ -230,6 +273,22 @@ const MarketingConsentSchema = new Schema(
   { _id: false }
 );
 
+// Guardian sub-schema — only populated when isMinor is true
+const GuardianSubSchema = new Schema(
+  {
+    name:                  { type: String, required: true, maxlength: 100 },
+    phone:                 { type: String, required: true, maxlength: 20 },
+    email:                 { type: String },
+    confirmedAt:           { type: Date },
+    confirmedFromIp:       { type: String, maxlength: 64 },
+    confirmedFromDeviceId: { type: String, maxlength: 256 },
+    invitedAt:             { type: Date },
+    inviteToken:           { type: String, maxlength: 256 },
+    relationship:          { type: String, enum: ['parent', 'legal_guardian', 'other'] },
+  },
+  { _id: false }
+);
+
 const UserSchema = new Schema<IUser>(
   {
     email: { type: String, required: true, unique: true, index: true },
@@ -240,11 +299,29 @@ const UserSchema = new Schema<IUser>(
     emailVerifiedAt: { type: Date },
     phoneVerifiedAt: { type: Date },
 
-    role: { type: String, enum: ['artist', 'organizer', 'admin'], required: true, index: true },
+    // Two-context model: every user can be both artist and hirer
+    contexts: {
+      artist: {
+        enabled: { type: Boolean, default: true },
+        profileComplete: { type: Boolean, default: false },
+      },
+      hirer: {
+        enabled: { type: Boolean, default: true },
+        profileComplete: { type: Boolean, default: false },
+      },
+    },
+    isAdmin: { type: Boolean, default: false, index: true },
+
     displayName: { type: String },
     profileImageUrl: { type: String },
 
-    kycStatus: { type: String, enum: ['none', 'pending', 'approved', 'rejected'], default: 'none', index: true },
+    // Trust Engine
+    trustScore: { type: Number, default: 0, index: true },
+    trustTier: { type: String, enum: ['new', 'rising', 'trusted', 'verified'], default: 'new', index: true },
+    profileCompletionScore: { type: Number, default: 0 },
+
+    // KYC levels: 0=unverified, 1=phone+email, 2=ID, 3=enhanced
+    kycLevel: { type: Number, default: 0, index: true },
     blocked: { type: Boolean, default: false },
     accountStatus: {
       type: String,
@@ -257,6 +334,18 @@ const UserSchema = new Schema<IUser>(
     mediaPurged: { type: Boolean },
     deleteReason: { type: String },
     marketingConsent: { type: MarketingConsentSchema, default: () => ({ accepted: false, acceptedAt: null }) },
+
+    // Age-gate fields (PRD v4 §8.1.1 / §8.3.2)
+    dateOfBirth:    { type: Date },
+    isMinor:        { type: Boolean, default: false },
+    ageYears:       { type: Number },
+    guardian:       { type: GuardianSubSchema },
+    guardianStatus: {
+      type:    String,
+      enum:    ['none', 'pending', 'confirmed', 'revoked'],
+      default: 'none',
+    },
+
     referralCode: { type: String, index: true },
 
     devices: { type: [DeviceSubSchema], default: [] },
@@ -299,10 +388,36 @@ const UserSchema = new Schema<IUser>(
   { timestamps: true }
 );
 
-// Suggested compound indexes for users (fast discovery queries)
-UserSchema.index({ role: 1, 'cached.primaryCity': 1 });
+// Pre-save hook: compute ageYears + isMinor from dateOfBirth
+UserSchema.pre('save', function (next) {
+  if (this.isNew || this.isModified('dateOfBirth')) {
+    if (this.dateOfBirth instanceof Date) {
+      const MS_PER_YEAR = 365.25 * 24 * 60 * 60 * 1000;
+      const computed = Math.floor((Date.now() - this.dateOfBirth.getTime()) / MS_PER_YEAR);
+      this.ageYears = computed;
+      this.isMinor  = computed < 18;
+
+      // New minor needs guardian flow — only advance from 'none' to 'pending'
+      if (this.isMinor && (!this.guardianStatus || this.guardianStatus === 'none')) {
+        this.guardianStatus = 'pending';
+      }
+    } else {
+      // No DOB → default: not a minor
+      this.isMinor = false;
+    }
+  }
+  next();
+});
+
+// Compound indexes for discovery queries (PRD v4 two-context model)
+UserSchema.index({ trustTier: 1, 'cached.primaryCity': 1 });
 UserSchema.index({ 'cached.featured': 1, 'cached.averageRating': -1 });
 UserSchema.index({ referralCode: 1 });
+UserSchema.index({ trustScore: -1 });
+
+// Age-gate indexes (PRD v4 §8.3.2)
+UserSchema.index({ dateOfBirth: 1 });                    // daily cron: flip isMinor when user turns 18
+UserSchema.index({ guardianStatus: 1, isMinor: 1 });     // ops query: pending-guardian minors
 
 const User: Model<IUser> = mongoose.model<IUser>('User', UserSchema);
 
