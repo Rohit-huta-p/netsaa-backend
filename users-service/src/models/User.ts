@@ -10,6 +10,7 @@ export type MarketingConsentSource = 'registration' | 'settings';
 export type GuardianStatus = 'none' | 'pending' | 'confirmed' | 'revoked';
 export type GuardianRelationship = 'parent' | 'legal_guardian' | 'other';
 
+// TODO(cleanup): consider extracting IGuardian + GuardianSubSchema to src/models/sub/Guardian.ts if this file exceeds 500 lines.
 export interface IGuardian {
   name: string;
   phone: string;
@@ -18,7 +19,15 @@ export interface IGuardian {
   confirmedFromIp?: string;
   confirmedFromDeviceId?: string;
   invitedAt?: Date;
-  inviteToken?: string;
+  /**
+   * SHA-256 hash of the one-time invite token (hex-encoded).
+   * NEVER store the raw token here. Generating code must:
+   *   1. Create a cryptographically random token (e.g. crypto.randomBytes(32).toString('hex')).
+   *   2. Return the raw token to the caller (sent to guardian via SMS/email).
+   *   3. Store only createHash('sha256').update(rawToken).digest('hex') here.
+   * Verification: SHA-256 the supplied token and compare to this field.
+   */
+  inviteTokenHash?: string;
   relationship?: GuardianRelationship;
 }
 
@@ -283,7 +292,8 @@ const GuardianSubSchema = new Schema(
     confirmedFromIp:       { type: String, maxlength: 64 },
     confirmedFromDeviceId: { type: String, maxlength: 256 },
     invitedAt:             { type: Date },
-    inviteToken:           { type: String, maxlength: 256 },
+    // SHA-256 hex hash of the raw invite token — never store plaintext. See IGuardian.inviteTokenHash.
+    inviteTokenHash:       { type: String, maxlength: 64 },
     relationship:          { type: String, enum: ['parent', 'legal_guardian', 'other'] },
   },
   { _id: false }
@@ -336,7 +346,20 @@ const UserSchema = new Schema<IUser>(
     marketingConsent: { type: MarketingConsentSchema, default: () => ({ accepted: false, acceptedAt: null }) },
 
     // Age-gate fields (PRD v4 §8.1.1 / §8.3.2)
-    dateOfBirth:    { type: Date },
+    dateOfBirth: {
+      type: Date,
+      validate: {
+        validator: function (v: Date | undefined | null): boolean {
+          if (v == null) return true; // optional field — null/undefined always OK
+          if (!(v instanceof Date) || isNaN(v.getTime())) return false;
+          const now = Date.now();
+          const MS_PER_YEAR = 365.25 * 24 * 60 * 60 * 1000;
+          // Must be in the past and no more than 120 years ago
+          return v.getTime() <= now && v.getTime() >= now - 120 * MS_PER_YEAR;
+        },
+        message: 'dateOfBirth must be a valid past date within the last 120 years',
+      },
+    },
     isMinor:        { type: Boolean, default: false },
     ageYears:       { type: Number },
     guardian:       { type: GuardianSubSchema },
@@ -388,23 +411,111 @@ const UserSchema = new Schema<IUser>(
   { timestamps: true }
 );
 
-// Pre-save hook: compute ageYears + isMinor from dateOfBirth
+// ---------------------------------------------------------------------------
+// Shared age-derivation helper — used by both pre('save') and pre-query hooks.
+// ---------------------------------------------------------------------------
+function deriveAgeFields(
+  dateOfBirth: Date | null | undefined,
+  currentGuardianStatus: GuardianStatus | undefined,
+): { ageYears: number | undefined; isMinor: boolean; guardianStatus: GuardianStatus } {
+  if (!dateOfBirth || !(dateOfBirth instanceof Date) || isNaN(dateOfBirth.getTime())) {
+    return {
+      ageYears:      undefined,
+      isMinor:       false,
+      guardianStatus: currentGuardianStatus ?? 'none',
+    };
+  }
+  const MS_PER_YEAR = 365.25 * 24 * 60 * 60 * 1000;
+  const years = Math.floor((Date.now() - dateOfBirth.getTime()) / MS_PER_YEAR);
+  const minor = years < 18;
+  let guardianStatus: GuardianStatus = currentGuardianStatus ?? 'none';
+  // Only advance from 'none' to 'pending' — never override confirmed/revoked.
+  if (minor && guardianStatus === 'none') {
+    guardianStatus = 'pending';
+  }
+  return { ageYears: years, isMinor: minor, guardianStatus };
+}
+
+// Pre-save hook: derive ageYears / isMinor / guardianStatus from dateOfBirth
 UserSchema.pre('save', function (next) {
   if (this.isNew || this.isModified('dateOfBirth')) {
-    if (this.dateOfBirth instanceof Date) {
-      const MS_PER_YEAR = 365.25 * 24 * 60 * 60 * 1000;
-      const computed = Math.floor((Date.now() - this.dateOfBirth.getTime()) / MS_PER_YEAR);
-      this.ageYears = computed;
-      this.isMinor  = computed < 18;
+    const dob = this.dateOfBirth as Date | undefined;
+    const { ageYears, isMinor, guardianStatus } = deriveAgeFields(dob, this.guardianStatus);
+    this.ageYears      = ageYears;
+    this.isMinor       = isMinor;
+    this.guardianStatus = guardianStatus;
+  }
+  next();
+});
 
-      // New minor needs guardian flow — only advance from 'none' to 'pending'
-      if (this.isMinor && (!this.guardianStatus || this.guardianStatus === 'none')) {
-        this.guardianStatus = 'pending';
-      }
-    } else {
-      // No DOB → default: not a minor
-      this.isMinor = false;
-    }
+// Pre-query hooks: mirror the same derivation for findOneAndUpdate / updateOne / updateMany.
+// These fire when controllers call User.findByIdAndUpdate(...) (e.g. auth.ts:333).
+// Without these hooks the age-gate fields would silently go stale on PATCH paths.
+UserSchema.pre('findOneAndUpdate', function (this: any, next: (err?: Error) => void) {
+  const update: any = this.getUpdate();
+  if (!update) return next();
+  const target = update.$set ?? update;
+  if (!('dateOfBirth' in target)) return next();
+
+  const raw = target.dateOfBirth;
+  const dob = raw instanceof Date ? raw : (raw ? new Date(raw) : null);
+  const currentGuardianStatus = target.guardianStatus as GuardianStatus | undefined;
+  const { ageYears, isMinor, guardianStatus } = deriveAgeFields(dob, currentGuardianStatus);
+
+  if (update.$set) {
+    update.$set.ageYears      = ageYears;
+    update.$set.isMinor       = isMinor;
+    update.$set.guardianStatus = guardianStatus;
+  } else {
+    update.ageYears      = ageYears;
+    update.isMinor       = isMinor;
+    update.guardianStatus = guardianStatus;
+  }
+  next();
+});
+
+UserSchema.pre('updateOne', function (this: any, next: (err?: Error) => void) {
+  const update: any = this.getUpdate();
+  if (!update) return next();
+  const target = update.$set ?? update;
+  if (!('dateOfBirth' in target)) return next();
+
+  const raw = target.dateOfBirth;
+  const dob = raw instanceof Date ? raw : (raw ? new Date(raw) : null);
+  const currentGuardianStatus = target.guardianStatus as GuardianStatus | undefined;
+  const { ageYears, isMinor, guardianStatus } = deriveAgeFields(dob, currentGuardianStatus);
+
+  if (update.$set) {
+    update.$set.ageYears      = ageYears;
+    update.$set.isMinor       = isMinor;
+    update.$set.guardianStatus = guardianStatus;
+  } else {
+    update.ageYears      = ageYears;
+    update.isMinor       = isMinor;
+    update.guardianStatus = guardianStatus;
+  }
+  next();
+});
+
+UserSchema.pre('updateMany', function (this: any, next: (err?: Error) => void) {
+  const update: any = this.getUpdate();
+  if (!update) return next();
+  const target = update.$set ?? update;
+  if (!('dateOfBirth' in target)) return next();
+
+  const raw = target.dateOfBirth;
+  const dob = raw instanceof Date ? raw : (raw ? new Date(raw) : null);
+  const currentGuardianStatus = target.guardianStatus as GuardianStatus | undefined;
+  const { ageYears, isMinor, guardianStatus } = deriveAgeFields(dob, currentGuardianStatus);
+
+  if (update.$set) {
+    update.$set.ageYears      = ageYears;
+    update.$set.isMinor       = isMinor;
+    update.$set.guardianStatus = guardianStatus;
+  } else {
+    update.ageYears      = ageYears;
+    update.isMinor       = isMinor;
+    update.guardianStatus = guardianStatus;
   }
   next();
 });
