@@ -1,5 +1,4 @@
 import mongoose, { Schema, Document, Model } from 'mongoose';
-import { required } from 'zod/v4/core/util.cjs';
 
 /* ---------- TypeScript interfaces ---------- */
 
@@ -346,6 +345,23 @@ const UserSchema = new Schema<IUser>(
     marketingConsent: { type: MarketingConsentSchema, default: () => ({ accepted: false, acceptedAt: null }) },
 
     // Age-gate fields (PRD v4 §8.1.1 / §8.3.2)
+    /**
+     * User's date of birth. Drives `isMinor`, `ageYears`, and `guardianStatus`
+     * via the pre-save and pre-findOneAndUpdate/updateOne/updateMany hooks.
+     *
+     * **CALLER REQUIREMENT:** When updating DOB via `findOneAndUpdate`,
+     * `updateOne`, or `updateMany`, callers MUST pass `{ runValidators: true }`
+     * to the query options. Otherwise the schema validator below is bypassed
+     * and malformed dates (NaN, future, > 120y past) will land on disk — the
+     * pre-query hook will still recompute `ageYears`/`isMinor` from the raw
+     * value, producing garbage derived fields.
+     *
+     * Example (correct):
+     *   User.findByIdAndUpdate(id, { dateOfBirth }, { runValidators: true, new: true })
+     *
+     * Save paths (`new User({...}).save()`, `user.dateOfBirth = ...; user.save()`)
+     * run the validator automatically — no extra flag needed.
+     */
     dateOfBirth: {
       type: Date,
       validate: {
