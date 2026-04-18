@@ -8,7 +8,19 @@
 
 export type TransactionStatus = 'created' | 'paid' | 'confirmed' | 'completed' | 'disputed' | 'refunded' | 'failed';
 export type OfflineStatus = 'recorded' | 'confirmed' | 'disputed' | 'expired' | 'completed';
-export type ContractStatus = 'draft' | 'sent' | 'accepted' | 'active' | 'performed' | 'completed' | 'declined' | 'disputed' | 'cancelled' | 'breached';
+export type ContractStatus =
+    | 'draft'
+    | 'sent'
+    | 'accepted'
+    | 'active'
+    | 'pending_guardian_cosign'
+    | 'pending_artist_signature'
+    | 'performed'
+    | 'completed'
+    | 'declined'
+    | 'disputed'
+    | 'cancelled'
+    | 'breached';
 
 // On-platform transaction transitions
 const TRANSACTION_TRANSITIONS: Record<string, string[]> = {
@@ -27,10 +39,19 @@ const OFFLINE_TRANSITIONS: Record<string, string[]> = {
 };
 
 // Contract lifecycle transitions
+// Age-gate paths (PRD v4 §8.3.2 / Indian Contract Act §11):
+//   - Minor artist signs → pending_guardian_cosign (guardian must confirm)
+//   - Guardian confirms → accepted
+//   - Guardian rejects → declined
+// Hirer-first / artist-first flexibility:
+//   - 'sent' → 'pending_artist_signature' covers the hirer-signed-first flow when
+//     the artist hasn't countersigned yet (UX reveals artist CTA).
 const CONTRACT_TRANSITIONS: Record<string, string[]> = {
-    draft: ['sent'],
-    sent: ['accepted', 'declined'],
-    accepted: ['active'],
+    draft: ['sent', 'cancelled'],
+    sent: ['accepted', 'declined', 'pending_guardian_cosign', 'pending_artist_signature', 'cancelled'],
+    pending_artist_signature: ['accepted', 'declined', 'pending_guardian_cosign', 'cancelled'],
+    pending_guardian_cosign: ['accepted', 'declined', 'cancelled'],
+    accepted: ['active', 'cancelled'],
     active: ['performed', 'disputed', 'cancelled'],
     performed: ['completed'],
     disputed: ['completed', 'breached'],

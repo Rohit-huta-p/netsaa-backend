@@ -139,6 +139,9 @@ export const registerWithEmail = async (req: Request, res: Response) => {
     }).catch((err) => console.error('[Auth] Failed to enqueue welcome-email:', err.message));
 
     /* -------- Issue JWT (two-context payload) -------- */
+    // isMinor + guardianStatus are carried in the JWT so downstream services
+    // (payment-service age-gate, contract sign flow) can make decisions without
+    // a cross-service HTTP call. Re-issued on every login.
     const payload = {
       user: {
         id: savedUser._id,
@@ -150,6 +153,8 @@ export const registerWithEmail = async (req: Request, res: Response) => {
         primaryCity: savedUser.cached?.primaryCity,
         trustTier: savedUser.trustTier,
         kycLevel: savedUser.kycLevel,
+        isMinor: savedUser.isMinor ?? false,
+        guardianStatus: savedUser.guardianStatus ?? 'none',
       },
     };
 
@@ -205,7 +210,9 @@ export const loginWithEmail = async (req: Request, res: Response) => {
     }
 
 
-    // Two-context JWT payload
+    // Two-context JWT payload. isMinor + guardianStatus are re-issued on every
+    // login so downstream services (payment-service age-gate, guardian cosign
+    // checks) can rely on fresh values.
     const payload = {
       user: {
         id: user.id,
@@ -217,6 +224,8 @@ export const loginWithEmail = async (req: Request, res: Response) => {
         primaryCity: user.cached?.primaryCity,
         trustTier: user.trustTier,
         kycLevel: user.kycLevel,
+        isMinor: user.isMinor ?? false,
+        guardianStatus: user.guardianStatus ?? 'none',
       },
     };
 

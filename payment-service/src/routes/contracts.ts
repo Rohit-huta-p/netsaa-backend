@@ -6,6 +6,7 @@ import {
     getUserContracts,
     signContract,
     declineContract,
+    switchPaymentMethod,
     requestAmendment,
     respondToAmendment,
 } from '../controllers/contract.controller';
@@ -20,6 +21,7 @@ router.get('/users/me/contracts', protect, getUserContracts);
 // Contract lifecycle
 router.patch('/contracts/:id/sign', protect, signContract);
 router.patch('/contracts/:id/decline', protect, declineContract);
+router.patch('/contracts/:id/payment-method', protect, switchPaymentMethod);
 
 // Amendments
 router.post('/contracts/:id/amend', protect, requestAmendment);

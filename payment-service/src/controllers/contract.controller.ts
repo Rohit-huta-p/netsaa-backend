@@ -1,10 +1,16 @@
 import { Response, NextFunction } from 'express';
-import crypto from 'crypto';
 import Contract from '../models/Contract';
 import { AuthRequest } from '../middleware/auth';
-import { createContractSchema, signContractSchema, amendContractSchema, respondAmendmentSchema } from '../validators/contract.dto';
+import {
+    createContractSchema,
+    signContractSchema,
+    amendContractSchema,
+    respondAmendmentSchema,
+    switchPaymentMethodSchema,
+} from '../validators/contract.dto';
 import { calculateFees } from '../services/fee.service';
 import { validateTransition } from '../utils/stateMachine';
+import { computeContractHash } from '../utils/contractHash';
 
 const sendResponse = (res: Response, status: number, data: any = null, message: string = 'OK', errors: any[] = []) => {
     res.status(status).json({ meta: { status, message }, data, errors });
@@ -32,7 +38,7 @@ export const createContract = async (req: AuthRequest, res: Response, next: Next
             return sendResponse(res, 400, null, 'Validation failed', parsed.error.issues);
         }
 
-        const { gigId, artistId, terms } = parsed.data;
+        const { gigId, artistId, terms, paymentMethod } = parsed.data;
         const hirerId = req.user.id;
 
         if (hirerId === artistId) {
@@ -53,23 +59,28 @@ export const createContract = async (req: AuthRequest, res: Response, next: Next
         const fees = calculateFees(terms.amount, 'gig_payment', 'new');
         const tier = determineTier(terms.amount);
 
+        const sealedTerms = {
+            ...terms,
+            platformFeeRate: fees.rate,
+            platformFeeAmount: fees.platformFee,
+            artistReceives: fees.artistReceives,
+        };
+
         const contract = await Contract.create({
             gigId,
             hirerId,
             artistId,
             tier,
             status: 'sent', // Skip draft, go straight to sent
-            terms: {
-                ...terms,
-                platformFeeRate: fees.rate,
-                platformFeeAmount: fees.platformFee,
-                artistReceives: fees.artistReceives,
-            },
+            paymentMethod,
+            terms: sealedTerms,
             hirerSignature: {
                 signedAt: new Date(),
                 deviceInfo: req.headers['user-agent'],
+                ipAddress: req.ip,
+                signerRole: 'hirer',
             },
-            contractHash: crypto.createHash('sha256').update(JSON.stringify(terms)).digest('hex'),
+            contractHash: computeContractHash(sealedTerms),
         });
 
         sendResponse(res, 201, contract, 'Contract created and sent to artist');
@@ -128,8 +139,22 @@ export const getUserContracts = async (req: AuthRequest, res: Response) => {
 // @desc    Artist signs/accepts contract
 // @route   PATCH /v1/contracts/:id/sign
 // @access  Protected (artist only)
+//
+// Hardening (PRD v4 §8.3.2 / §9.3):
+//   1. Tamper detection: recompute contractHash over current terms and compare
+//      with the hash sealed at creation. Mismatch → 409, never sign.
+//   2. Age-gate (Indian Contract Act §11): if the artist JWT says isMinor,
+//      block 'accepted' and transition to 'pending_guardian_cosign' instead.
+//      Guardian cosign endpoint (Slice 6) promotes the state to 'accepted'.
+//   3. Ceremony audit: persist scrollEndedAt / doubleConfirmedAt / biometric
+//      timestamps from the signing UI so disputes can verify intent.
 export const signContract = async (req: AuthRequest, res: Response) => {
     try {
+        const parsed = signContractSchema.safeParse(req.body);
+        if (!parsed.success) {
+            return sendResponse(res, 400, null, 'Validation failed', parsed.error.issues);
+        }
+
         const contract = await Contract.findById(req.params.id);
         if (!contract) return sendResponse(res, 404, null, 'Contract not found');
 
@@ -137,24 +162,92 @@ export const signContract = async (req: AuthRequest, res: Response) => {
             return sendResponse(res, 403, null, 'Only the artist can sign this contract');
         }
 
-        validateTransition(contract.status, 'accepted', 'contract');
+        if (contract.artistSignature?.signedAt) {
+            return sendResponse(res, 409, null, 'Contract already signed by artist');
+        }
 
-        const parsed = signContractSchema.safeParse(req.body);
+        // 1. Tamper detection — hash must match what was sealed at creation.
+        if (contract.contractHash) {
+            const freshHash = computeContractHash(contract.terms);
+            if (freshHash !== contract.contractHash) {
+                return sendResponse(res, 409, null, 'Contract terms tampered — signature rejected');
+            }
+        }
 
-        contract.status = 'accepted';
+        // 2. Age-gate. If the signing artist is a minor, the contract moves to
+        //    pending_guardian_cosign instead of accepted.
+        const isMinor = req.user.isMinor === true;
+        const guardianStatus = req.user.guardianStatus;
+        const nextStatus = isMinor && guardianStatus !== 'confirmed'
+            ? 'pending_guardian_cosign'
+            : 'accepted';
+
+        validateTransition(contract.status, nextStatus, 'contract');
+
+        // 3. Capture ceremony audit events alongside the signature.
         contract.artistSignature = {
             signedAt: new Date(),
-            deviceInfo: parsed.success ? parsed.data.deviceInfo : (req.headers['user-agent'] as string || ''),
-            otpVerified: parsed.success ? parsed.data.otpVerified : false,
+            deviceInfo: parsed.data.deviceInfo ?? (req.headers['user-agent'] as string) ?? '',
+            ipAddress: req.ip,
+            otpVerified: parsed.data.otpVerified ?? false,
+            signerRole: 'artist',
+            scrollEndedAt: parsed.data.scrollEndedAt ? new Date(parsed.data.scrollEndedAt) : undefined,
+            doubleConfirmedAt: parsed.data.doubleConfirmedAt ? new Date(parsed.data.doubleConfirmedAt) : undefined,
+            biometricPassedAt: parsed.data.biometricPassedAt ? new Date(parsed.data.biometricPassedAt) : undefined,
         };
+        contract.status = nextStatus;
 
         await contract.save();
 
-        sendResponse(res, 200, contract, 'Contract signed by artist');
+        const message = nextStatus === 'pending_guardian_cosign'
+            ? 'Contract signed — awaiting guardian co-signature'
+            : 'Contract signed by artist';
+        sendResponse(res, 200, contract, message);
     } catch (error: any) {
-        if (error.message.startsWith('Invalid transition')) {
+        if (error.message?.startsWith('Invalid transition')) {
             return sendResponse(res, 400, null, error.message);
         }
+        console.error('signContract error:', error);
+        sendResponse(res, 500, null, 'Server error', [{ message: error.message }]);
+    }
+};
+
+// @desc    Switch payment method before artist signs
+// @route   PATCH /v1/contracts/:id/payment-method
+// @access  Protected (hirer only)
+//
+// Per PRD §8.3.2 Stage 2: hirer can swap on_platform ↔ off_platform up until
+// the artist countersigns. After that, the switch requires an amendment round
+// (so both parties re-agree). paymentMethod is not part of contractHash, so no
+// hash recompute is needed.
+export const switchPaymentMethod = async (req: AuthRequest, res: Response) => {
+    try {
+        const parsed = switchPaymentMethodSchema.safeParse(req.body);
+        if (!parsed.success) {
+            return sendResponse(res, 400, null, 'Validation failed', parsed.error.issues);
+        }
+
+        const contract = await Contract.findById(req.params.id);
+        if (!contract) return sendResponse(res, 404, null, 'Contract not found');
+
+        if (contract.hirerId.toString() !== req.user.id) {
+            return sendResponse(res, 403, null, 'Only the hirer can switch payment method');
+        }
+
+        if (contract.artistSignature?.signedAt) {
+            return sendResponse(res, 409, null, 'Artist has already signed — use an amendment to change payment method');
+        }
+
+        if (contract.paymentMethod === parsed.data.paymentMethod) {
+            return sendResponse(res, 200, contract, 'Payment method unchanged');
+        }
+
+        contract.paymentMethod = parsed.data.paymentMethod;
+        await contract.save();
+
+        sendResponse(res, 200, contract, 'Payment method switched');
+    } catch (error: any) {
+        console.error('switchPaymentMethod error:', error);
         sendResponse(res, 500, null, 'Server error', [{ message: error.message }]);
     }
 };
@@ -262,7 +355,7 @@ export const respondToAmendment = async (req: AuthRequest, res: Response) => {
                 contract.tier = determineTier(contract.terms.amount);
             }
 
-            contract.contractHash = crypto.createHash('sha256').update(JSON.stringify(contract.terms)).digest('hex');
+            contract.contractHash = computeContractHash(contract.terms);
         }
 
         await contract.save();
