@@ -5,7 +5,7 @@ import jwt from 'jsonwebtoken';
 import mongoose from 'mongoose';
 import User, { IUser } from '../models/User';
 import Artist from '../models/Artist';
-import Organizer from '../models/Organizer';
+import HirerProfile from '../models/HirerProfile';
 import PasswordResetSession from '../models/PasswordResetSession';
 import { AuthRequest } from '../middleware/auth';
 import { registerSchema } from '../validators/register.dto';
@@ -58,9 +58,9 @@ export const registerWithEmail = async (req: Request, res: Response) => {
     return res.status(400).json({ msg: 'Validation failed', errors });
   }
 
-  const { user: userInput, organizerProfile } = parsed.data;
+  const { user: userInput } = parsed.data;
 
-  /* -------- Check for duplicate email (before opening session) -------- */
+  /* -------- Check for duplicate email -------- */
   const existing = await User.findOne({ email: userInput.email });
   if (existing) {
     return res.status(400).json({ msg: 'User already exists' });
@@ -70,18 +70,18 @@ export const registerWithEmail = async (req: Request, res: Response) => {
   const salt = await bcrypt.genSalt(10);
   const passwordHash = await bcrypt.hash(userInput.password, salt);
 
-  const role = userInput.role || 'artist';
-
-  /* ════════════════════════════════════════════════════ */
-  /*  Transaction: User + Role-specific record           */
-  /* ════════════════════════════════════════════════════ */
+  /* ════════════════════════════════════════════════════════════ */
+  /*  PRD v4 Two-Context Model:                                  */
+  /*  Every user gets BOTH Artist + HirerProfile at registration */
+  /*  No role selection. Context is page-based.                  */
+  /* ════════════════════════════════════════════════════════════ */
   const session = await mongoose.startSession();
 
   try {
     let savedUser: any;
 
     await session.withTransaction(async () => {
-      /* -------- 1. Create User document -------- */
+      /* 1. Create User document (both contexts enabled) */
       const [user] = await User.create(
         [
           {
@@ -89,8 +89,20 @@ export const registerWithEmail = async (req: Request, res: Response) => {
             email: userInput.email,
             phoneNumber: userInput.phoneNumber || null,
             passwordHash,
-            role,
             authProvider: 'email',
+            // Age-gate: pre-save hook derives ageYears + guardianStatus.
+            // Omit when not provided so hook leaves guardianStatus='none'.
+            ...(userInput.dateOfBirth ? { dateOfBirth: userInput.dateOfBirth } : {}),
+            contexts: {
+              artist: { enabled: true, profileComplete: false },
+              hirer: { enabled: true, profileComplete: false },
+            },
+            isAdmin: false,
+            trustScore: 0,
+            trustTier: 'new',
+            profileCompletionScore: 0,
+            kycLevel: 0,
+            intent: userInput.intent || [],
             marketingConsent: userInput.marketingConsent
               ? {
                 accepted: true,
@@ -99,76 +111,56 @@ export const registerWithEmail = async (req: Request, res: Response) => {
                 policyVersion: 'v1.0',
               }
               : { accepted: false, acceptedAt: null },
-            ...(role === 'organizer' && organizerProfile?.intent && {
-              intent: organizerProfile.intent,
-            }),
           },
         ],
         { session }
       );
 
-      /* -------- 2. Create role-specific record -------- */
-      if (role === 'artist') {
-        await Artist.create(
-          [
-            {
-              userId: user._id,
-              userName: userInput.displayName,
-            },
-          ],
-          { session }
-        );
-      } else if (role === 'organizer' && organizerProfile) {
-        await Organizer.create(
-          [
-            {
-              userId: user._id,
-              organizerTypeCategory: organizerProfile.organizerTypeCategory,
-              organizationName: organizerProfile.organizationName,
-              organizationType: organizerProfile.organizationType,
-              isCustomCategory: organizerProfile.isCustomCategory ?? false,
-              customCategoryLabel: organizerProfile.customCategoryLabel,
-              organizationWebsite: organizerProfile.organizationWebsite,
-              logoUrl: organizerProfile.logoUrl,
-              billingDetails: organizerProfile.billingDetails || {},
-            },
-          ],
-          { session }
-        );
-      }
+      /* 2. Create Artist document (always) */
+      await Artist.create(
+        [{ userId: user._id, userName: userInput.displayName }],
+        { session }
+      );
+
+      /* 3. Create HirerProfile document (always, starts minimal) */
+      await HirerProfile.create(
+        [{ userId: user._id, hirerType: 'individual' }],
+        { session }
+      );
 
       savedUser = user;
     });
 
-    /* -------- Enqueue welcome email (non-blocking) -------- */
+    /* -------- Enqueue welcome email -------- */
     emailQueue.add('welcome-email', {
       userId: String(savedUser._id),
       email: savedUser.email,
       displayName: savedUser.displayName ?? savedUser.email,
-      role: savedUser.role,
     }).catch((err) => console.error('[Auth] Failed to enqueue welcome-email:', err.message));
 
-    /* -------- Issue JWT -------- */
+    /* -------- Issue JWT (two-context payload) -------- */
     const payload = {
       user: {
         id: savedUser._id,
-        role: savedUser.role,
+        contexts: savedUser.contexts,
+        isAdmin: savedUser.isAdmin,
         displayName: savedUser.displayName,
         email: savedUser.email,
         profileImageUrl: savedUser.profileImageUrl,
         primaryCity: savedUser.cached?.primaryCity,
-        kycStatus: savedUser.kycStatus,
+        trustTier: savedUser.trustTier,
+        kycLevel: savedUser.kycLevel,
       },
     };
 
+    // Always fetch both profiles
     const userObj = savedUser.toObject() as any;
-    if (savedUser.role === 'organizer') {
-      const organizerDetails = await Organizer.findOne({ userId: savedUser._id });
-      if (organizerDetails) userObj.organizerDetails = organizerDetails;
-    } else if (savedUser.role === 'artist') {
-      const artistDetails = await Artist.findOne({ userId: savedUser._id });
-      if (artistDetails) userObj.artistDetails = artistDetails;
-    }
+    const [artistDetails, hirerDetails] = await Promise.all([
+      Artist.findOne({ userId: savedUser._id }),
+      HirerProfile.findOne({ userId: savedUser._id }),
+    ]);
+    if (artistDetails) userObj.artistDetails = artistDetails;
+    if (hirerDetails) userObj.hirerDetails = hirerDetails;
 
     jwt.sign(
       payload,
@@ -213,26 +205,29 @@ export const loginWithEmail = async (req: Request, res: Response) => {
     }
 
 
+    // Two-context JWT payload
     const payload = {
       user: {
         id: user.id,
-        role: user.role,
+        contexts: user.contexts,
+        isAdmin: user.isAdmin,
         displayName: user.displayName,
         email: user.email,
         profileImageUrl: user.profileImageUrl,
         primaryCity: user.cached?.primaryCity,
-        kycStatus: user.kycStatus,
+        trustTier: user.trustTier,
+        kycLevel: user.kycLevel,
       },
     };
 
+    // Always fetch both profiles
     const userObj = user.toObject() as any;
-    if (user.role === 'organizer') {
-      const organizerDetails = await Organizer.findOne({ userId: user._id });
-      if (organizerDetails) userObj.organizerDetails = organizerDetails;
-    } else if (user.role === 'artist') {
-      const artistDetails = await Artist.findOne({ userId: user._id });
-      if (artistDetails) userObj.artistDetails = artistDetails;
-    }
+    const [artistDetails, hirerDetails] = await Promise.all([
+      Artist.findOne({ userId: user._id }),
+      HirerProfile.findOne({ userId: user._id }),
+    ]);
+    if (artistDetails) userObj.artistDetails = artistDetails;
+    if (hirerDetails) userObj.hirerDetails = hirerDetails;
 
     jwt.sign(
       payload,
@@ -265,16 +260,14 @@ export const getMe = async (req: AuthRequest, res: Response) => {
       return res.status(404).json({ msg: 'User not found' });
     }
 
+    // Two-context: always return both profiles
     const userObj = user.toObject() as any;
-    if (user.role === 'organizer') {
-      const organizerDetails = await Organizer.findOne({ userId: user._id });
-      if (organizerDetails) userObj.organizerDetails = organizerDetails;
-
-    } else if (user.role === 'artist') {
-      const artistDetails = await Artist.findOne({ userId: user._id });
-      if (artistDetails) userObj.artistDetails = artistDetails;
-    }
-    console.log("AUTH CONTROLLER: getMe userObj:", userObj);
+    const [artistDetails, hirerDetails] = await Promise.all([
+      Artist.findOne({ userId: user._id }),
+      HirerProfile.findOne({ userId: user._id }),
+    ]);
+    if (artistDetails) userObj.artistDetails = artistDetails;
+    if (hirerDetails) userObj.hirerDetails = hirerDetails;
     res.json(userObj);
   } catch (err: any) {
     console.error(err.message);

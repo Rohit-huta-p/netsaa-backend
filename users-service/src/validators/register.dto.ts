@@ -1,72 +1,47 @@
 import { z } from 'zod';
-import { ORGANIZER_TYPE_CATEGORIES } from '../models/Organizer';
 
-/* ---------- Sub-schemas ---------- */
+/**
+ * PRD v4 Registration Validator — Two-Context Model
+ *
+ * No role selection. Every user gets both artist and hirer contexts.
+ * Registration is minimal: name, email, password, optional intent.
+ *
+ * Age-gate (Indian Contract Act §11): dateOfBirth is optional at signup but
+ * REQUIRED before any contract-signing action. If a minor registers, the
+ * User model pre-save hook sets guardianStatus='pending' and downstream
+ * contract endpoints block until a guardian co-signs.
+ */
 
-const billingDetailsSchema = z.object({
-    legalBusinessName: z.string().optional(),
-    gstNumber: z.string().optional(),
-    billingAddress: z.string().optional(),
-    state: z.string().optional(),
-    pincode: z.string().optional(),
-    country: z.string().optional(),
-});
+const MIN_AGE_YEARS = 13;
+const MAX_AGE_YEARS = 120;
+const MS_PER_YEAR = 365.25 * 24 * 60 * 60 * 1000;
 
-const organizerProfileSchema = z.object({
-    organizerTypeCategory: z.enum(ORGANIZER_TYPE_CATEGORIES),
-    organizationName: z.string().optional(),
-    organizationType: z.string().optional(),              // 'individual' | 'company'
-    isCustomCategory: z.boolean().optional().default(false),
-    customCategoryLabel: z.string().optional(),
-    bio: z.string().optional(),
-    organizationWebsite: z.string().optional(),
-    logoUrl: z.string().optional(),
-    billingDetails: billingDetailsSchema.optional(),
-    intent: z
-        .array(z.enum(['find_gigs', 'hire_artists', 'learn_workshops', 'host_events']))
-        .optional(),
-}).superRefine((data, ctx) => {
-    // organizationName required unless individual
-    if (data.organizationType !== 'individual' && !data.organizationName) {
-        ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            message: 'organizationName is required for non-individual organizers',
-            path: ['organizationName'],
-        });
-    }
-    // customCategoryLabel required when isCustomCategory is true
-    if (data.isCustomCategory && !data.customCategoryLabel?.trim()) {
-        ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            message: 'customCategoryLabel is required when isCustomCategory is true',
-            path: ['customCategoryLabel'],
-        });
-    }
-});
-
-/* ---------- Top-level register schema ---------- */
-
-export const registerSchema = z
-    .object({
-        user: z.object({
-            displayName: z.string().min(1, 'displayName is required'),
-            email: z.string().email('Invalid email'),
-            password: z.string().min(6, 'Password must be at least 6 characters'),
-            phoneNumber: z.string().optional(),
-            role: z.enum(['artist', 'organizer']).default('artist'),
-            marketingConsent: z.boolean().optional().default(false),
-        }),
-        organizerProfile: organizerProfileSchema.optional(),
+const dateOfBirthSchema = z
+    .union([z.string(), z.date()])
+    .transform((val) => (val instanceof Date ? val : new Date(val)))
+    .refine((d) => !isNaN(d.getTime()), { message: 'dateOfBirth must be a valid date' })
+    .refine((d) => d.getTime() < Date.now(), { message: 'dateOfBirth must be in the past' })
+    .refine((d) => (Date.now() - d.getTime()) / MS_PER_YEAR <= MAX_AGE_YEARS, {
+        message: `dateOfBirth must be within the last ${MAX_AGE_YEARS} years`,
     })
-    .superRefine((data, ctx) => {
-        // Rule: organizer role requires organizerProfile
-        if (data.user.role === 'organizer' && !data.organizerProfile) {
-            ctx.addIssue({
-                code: z.ZodIssueCode.custom,
-                message: 'organizerProfile is required when role is organizer',
-                path: ['organizerProfile'],
-            });
-        }
+    .refine((d) => (Date.now() - d.getTime()) / MS_PER_YEAR >= MIN_AGE_YEARS, {
+        message: `You must be at least ${MIN_AGE_YEARS} to use NETSA`,
     });
+
+export const registerSchema = z.object({
+    user: z.object({
+        displayName: z.string().min(1, 'displayName is required'),
+        email: z.string().email('Invalid email'),
+        password: z.string().min(8, 'Password must be at least 8 characters'),
+        phoneNumber: z.string().optional(),
+        dateOfBirth: dateOfBirthSchema.optional(),
+        marketingConsent: z.boolean().optional().default(false),
+        // PRD v4 Step 4: "What brings you to NETSA?" (multi-select interest signal)
+        intent: z
+            .array(z.enum(['find_gigs', 'hire_artists', 'learn_workshops', 'host_events']))
+            .optional()
+            .default([]),
+    }),
+});
 
 export type RegisterInput = z.infer<typeof registerSchema>;
