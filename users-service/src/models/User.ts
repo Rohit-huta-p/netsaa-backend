@@ -125,6 +125,13 @@ export interface IUser extends Document {
   }>;
   cached?: IUserCached; // denormalized quick-read fields
   settings?: IUserSettings; // user-configurable preferences
+
+  // Mode toggle — client UI lens mirror (spec §2.3)
+  lastActiveMode?: 'artist' | 'hirer';
+  lastArtistActionAt?: Date;
+  lastHirerActionAt?: Date;
+  postedGigsCount?: number; // cached counter, maintained by gigs-service webhook or periodic sync
+
   createdAt: Date;
   updatedAt: Date;
   accountStatus?: AccountStatus;
@@ -384,6 +391,16 @@ const UserSchema = new Schema<IUser>(
       enum:    ['none', 'pending', 'confirmed', 'revoked'],
       default: 'none',
     },
+
+    // Mode toggle mirror (spec §2.3)
+    lastActiveMode: {
+      type: String,
+      enum: ['artist', 'hirer'],
+      default: undefined,
+    },
+    lastArtistActionAt: { type: Date },
+    lastHirerActionAt: { type: Date },
+    postedGigsCount: { type: Number, default: 0, min: 0 },
 
     referralCode: { type: String, index: true },
 
