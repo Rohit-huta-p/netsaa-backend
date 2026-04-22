@@ -218,16 +218,20 @@ export const verifyOtp = async (req: Request, res: Response) => {
 
         console.log(`[verifyOtp] Login successful for phone: ${phone}`);
 
-        // 7. Generate JWT payload (existing structural standard)
+        // 7. Generate JWT payload (two-context model — PRD v4)
         const payload = {
             user: {
                 id: user.id,
-                role: user.role,
+                contexts: user.contexts,
+                isAdmin: user.isAdmin,
                 displayName: user.displayName,
                 email: user.email,
                 profileImageUrl: user.profileImageUrl,
                 primaryCity: user.cached?.primaryCity,
-                kycStatus: user.kycStatus,
+                trustTier: user.trustTier,
+                kycLevel: user.kycLevel,
+                isMinor: user.isMinor ?? false,
+                guardianStatus: user.guardianStatus ?? 'none',
             },
         };
 

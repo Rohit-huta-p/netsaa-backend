@@ -18,14 +18,14 @@ export const getUserById = async (req: Request, res: Response) => {
             return res.status(404).json({ msg: 'User not found' });
         }
 
+        // Two-context model: always return both profiles
         const userObj = user.toObject() as any;
-        if (user.role === 'organizer') {
-            const organizerDetails = await Organizer.findOne({ userId: user._id });
-            if (organizerDetails) userObj.organizerDetails = organizerDetails;
-        } else if (user.role === 'artist') {
-            const artistDetails = await Artist.findOne({ userId: user._id });
-            if (artistDetails) userObj.artistDetails = artistDetails;
-        }
+        const [artistDetails, organizerDetails] = await Promise.all([
+            Artist.findOne({ userId: user._id }),
+            Organizer.findOne({ userId: user._id }),
+        ]);
+        if (artistDetails) userObj.artistDetails = artistDetails;
+        if (organizerDetails) userObj.organizerDetails = organizerDetails;
 
         res.json(userObj);
     } catch (err: any) {

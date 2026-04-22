@@ -23,7 +23,7 @@ export interface WelcomeEmailJob {
     userId: string;
     email: string;
     displayName: string;
-    role: string;
+    role?: string; // optional — two-context model; defaults to 'artist' in worker
 }
 
 export interface PasswordResetEmailJob {
