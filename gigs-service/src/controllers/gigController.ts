@@ -470,6 +470,57 @@ export const updateApplicationStatus = async (req: AuthRequest, res: Response, n
     }
 };
 
+// @desc    Withdraw the authenticated artist's own application
+// @route   PATCH /v1/applications/:id/withdraw
+// @access  Private (Artist — owner only)
+//
+// Atomic: matches id + ownership + withdrawable status in ONE query so we
+// can't race a hirer who is simultaneously moving the app to 'hired'.
+// On null result we disambiguate 404/403/409 via a raw existence check
+// so the client can show the right message.
+export const withdrawApplication = async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+        if (!req.user) {
+            return sendResponse(res, 401, null, 'Not authorized');
+        }
+        const { id } = req.params;
+        if (!id || !id.match(/^[0-9a-fA-F]{24}$/)) {
+            return sendResponse(res, 400, null, 'Invalid application id');
+        }
+
+        const userId = req.user.id;
+
+        const application = await GigApplication.findOneAndUpdate(
+            {
+                _id: id,
+                artistId: userId,
+                status: { $in: ['applied', 'shortlisted'] }
+            },
+            {
+                $set: { status: 'withdrawn', withdrawnAt: new Date() }
+            },
+            { new: true }
+        );
+
+        if (!application) {
+            // Disambiguate: was the doc missing, owned by someone else, or in a non-withdrawable state?
+            const exists = await GigApplication.findById(id).select('_id artistId status').lean();
+            if (!exists) {
+                return sendResponse(res, 404, null, 'Application not found');
+            }
+            if (String(exists.artistId) !== String(userId)) {
+                return sendResponse(res, 403, null, 'You can only withdraw your own applications');
+            }
+            return sendResponse(res, 409, null, `Cannot withdraw from status '${exists.status}'`);
+        }
+
+        return sendResponse(res, 200, application, 'Application withdrawn');
+    } catch (err: any) {
+        console.error('[withdrawApplication]', err.message);
+        sendResponse(res, 500, null, 'Server Error', [{ message: err.message }]);
+    }
+};
+
 // @desc    Get user's applications
 // @route   GET /v1/users/me/gig-applications
 // @access  Private (Artist)
