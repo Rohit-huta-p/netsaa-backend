@@ -102,3 +102,23 @@ describe('PATCH /v1/applications/:id/withdraw', () => {
         expect(res.status).toBe(404);
     });
 });
+
+describe('GET /v1/users/me/gig-applications ?limit', () => {
+    it('returns exactly N applications when limit=N and more exist', async () => {
+        const artistId = new mongoose.Types.ObjectId();
+        const token = authTokenFor(artistId.toString(), 'artist');
+
+        // Seed 3 applications for the same artist across distinct gigs.
+        for (let i = 0; i < 3; i++) {
+            await seedApplication({ artistId, status: 'applied' });
+        }
+
+        const res = await request(app)
+            .get('/v1/users/me/gig-applications?limit=2')
+            .set('Authorization', `Bearer ${token}`);
+
+        expect(res.status).toBe(200);
+        expect(Array.isArray(res.body.data)).toBe(true);
+        expect(res.body.data).toHaveLength(2);
+    });
+});

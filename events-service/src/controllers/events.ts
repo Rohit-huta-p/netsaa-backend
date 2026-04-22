@@ -383,15 +383,18 @@ export const saveEvent = async (req: AuthRequest, res: Response, next: NextFunct
 
 // @desc    Get user's saved events
 // @route   GET /api/grow/users/me/saved-events
+// @query   ?limit=N (optional; capped at 200; 0 or omitted = no limit)
 // @access  Private
 export const getSavedEvents = async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const userId = req.user.id;
+    const limit = Math.min(Math.max(parseInt(String(req.query.limit)) || 0, 0), 200);
 
-    const savedEvents = await SavedEvent.find({ userId })
+    const q = SavedEvent.find({ userId })
       .populate('eventId', 'title schedule location category eventType ticketPrice pricingMode maxParticipants status organizerSnapshot')
-      .sort({ savedAt: -1 })
-      .lean();
+      .sort({ savedAt: -1 });
+    if (limit > 0) q.limit(limit);
+    const savedEvents = await q.lean();
 
     // Format response to include event details
     const formattedSavedEvents = savedEvents.map((saved: any) => ({

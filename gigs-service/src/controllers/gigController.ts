@@ -523,14 +523,18 @@ export const withdrawApplication = async (req: AuthRequest, res: Response, next:
 
 // @desc    Get user's applications
 // @route   GET /v1/users/me/gig-applications
+// @query   ?limit=N (optional; capped at 200; 0 or omitted = no limit)
 // @access  Private (Artist)
 export const getUserApplications = async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
         const artistId = req.user.id;
+        const limit = Math.min(Math.max(parseInt(String(req.query.limit)) || 0, 0), 200);
 
-        const applications = await GigApplication.find({ artistId })
+        const q = GigApplication.find({ artistId })
             .sort({ appliedAt: -1 })
             .populate('gigId', 'title organizerSnapshot compensation location schedule status applicationDeadline');
+        if (limit > 0) q.limit(limit);
+        const applications = await q;
         // Populating specific fields of Gig
 
         sendResponse(res, 200, applications);
@@ -684,15 +688,18 @@ export const deleteGig = async (req: AuthRequest, res: Response, next: NextFunct
 
 // @desc    Get user's saved gigs
 // @route   GET /v1/users/me/saved-gigs
+// @query   ?limit=N (optional; capped at 200; 0 or omitted = no limit)
 // @access  Private
 export const getSavedGigs = async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
         const userId = req.user.id;
+        const limit = Math.min(Math.max(parseInt(String(req.query.limit)) || 0, 0), 200);
 
-        const savedGigs = await SavedGig.find({ userId })
+        const q = SavedGig.find({ userId })
             .populate('gigId', 'title type category location schedule compensation applicationDeadline status organizerSnapshot')
-            .sort({ savedAt: -1 })
-            .lean();
+            .sort({ savedAt: -1 });
+        if (limit > 0) q.limit(limit);
+        const savedGigs = await q.lean();
 
         // Format response to include gig details
         const formattedSavedGigs = savedGigs.map((saved: any) => ({

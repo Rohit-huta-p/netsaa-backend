@@ -81,6 +81,7 @@ export const getEventRegistrations = async (req: Request, res: Response, next: N
 // @desc    Get user's registrations (with tickets)
 // @route   GET /api/grow/users/me/event-registrations
 // @query   ?status=registered (optional filter)
+// @query   ?limit=N (optional; capped at 200; 0 or omitted = no limit)
 // @access  Private
 export const getUserRegistrations = async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -102,13 +103,15 @@ export const getUserRegistrations = async (req: Request, res: Response, next: Ne
         if (req.query.status && typeof req.query.status === 'string') {
             filter.status = req.query.status;
         }
+        const limit = Math.min(Math.max(parseInt(String(req.query.limit)) || 0, 0), 200);
         console.log(`[getUserRegistrations] Querying for userId: ${userId}, token user._id: ${(req as AuthRequest).user?.id}, filter:`, filter);
 
-        const registrations = await EventRegistration.find(filter)
+        const q = EventRegistration.find(filter)
             .populate('eventId', 'title schedule location category registrationDeadline status')
             .populate('ticketTypeId', 'name price')
-            .sort({ registeredAt: -1 })
-            .lean();
+            .sort({ registeredAt: -1 });
+        if (limit > 0) q.limit(limit);
+        const registrations = await q.lean();
         console.log("[getUserRegistrations] Registrations: ", registrations);
         // Collect all registration IDs to batch-fetch tickets
         const registrationIds = registrations.map((r: any) => r._id);
