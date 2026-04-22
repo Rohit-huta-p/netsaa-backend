@@ -29,7 +29,7 @@ async function processEmailJob(job: Job<EmailJobData, void, EmailJobName>): Prom
     try {
         switch (job.name) {
             case 'welcome-email': {
-                const { email, displayName, role } = job.data as WelcomeEmailJob;
+                const { email, displayName, role = 'artist' } = job.data as WelcomeEmailJob;
 
                 if (!email) {
                     // Bad data — retrying won't fix it

@@ -13,10 +13,7 @@ export const patchMe = async (req: AuthRequest, res: Response) => {
             return res.status(401).json({ msg: 'Not authorized' });
         }
 
-        // ── Role guard: only organizers can update their organizer profile ──
-        if (req.user.role !== 'organizer') {
-            return res.status(403).json({ msg: 'Only organizers can update organizer profiles' });
-        }
+        // Two-context model: all authenticated users have hirer context — no role guard needed.
 
         // Reject forbidden keys early
         const forbidden = containsForbiddenKeys(req.body);
