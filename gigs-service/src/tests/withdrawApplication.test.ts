@@ -122,3 +122,54 @@ describe('GET /v1/users/me/gig-applications ?limit', () => {
         expect(res.body.data).toHaveLength(2);
     });
 });
+
+describe('GET /v1/users/me/gig-applications ?status', () => {
+    // Regression for code-review issue #2: status filter must be applied
+    // to the Mongo query, not silently ignored. Without this test the
+    // chip-filter UI on AppliedSection would be decorative.
+
+    it('returns only applications matching the status filter', async () => {
+        const artistId = new mongoose.Types.ObjectId();
+        const token = authTokenFor(artistId.toString(), 'artist');
+
+        await seedApplication({ artistId, status: 'applied' });
+        await seedApplication({ artistId, status: 'applied' });
+        await seedApplication({ artistId, status: 'hired' });
+        await seedApplication({ artistId, status: 'rejected' });
+
+        const res = await request(app)
+            .get('/v1/users/me/gig-applications?status=applied')
+            .set('Authorization', `Bearer ${token}`);
+
+        expect(res.status).toBe(200);
+        expect(res.body.data).toHaveLength(2);
+        expect(res.body.data.every((a: any) => a.status === 'applied')).toBe(true);
+    });
+
+    it('rejects 400 on an unknown status value', async () => {
+        const artistId = new mongoose.Types.ObjectId();
+        const token = authTokenFor(artistId.toString(), 'artist');
+        await seedApplication({ artistId, status: 'applied' });
+
+        const res = await request(app)
+            .get('/v1/users/me/gig-applications?status=pending')  // wrong word
+            .set('Authorization', `Bearer ${token}`);
+
+        expect(res.status).toBe(400);
+    });
+
+    it('returns all applications when status is omitted', async () => {
+        const artistId = new mongoose.Types.ObjectId();
+        const token = authTokenFor(artistId.toString(), 'artist');
+
+        await seedApplication({ artistId, status: 'applied' });
+        await seedApplication({ artistId, status: 'hired' });
+
+        const res = await request(app)
+            .get('/v1/users/me/gig-applications')
+            .set('Authorization', `Bearer ${token}`);
+
+        expect(res.status).toBe(200);
+        expect(res.body.data).toHaveLength(2);
+    });
+});

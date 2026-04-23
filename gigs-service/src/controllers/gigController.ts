@@ -525,17 +525,36 @@ export const withdrawApplication = async (req: AuthRequest, res: Response, next:
 // @route   GET /v1/users/me/gig-applications
 // @query   ?limit=N (optional; capped at 200; 0 or omitted = no limit)
 // @access  Private (Artist)
+// Whitelisted status values for the optional ?status filter on
+// GET /v1/users/me/gig-applications. Rejecting junk early prevents the
+// query from silently returning [] on a typo (e.g. ?status=pending).
+const APPLICATION_STATUS_WHITELIST = new Set([
+    'applied',
+    'shortlisted',
+    'rejected',
+    'hired',
+    'withdrawn',
+]);
+
 export const getUserApplications = async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
         const artistId = req.user.id;
         const limit = Math.min(Math.max(parseInt(String(req.query.limit)) || 0, 0), 200);
+        const status = String(req.query.status ?? '').trim();
 
-        const q = GigApplication.find({ artistId })
+        const filter: Record<string, any> = { artistId };
+        if (status) {
+            if (!APPLICATION_STATUS_WHITELIST.has(status)) {
+                return sendResponse(res, 400, null, `Invalid status filter '${status}'`);
+            }
+            filter.status = status;
+        }
+
+        const q = GigApplication.find(filter)
             .sort({ appliedAt: -1 })
             .populate('gigId', 'title organizerSnapshot compensation location schedule status applicationDeadline');
         if (limit > 0) q.limit(limit);
         const applications = await q;
-        // Populating specific fields of Gig
 
         sendResponse(res, 200, applications);
     } catch (err: any) {
