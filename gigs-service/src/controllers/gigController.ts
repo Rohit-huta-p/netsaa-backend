@@ -765,6 +765,85 @@ export const getSavedGigs = async (req: AuthRequest, res: Response, next: NextFu
     }
 };
 
+// @desc    List applicants across the authenticated organizer's gigs.
+//          Supports optional status filter and per-gig filter, plus limit
+//          for dashboard previews.
+// @route   GET /v1/organizers/me/applicants
+// @access  Private
+//
+// Two-step query to keep scoping airtight:
+//   1. Resolve gig ids owned by req.user.id (optionally narrowed by ?gigId).
+//   2. Find applications whose gigId is in that set.
+// A malicious ?gigId belonging to another user falls out of step 1 naturally
+// and the endpoint returns []. A malformed ObjectId is silently dropped (via
+// the hex regex) so chip filters don't 400.
+export const getOrganizerApplicants = async (
+    req: AuthRequest,
+    res: Response,
+    next: NextFunction
+) => {
+    try {
+        if (!req.user) {
+            return sendResponse(res, 401, null, 'Not authorized');
+        }
+
+        const organizerId = req.user.id;
+
+        // Status whitelist matches GigApplication enum.
+        const APP_STATUSES = ['applied', 'shortlisted', 'rejected', 'hired', 'withdrawn'] as const;
+        const statusParam = typeof req.query.status === 'string' ? req.query.status : undefined;
+        const status =
+            statusParam && (APP_STATUSES as readonly string[]).includes(statusParam)
+                ? statusParam
+                : undefined;
+
+        // Optional single-gig filter — lets the same endpoint feed "gig detail applicants" later.
+        const gigIdParam = typeof req.query.gigId === 'string' ? req.query.gigId : undefined;
+        const gigIdFilter =
+            gigIdParam && /^[0-9a-fA-F]{24}$/.test(gigIdParam)
+                ? new mongoose.Types.ObjectId(gigIdParam)
+                : undefined;
+
+        const limitRaw = parseInt(String(req.query.limit ?? '0'), 10);
+        const limit = Number.isFinite(limitRaw)
+            ? Math.min(Math.max(limitRaw, 0), 200)
+            : 0;
+
+        // Step 1: find the gig ids owned by the caller (optionally narrowed by gigId).
+        const gigQueryFilter: Record<string, unknown> = { organizerId };
+        if (gigIdFilter) gigQueryFilter._id = gigIdFilter;
+
+        const ownedGigs = await Gig.find(gigQueryFilter).select('_id title').lean();
+        if (ownedGigs.length === 0) {
+            return sendResponse(res, 200, { applicants: [], total: 0 });
+        }
+
+        const gigIds = ownedGigs.map((g) => g._id);
+        const titleByGigId = new Map<string, string>(
+            ownedGigs.map((g) => [String(g._id), g.title as string])
+        );
+
+        // Step 2: fetch matching applications with status filter.
+        const appFilter: Record<string, unknown> = { gigId: { $in: gigIds } };
+        if (status) appFilter.status = status;
+
+        const q = GigApplication.find(appFilter).sort({ appliedAt: -1 });
+        if (limit > 0) q.limit(limit);
+        const apps = await q.lean();
+
+        // Step 3: denormalize gig title onto each applicant so the client doesn't fan-out.
+        const applicants = apps.map((app) => ({
+            ...app,
+            gigTitle: titleByGigId.get(String(app.gigId)) ?? 'Untitled gig',
+        }));
+
+        sendResponse(res, 200, { applicants, total: applicants.length });
+    } catch (err: any) {
+        console.error('[getOrganizerApplicants]', err.message);
+        sendResponse(res, 500, null, 'Server Error', [{ message: err.message }]);
+    }
+};
+
 // @desc    Get organizer stats (for trust card)
 // @route   GET /v1/users/:userId/organizer-stats
 // @access  Public
