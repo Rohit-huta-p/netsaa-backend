@@ -10,6 +10,7 @@ import {
     deleteGig,
     getGigApplications,
     updateApplicationStatus,
+    withdrawApplication,
     getUserApplications,
     getSavedGigs,
     getOrganizerStats
@@ -28,6 +29,9 @@ router.route('/gigs/:id/apply').post(protect, applyToGig);
 router.route('/gigs/:id/save').post(protect, saveGig);
 router.route('/organizers/me/gigs/:gigId/applications').get(protect, getGigApplications);
 router.route('/applications/:applicationId/status').patch(protect, updateApplicationStatus);
+// Artist self-service withdraw. Placed before any potential generic
+// /applications/:id route so the specific suffix wins.
+router.patch('/applications/:id/withdraw', protect, withdrawApplication);
 router.route('/users/me/gig-applications').get(protect, getUserApplications);
 router.route('/users/me/saved-gigs').get(protect, getSavedGigs);
 

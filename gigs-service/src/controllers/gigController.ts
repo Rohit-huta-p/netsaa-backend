@@ -470,17 +470,91 @@ export const updateApplicationStatus = async (req: AuthRequest, res: Response, n
     }
 };
 
+// @desc    Withdraw the authenticated artist's own application
+// @route   PATCH /v1/applications/:id/withdraw
+// @access  Private (Artist — owner only)
+//
+// Atomic: matches id + ownership + withdrawable status in ONE query so we
+// can't race a hirer who is simultaneously moving the app to 'hired'.
+// On null result we disambiguate 404/403/409 via a raw existence check
+// so the client can show the right message.
+export const withdrawApplication = async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+        if (!req.user) {
+            return sendResponse(res, 401, null, 'Not authorized');
+        }
+        const { id } = req.params;
+        if (!id || !id.match(/^[0-9a-fA-F]{24}$/)) {
+            return sendResponse(res, 400, null, 'Invalid application id');
+        }
+
+        const userId = req.user.id;
+
+        const application = await GigApplication.findOneAndUpdate(
+            {
+                _id: id,
+                artistId: userId,
+                status: { $in: ['applied', 'shortlisted'] }
+            },
+            {
+                $set: { status: 'withdrawn', withdrawnAt: new Date() }
+            },
+            { new: true }
+        );
+
+        if (!application) {
+            // Disambiguate: was the doc missing, owned by someone else, or in a non-withdrawable state?
+            const exists = await GigApplication.findById(id).select('_id artistId status').lean();
+            if (!exists) {
+                return sendResponse(res, 404, null, 'Application not found');
+            }
+            if (String(exists.artistId) !== String(userId)) {
+                return sendResponse(res, 403, null, 'You can only withdraw your own applications');
+            }
+            return sendResponse(res, 409, null, `Cannot withdraw from status '${exists.status}'`);
+        }
+
+        return sendResponse(res, 200, application, 'Application withdrawn');
+    } catch (err: any) {
+        console.error('[withdrawApplication]', err.message);
+        sendResponse(res, 500, null, 'Server Error', [{ message: err.message }]);
+    }
+};
+
 // @desc    Get user's applications
 // @route   GET /v1/users/me/gig-applications
+// @query   ?limit=N (optional; capped at 200; 0 or omitted = no limit)
 // @access  Private (Artist)
+// Whitelisted status values for the optional ?status filter on
+// GET /v1/users/me/gig-applications. Rejecting junk early prevents the
+// query from silently returning [] on a typo (e.g. ?status=pending).
+const APPLICATION_STATUS_WHITELIST = new Set([
+    'applied',
+    'shortlisted',
+    'rejected',
+    'hired',
+    'withdrawn',
+]);
+
 export const getUserApplications = async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
         const artistId = req.user.id;
+        const limit = Math.min(Math.max(parseInt(String(req.query.limit)) || 0, 0), 200);
+        const status = String(req.query.status ?? '').trim();
 
-        const applications = await GigApplication.find({ artistId })
+        const filter: Record<string, any> = { artistId };
+        if (status) {
+            if (!APPLICATION_STATUS_WHITELIST.has(status)) {
+                return sendResponse(res, 400, null, `Invalid status filter '${status}'`);
+            }
+            filter.status = status;
+        }
+
+        const q = GigApplication.find(filter)
             .sort({ appliedAt: -1 })
             .populate('gigId', 'title organizerSnapshot compensation location schedule status applicationDeadline');
-        // Populating specific fields of Gig
+        if (limit > 0) q.limit(limit);
+        const applications = await q;
 
         sendResponse(res, 200, applications);
     } catch (err: any) {
@@ -633,15 +707,18 @@ export const deleteGig = async (req: AuthRequest, res: Response, next: NextFunct
 
 // @desc    Get user's saved gigs
 // @route   GET /v1/users/me/saved-gigs
+// @query   ?limit=N (optional; capped at 200; 0 or omitted = no limit)
 // @access  Private
 export const getSavedGigs = async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
         const userId = req.user.id;
+        const limit = Math.min(Math.max(parseInt(String(req.query.limit)) || 0, 0), 200);
 
-        const savedGigs = await SavedGig.find({ userId })
+        const q = SavedGig.find({ userId })
             .populate('gigId', 'title type category location schedule compensation applicationDeadline status organizerSnapshot')
-            .sort({ savedAt: -1 })
-            .lean();
+            .sort({ savedAt: -1 });
+        if (limit > 0) q.limit(limit);
+        const savedGigs = await q.lean();
 
         // Format response to include gig details
         const formattedSavedGigs = savedGigs.map((saved: any) => ({

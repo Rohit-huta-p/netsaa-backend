@@ -13,10 +13,11 @@ export interface IGigApplication extends Document {
 
     coverNote?: string;
     portfolioLinks?: string[];
-    status: 'applied' | 'shortlisted' | 'rejected' | 'hired';
+    status: 'applied' | 'shortlisted' | 'rejected' | 'hired' | 'withdrawn';
 
     appliedAt: Date;
     updatedAt: Date;
+    withdrawnAt?: Date;
 }
 
 const GigApplicationSchema = new Schema<IGigApplication>({
@@ -34,12 +35,13 @@ const GigApplicationSchema = new Schema<IGigApplication>({
     portfolioLinks: [String],
     status: {
         type: String,
-        enum: ['applied', 'shortlisted', 'rejected', 'hired'],
+        enum: ['applied', 'shortlisted', 'rejected', 'hired', 'withdrawn'],
         default: 'applied',
         index: true // Index for filtering by status
     },
 
-    appliedAt: { type: Date, default: Date.now }
+    appliedAt: { type: Date, default: Date.now },
+    withdrawnAt: { type: Date }
 }, { timestamps: true });
 
 // Ensure one application per artist per gig

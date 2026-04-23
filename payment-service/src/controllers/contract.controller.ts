@@ -112,6 +112,9 @@ export const getContract = async (req: AuthRequest, res: Response) => {
 
 // @desc    Get all contracts for current user
 // @route   GET /v1/users/me/contracts
+// @query   ?limit=N — dashboard shorthand: capped at 200; when present it
+//         overrides pageSize + skips paging (page=1, ignores skip). Keeps
+//         existing ?page/?pageSize behaviour for the full contracts screen.
 // @access  Protected
 export const getUserContracts = async (req: AuthRequest, res: Response) => {
     try {
@@ -123,14 +126,27 @@ export const getUserContracts = async (req: AuthRequest, res: Response) => {
         };
         if (status) query.status = status;
 
-        const contracts = await Contract.find(query)
-            .sort({ createdAt: -1 })
-            .skip((Number(page) - 1) * Number(pageSize))
-            .limit(Number(pageSize));
+        const limit = Math.min(Math.max(parseInt(String(req.query.limit)) || 0, 0), 200);
+
+        let contractsQuery = Contract.find(query).sort({ createdAt: -1 });
+        if (limit > 0) {
+            // Dashboard mode: first N, no skip.
+            contractsQuery = contractsQuery.limit(limit);
+        } else {
+            contractsQuery = contractsQuery
+                .skip((Number(page) - 1) * Number(pageSize))
+                .limit(Number(pageSize));
+        }
+        const contracts = await contractsQuery;
 
         const total = await Contract.countDocuments(query);
 
-        sendResponse(res, 200, { contracts, total, page: Number(page), pageSize: Number(pageSize) });
+        sendResponse(res, 200, {
+            contracts,
+            total,
+            page: limit > 0 ? 1 : Number(page),
+            pageSize: limit > 0 ? limit : Number(pageSize),
+        });
     } catch (error: any) {
         sendResponse(res, 500, null, 'Server error', [{ message: error.message }]);
     }
