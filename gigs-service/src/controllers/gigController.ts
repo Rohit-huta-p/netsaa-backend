@@ -84,34 +84,64 @@ export const getGigs = async (req: Request, res: Response, next: NextFunction) =
     }
 };
 
-// @desc    Get all gigs for an organizer (Dashboard)
+// @desc    List the authenticated organizer's own gigs
 // @route   GET /v1/organizers/me/gigs
-// @access  Private (Organizer)
-export const getOrganizerGigs = async (req: AuthRequest, res: Response, next: NextFunction) => {
+// @access  Private
+//
+// Auth is enforced via the `protect` middleware; we intentionally ignore
+// `req.query.organizerId` so a caller can't enumerate another user's gigs
+// (prior IDOR). Optional `?status=<published|draft|closed|expired>` filter
+// and `?limit=<=200` cap the result set for dashboard previews.
+export const getOrganizerGigs = async (
+    req: AuthRequest,
+    res: Response,
+    next: NextFunction
+) => {
     try {
-        const { organizerId } = req.query; // Or req.user.id if using auth middleware
-
-        if (!organizerId) {
-            return sendResponse(res, 400, null, 'Organizer ID required');
+        if (!req.user) {
+            return sendResponse(res, 401, null, 'Not authorized');
         }
 
-        const gigs = await Gig.find({ organizerId }).sort({ createdAt: -1 });
+        const organizerId = req.user.id;
 
-        // Get stats for each gig
-        const gigsWithStats = await Promise.all(gigs.map(async (gig) => {
-            const stats = await GigStats.findOne({ gigId: gig._id });
-            return {
-                ...gig.toObject(),
-                stats: stats ? stats.toObject() : null
-            };
-        }));
+        // Status whitelist — silently ignore invalid values (don't 400 on chip noise).
+        const GIG_STATUSES = ['draft', 'published', 'closed', 'expired'] as const;
+        const statusParam = typeof req.query.status === 'string' ? req.query.status : undefined;
+        const status =
+            statusParam && (GIG_STATUSES as readonly string[]).includes(statusParam)
+                ? statusParam
+                : undefined;
+
+        // Limit: cap at 200, default unlimited when not provided.
+        const limitRaw = parseInt(String(req.query.limit ?? '0'), 10);
+        const limit = Number.isFinite(limitRaw)
+            ? Math.min(Math.max(limitRaw, 0), 200)
+            : 0;
+
+        const filter: Record<string, unknown> = { organizerId };
+        if (status) filter.status = status;
+
+        const query = Gig.find(filter).sort({ createdAt: -1 });
+        if (limit > 0) query.limit(limit);
+
+        const gigs = await query;
+
+        const gigsWithStats = await Promise.all(
+            gigs.map(async (gig) => {
+                const stats = await GigStats.findOne({ gigId: gig._id });
+                return {
+                    ...gig.toObject(),
+                    stats: stats ? stats.toObject() : null,
+                };
+            })
+        );
 
         sendResponse(res, 200, {
             gigs: gigsWithStats,
-            total: gigs.length
+            total: gigsWithStats.length,
         });
     } catch (err: any) {
-        console.error(err);
+        console.error('[getOrganizerGigs]', err.message);
         sendResponse(res, 500, null, 'Server Error', [{ message: err.message }]);
     }
 };
