@@ -6,6 +6,7 @@ import {
     applyToGig,
     saveGig,
     getOrganizerGigs,
+    getOrganizerApplicants,
     updateGig,
     deleteGig,
     getGigApplications,
@@ -28,6 +29,10 @@ router.route('/organizers/me/gigs').get(protect, getOrganizerGigs); // Access as
 router.route('/gigs/:id/apply').post(protect, applyToGig);
 router.route('/gigs/:id/save').post(protect, saveGig);
 router.route('/organizers/me/gigs/:gigId/applications').get(protect, getGigApplications);
+// Cross-gig applicants aggregator for the hirer dashboard. Registered next to
+// the per-gig applications route so the static '/applicants' path wins over
+// any future generic/parametric path on this prefix.
+router.route('/organizers/me/applicants').get(protect, getOrganizerApplicants);
 router.route('/applications/:applicationId/status').patch(protect, updateApplicationStatus);
 // Artist self-service withdraw. Placed before any potential generic
 // /applications/:id route so the specific suffix wins.
