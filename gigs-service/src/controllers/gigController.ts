@@ -5,6 +5,8 @@ import GigStats from '../models/GigStats';
 import GigApplication from '../models/GigApplication';
 import SavedGig from '../models/SavedGig';
 import { notificationEvents } from '../notifications/event.emitter';
+import { gigValidationSchema, gigUpdateSchema } from '../utils/validation';
+import { z } from 'zod';
 
 // Helper for standard response
 const sendResponse = (res: Response, status: number, data: any = null, message: string = 'OK', errors: any[] = []) => {
@@ -227,6 +229,19 @@ export const getGigById = async (req: Request, res: Response, next: NextFunction
 // @access  Private (Organizer)
 export const createGig = async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
+        const parsed = gigValidationSchema.safeParse(req.body);
+        if (!parsed.success) {
+            const { fieldErrors, formErrors } = parsed.error.flatten();
+            return sendResponse(
+                res,
+                400,
+                null,
+                'Validation failed',
+                [{ fieldErrors, formErrors }]
+            );
+        }
+        req.body = parsed.data;
+
         // Basic validation could be done here or middleware (Zod)
         // For now assuming body matches schema roughly
         const { title, description, type, category, location, schedule, compensation, applicationDeadline } = req.body;
@@ -638,6 +653,19 @@ export const saveGig = async (req: AuthRequest, res: Response, next: NextFunctio
 // @access  Private (Organizer)
 export const updateGig = async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
+        const parsed = gigUpdateSchema.safeParse(req.body);
+        if (!parsed.success) {
+            const { fieldErrors, formErrors } = parsed.error.flatten();
+            return sendResponse(
+                res,
+                400,
+                null,
+                'Validation failed',
+                [{ fieldErrors, formErrors }]
+            );
+        }
+        req.body = parsed.data;
+
         const gigId = req.params.id;
         const organizerId = req.user.id; // From auth middleware
 

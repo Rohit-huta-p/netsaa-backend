@@ -5,6 +5,7 @@ export interface IGig extends Document {
   description: string;
 
   type: 'one-time' | 'recurring' | 'contract';
+  /** @deprecated Plan 4 — superseded by `eventFunction`. Kept for backward read compatibility; new writes should use `eventFunction`. */
   category: string;
   tags: string[];
 
@@ -40,6 +41,7 @@ export interface IGig extends Document {
     female: { min: string; max: string };
   };
 
+  /** @deprecated Plan 4 — superseded by structured `visualDetails.bodyType` + existing `ageRange` + `heightRequirements`. Kept for backward read. */
   physicalRequirements?: string;
 
   // Location
@@ -58,6 +60,7 @@ export interface IGig extends Document {
     endDate: Date;
     durationLabel: string;
     timeCommitment: string;
+    /** @deprecated Plan 4 — practice-day tracking removed from UI. Kept for backward read; no new writes. */
     practiceDays?: {
       count: number;
       isPaid: boolean;
@@ -68,7 +71,7 @@ export interface IGig extends Document {
 
   // Compensation
   compensation: {
-    model: 'fixed' | 'hourly' | 'per-day';
+    model: 'fixed' | 'hourly' | 'per-day' | 'per-track' | 'per-shoot';
     amount: number;
     currency: string;
     negotiable: boolean;
@@ -98,6 +101,67 @@ export interface IGig extends Document {
   createdAt: Date;
   updatedAt: Date;
   termsAndConditions?: string;
+
+  // ── GigForm v2 additions (Plan 4) ──────────────────────────────
+
+  /** Free-form event function. UI shows preset chips but accepts custom strings (trimmed, max 80 chars). */
+  eventFunction?: string;
+
+  /** Multi-select languages the performer must speak/sing/host in. Optional; required in client only for audience-facing roles. */
+  languagePreferences?: string[];
+
+  /** What the hirer provides on top of pay. Flexible chip list (presets + custom). */
+  ancillaryLogistics?: {
+    provided: string[];
+  };
+
+  /** Conditional block — reveals when artistTypes includes a music performer (Singer/Musician/Band/DJ/Music Producer). */
+  musicDetails?: {
+    genres?: string[];
+    equipmentProvided?: boolean;
+    // Producer-only
+    bpm?: number;
+    musicalKey?: string;
+    deliverableFormats?: string[];
+    referenceTracks?: string[];
+    turnaroundDays?: number;
+    revisionsIncluded?: number;
+    // DJ-only
+    setLengthHours?: number;
+    // Band-only
+    bandSize?: number;
+    attirePreference?: 'formal' | 'casual' | 'themed' | 'open';
+  };
+
+  /** Conditional block — required when artistTypes includes 'Model'. */
+  modelDetails?: {
+    shootType?: 'Editorial' | 'Commercial' | 'Fashion' | 'Fitness' | 'Lifestyle' | 'Art';
+    nudityLevel?: 'None' | 'Implied' | 'Partial' | 'Artistic' | 'Nude';
+    wardrobeNotes?: string;
+    usageRights?: string[];
+    releaseRequired?: boolean;
+    measurements?: {
+      height?: string;
+      bust?: string;
+      waist?: string;
+      hips?: string;
+      hair?: string;
+      eyes?: string;
+    };
+  };
+
+  /** Conditional block — reveals for visual performers (Dancer/Actor/Emcee/Performing Artist). */
+  visualDetails?: {
+    roleType?: 'lead' | 'supporting' | 'extra' | 'background';
+    bodyType?: 'slim' | 'athletic' | 'average' | 'plus' | 'any';
+  };
+
+  /** Conditional block — reveals for creative crew (Photographer/Videographer/Makeup Artist/Stylist). */
+  crewDetails?: {
+    deliverables?: string;
+    styleReferences?: string[];
+    equipmentProvided?: boolean;
+  };
 }
 
 const GigSchema = new Schema<IGig>({
@@ -109,6 +173,7 @@ const GigSchema = new Schema<IGig>({
     enum: ['one-time', 'recurring', 'contract'],
     required: true
   },
+  // @deprecated Plan 4 — superseded by `eventFunction`. Readable for backward compat; no new writes.
   category: { type: String, required: false },
   tags: [String],
 
@@ -156,6 +221,7 @@ const GigSchema = new Schema<IGig>({
     }
   },
 
+  // @deprecated Plan 4 — superseded by structured visualDetails.bodyType + ageRange + heightRequirements.
   physicalRequirements: String,
 
   location: {
@@ -172,6 +238,7 @@ const GigSchema = new Schema<IGig>({
     endDate: { type: Date, required: true },
     durationLabel: String,
     timeCommitment: String,
+    // @deprecated Plan 4 — practice-day tracking removed from UI. Kept for backward read; no new writes.
     practiceDays: {
       count: Number,
       isPaid: Boolean,
@@ -183,7 +250,7 @@ const GigSchema = new Schema<IGig>({
   compensation: {
     model: {
       type: String,
-      enum: ['fixed', 'hourly', 'per-day'],
+      enum: ['fixed', 'hourly', 'per-day', 'per-track', 'per-shoot'],
       required: true
     },
     amount: { type: Number, required: false }, // Made optional
@@ -217,6 +284,75 @@ const GigSchema = new Schema<IGig>({
   publishedAt: Date,
   expiresAt: { type: Date, index: true }, // Index for expiration cleanup
   termsAndConditions: String,
+
+  // ── GigForm v2 additions (Plan 4) ──────────────────────────────
+
+  eventFunction: { type: String, trim: true, maxlength: 80, index: true },
+
+  languagePreferences: { type: [String], default: [] },
+
+  ancillaryLogistics: {
+    provided: { type: [String], default: [] }
+  },
+
+  musicDetails: {
+    genres: [String],
+    equipmentProvided: Boolean,
+    bpm: Number,
+    musicalKey: String,
+    deliverableFormats: [String],
+    referenceTracks: [String],
+    turnaroundDays: Number,
+    revisionsIncluded: { type: Number, default: 2 },
+    setLengthHours: Number,
+    bandSize: Number,
+    attirePreference: {
+      type: String,
+      enum: ['formal', 'casual', 'themed', 'open']
+    }
+  },
+
+  modelDetails: {
+    shootType: {
+      type: String,
+      enum: ['Editorial', 'Commercial', 'Fashion', 'Fitness', 'Lifestyle', 'Art']
+    },
+    // Sparse index — only a small fraction of gigs involve Model performers,
+    // so skip index entries for documents that don't have modelDetails at all.
+    // Cuts disk usage on the audit-side query without penalty for regular gigs.
+    nudityLevel: {
+      type: String,
+      enum: ['None', 'Implied', 'Partial', 'Artistic', 'Nude']
+    },
+    wardrobeNotes: String,
+    usageRights: [String],
+    releaseRequired: Boolean,
+    measurements: {
+      height: String,
+      bust: String,
+      waist: String,
+      hips: String,
+      hair: String,
+      eyes: String
+    }
+  },
+
+  visualDetails: {
+    roleType: {
+      type: String,
+      enum: ['lead', 'supporting', 'extra', 'background']
+    },
+    bodyType: {
+      type: String,
+      enum: ['slim', 'athletic', 'average', 'plus', 'any']
+    }
+  },
+
+  crewDetails: {
+    deliverables: String,
+    styleReferences: [String],
+    equipmentProvided: Boolean
+  },
 }, { timestamps: true });
 
 // Compound Indexes from Spec
@@ -224,6 +360,14 @@ GigSchema.index({ status: 1, publishedAt: -1 });
 GigSchema.index({ "location.city": 1 });
 GigSchema.index({ isUrgent: 1, publishedAt: -1 });
 GigSchema.index({ isFeatured: 1, publishedAt: -1 });
+
+// Plan 4 — event-function browse + moderator nudity audit
+GigSchema.index({ eventFunction: 1, 'location.city': 1 });
+
+// Moderator audit for nudity. Sparse — only indexes gigs that actually have
+// modelDetails.nudityLevel set (a tiny minority). Avoids bloating the index
+// with null entries for the 99% of non-Model gigs.
+GigSchema.index({ 'modelDetails.nudityLevel': 1 }, { sparse: true });
 
 export const Gig = mongoose.model<IGig>('Gig', GigSchema);
 export default Gig;
