@@ -86,13 +86,14 @@ describe('POST /v1/gigs — Plan 4 persistence', () => {
     expect(stored?.modelDetails?.measurements?.height).toBe("5'7\"");
   });
 
-  it('201: creates a Visual-performer gig with visualDetails', async () => {
+  it('201: creates a Visual-performer gig with visualDetails (bodyType multi-select)', async () => {
     const payload = makeGigPayload({
       artistTypes: ['Dancer', 'Actor'],
       eventFunction: 'Sangeet',
       visualDetails: {
         roleType: 'lead',
-        bodyType: 'athletic'
+        // bodyType is now multi-select (array). Multiple types accepted.
+        bodyType: ['athletic', 'slim']
       }
     });
 
@@ -105,7 +106,7 @@ describe('POST /v1/gigs — Plan 4 persistence', () => {
     const gigId = res.body.data?._id ?? res.body.data?.gig?._id;
     const stored = await Gig.findById(gigId).lean();
     expect(stored?.visualDetails?.roleType).toBe('lead');
-    expect(stored?.visualDetails?.bodyType).toBe('athletic');
+    expect(stored?.visualDetails?.bodyType).toEqual(expect.arrayContaining(['athletic', 'slim']));
   });
 
   it('201: creates a Crew gig with crewDetails', async () => {

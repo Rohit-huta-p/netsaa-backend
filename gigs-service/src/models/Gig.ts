@@ -153,7 +153,7 @@ export interface IGig extends Document {
   /** Conditional block — reveals for visual performers (Dancer/Actor/Emcee/Performing Artist). */
   visualDetails?: {
     roleType?: 'lead' | 'supporting' | 'extra' | 'background';
-    bodyType?: 'slim' | 'athletic' | 'average' | 'plus' | 'any';
+    bodyType?: ('slim' | 'athletic' | 'average' | 'plus' | 'any')[];
   };
 
   /** Conditional block — reveals for creative crew (Photographer/Videographer/Makeup Artist/Stylist). */
@@ -342,9 +342,13 @@ const GigSchema = new Schema<IGig>({
       type: String,
       enum: ['lead', 'supporting', 'extra', 'background']
     },
+    // Body type now multi-select per Plan 5 UX feedback (hirers want to
+    // accept multiple body types for inclusivity). Mongoose treats `[String]`
+    // with `enum` as: each array item must be one of the enum values.
     bodyType: {
-      type: String,
-      enum: ['slim', 'athletic', 'average', 'plus', 'any']
+      type: [String],
+      enum: ['slim', 'athletic', 'average', 'plus', 'any'],
+      default: undefined
     }
   },
 

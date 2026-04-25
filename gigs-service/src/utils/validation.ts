@@ -123,7 +123,9 @@ const gigBaseSchema = z.object({
 
     visualDetails: z.object({
         roleType: z.enum(['lead', 'supporting', 'extra', 'background']).optional(),
-        bodyType: z.enum(['slim', 'athletic', 'average', 'plus', 'any']).optional()
+        // Multi-select per Plan 5 UX feedback — hirers want to accept
+        // multiple body types ("slim OR athletic" etc) for inclusivity.
+        bodyType: z.array(z.enum(['slim', 'athletic', 'average', 'plus', 'any'])).optional()
     }).optional(),
 
     crewDetails: z.object({
