@@ -17,13 +17,18 @@ import {
     getOrganizerStats
 } from '../controllers/gigController';
 import { getGigDiscussion, addGigComment } from '../controllers/gigDiscussionController';
-import { protect, optionalAuth, requireOrganizer } from '../middleware/auth';
+import { protect, optionalAuth } from '../middleware/auth';
 
 const router = express.Router();
 
 
-// Public routes and refactored protected routes
-router.route('/gigs').get(getGigs).post(protect, requireOrganizer, createGig);
+// Public routes and refactored protected routes.
+// PRD v4 §6 two-context model: every authenticated user can act as both a
+// hirer (post gigs) and an artist (apply to gigs); context is page-based,
+// not role-gated. The legacy `requireOrganizer` middleware that gated
+// POST /v1/gigs has been removed — `protect` already guarantees req.user.id
+// which the handler uses as organizerId at create time.
+router.route('/gigs').get(getGigs).post(protect, createGig);
 router.route('/gigs/:id').get(optionalAuth, getGigById);
 router.route('/organizers/me/gigs').get(protect, getOrganizerGigs); // Access as /v1/organizers/me/gigs
 router.route('/gigs/:id/apply').post(protect, applyToGig);
