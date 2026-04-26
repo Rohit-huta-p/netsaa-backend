@@ -313,7 +313,8 @@ export const updateMe = async (req: AuthRequest, res: Response) => {
       gender,
       height,
       skinTone,
-      headline
+      headline,
+      availability,
     } = req.body;
 
     // Build update object
@@ -339,6 +340,7 @@ export const updateMe = async (req: AuthRequest, res: Response) => {
     if (height !== undefined) updateFields.height = height;
     if (skinTone !== undefined) updateFields.skinTone = skinTone;
     if (headline !== undefined) updateFields.headline = headline;
+    if (availability !== undefined) updateFields.availability = availability;
 
     console.log("AUTH CONTROLLER: updating fields:", updateFields);
 

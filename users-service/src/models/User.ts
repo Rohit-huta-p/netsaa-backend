@@ -8,6 +8,7 @@ export type AccountStatus = 'active' | 'deactivated' | 'scheduled_for_deletion' 
 export type MarketingConsentSource = 'registration' | 'settings';
 export type GuardianStatus = 'none' | 'pending' | 'confirmed' | 'revoked';
 export type GuardianRelationship = 'parent' | 'legal_guardian' | 'other';
+export type AvailabilityStatus = 'available' | 'busy' | 'tentative';
 
 // TODO(cleanup): consider extracting IGuardian + GuardianSubSchema to src/models/sub/Guardian.ts if this file exceeds 500 lines.
 export interface IGuardian {
@@ -155,6 +156,7 @@ export interface IUser extends Document {
 
   // Profile Fields
   headline: string;
+  availability?: AvailabilityStatus;
   bio?: string;
   location?: string;
   skills?: string[];
@@ -425,6 +427,7 @@ const UserSchema = new Schema<IUser>(
     skills: { type: [String], default: [] },
     experience: { type: [ExperienceSubSchema], default: [] },
     artistType: { type: [String], default: [] }, // Multi-select
+    availability: { type: String, enum: ['available', 'busy', 'tentative'] },
     instagramHandle: { type: String },
     youtubeUrl: { type: String },
     spotifyUrl: { type: String },
