@@ -107,6 +107,8 @@ export interface IGig extends Document {
   cancellationPolicy?: '24h' | '48h' | '72h';
   /** Forfeit percentage if cancelled within the policy window. 0-100, default 100. */
   cancellationForfeitPct?: number;
+  /** Phase 4A — 1-5 custom contract clauses, ≤500 chars each. Joined into per-hire contract terms.customTerms at hire time. */
+  customClauses?: string[];
 
   // ── GigForm v2 additions (Plan 4) ──────────────────────────────
 
@@ -309,6 +311,14 @@ const GigSchema = new Schema<IGig>({
       min: 0,
       max: 100,
       default: 100,
+  },
+  customClauses: {
+      type: [String],
+      default: undefined,
+      validate: {
+          validator: (arr: string[]) => !arr || (arr.length <= 5 && arr.every((s) => typeof s === 'string' && s.length <= 500)),
+          message: 'customClauses must be at most 5 items, each ≤500 characters',
+      },
   },
 
   // ── GigForm v2 additions (Plan 4) ──────────────────────────────

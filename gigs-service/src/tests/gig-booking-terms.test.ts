@@ -119,4 +119,45 @@ describe('Gig booking terms — Phase 2A', () => {
 
         expect(res.status).toBe(400);
     });
+
+    it('PATCH /v1/gigs/:id accepts customClauses array', async () => {
+        const gigId = await seedGig();
+
+        const clauses = [
+            'Artist must arrive 1h before stage time.',
+            'Costume + jewelry provided by artist.',
+        ];
+        const res = await request(app)
+            .patch(`/v1/gigs/${gigId}`)
+            .set('Authorization', `Bearer ${token}`)
+            .send({ customClauses: clauses });
+
+        expect(res.status).toBe(200);
+        const fresh = await Gig.findById(gigId).lean();
+        expect(fresh!.customClauses).toEqual(clauses);
+    });
+
+    it('PATCH rejects more than 5 customClauses', async () => {
+        const gigId = await seedGig();
+
+        const tooMany = Array.from({ length: 6 }, (_, i) => `Clause ${i + 1}`);
+        const res = await request(app)
+            .patch(`/v1/gigs/${gigId}`)
+            .set('Authorization', `Bearer ${token}`)
+            .send({ customClauses: tooMany });
+
+        expect(res.status).toBe(400);
+    });
+
+    it('PATCH rejects clause longer than 500 chars', async () => {
+        const gigId = await seedGig();
+
+        const longClause = 'a'.repeat(501);
+        const res = await request(app)
+            .patch(`/v1/gigs/${gigId}`)
+            .set('Authorization', `Bearer ${token}`)
+            .send({ customClauses: [longClause] });
+
+        expect(res.status).toBe(400);
+    });
 });
