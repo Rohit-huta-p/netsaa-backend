@@ -52,7 +52,15 @@ export const createContract = async (req: AuthRequest, res: Response, next: Next
             status: { $nin: ['declined', 'cancelled', 'breached'] },
         });
         if (existing) {
-            return sendResponse(res, 409, null, 'An active contract already exists for this gig and artist');
+            // Surface the existing contract id so the frontend can deep-link to
+            // it instead of showing a dead-end error. Status is included so the
+            // UI can tailor the recovery copy (e.g. "already accepted" vs "sent").
+            return sendResponse(
+                res,
+                409,
+                { existingContractId: String(existing._id), status: existing.status },
+                'An active contract already exists for this gig and artist'
+            );
         }
 
         // Calculate fees (default to 'new' tier, will be updated when we fetch artist trust)
