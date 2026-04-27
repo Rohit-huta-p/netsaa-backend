@@ -102,6 +102,10 @@ export interface IGig extends Document {
   updatedAt: Date;
   termsAndConditions?: string;
 
+  // Booking terms (Phase 2A — master/template terms instantiated into per-hire contracts)
+  paymentStructure?: 'full' | 'advance_balance';
+  cancellationPolicy?: '24h' | '48h' | '72h';
+
   // ── GigForm v2 additions (Plan 4) ──────────────────────────────
 
   /** Free-form event function. UI shows preset chips but accepts custom strings (trimmed, max 80 chars). */
@@ -284,6 +288,20 @@ const GigSchema = new Schema<IGig>({
   publishedAt: Date,
   expiresAt: { type: Date, index: true }, // Index for expiration cleanup
   termsAndConditions: String,
+
+  // Booking terms (Phase 2A) — master/template values that get instantiated
+  // into the per-hire Contract at booking time. Optional + additive: existing
+  // gigs without these fields keep working; defaults apply on new writes.
+  paymentStructure: {
+      type: String,
+      enum: ['full', 'advance_balance'],
+      default: 'full',
+  },
+  cancellationPolicy: {
+      type: String,
+      enum: ['24h', '48h', '72h'],
+      default: '48h',
+  },
 
   // ── GigForm v2 additions (Plan 4) ──────────────────────────────
 

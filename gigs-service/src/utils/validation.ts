@@ -81,6 +81,13 @@ const gigBaseSchema = z.object({
     isUrgent: z.boolean().optional(),
     isFeatured: z.boolean().optional(),
 
+    // ── Booking terms (Phase 2A) ───────────────────────────────────
+    // Master/template values that get instantiated into the per-hire Contract
+    // at booking time. Optional on input; Mongoose applies defaults
+    // ('full' / '48h') if omitted on a new gig.
+    paymentStructure: z.enum(['full', 'advance_balance']).optional(),
+    cancellationPolicy: z.enum(['24h', '48h', '72h']).optional(),
+
     // ── GigForm v2 additions (Plan 4) ──────────────────────────────
 
     eventFunction: z.string().trim().min(1).max(80, 'Event function must be 80 characters or fewer').optional(),
