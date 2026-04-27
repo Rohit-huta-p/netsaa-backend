@@ -105,6 +105,8 @@ export interface IGig extends Document {
   // Booking terms (Phase 2A — master/template terms instantiated into per-hire contracts)
   paymentStructure?: 'full' | 'advance_balance';
   cancellationPolicy?: '24h' | '48h' | '72h';
+  /** Forfeit percentage if cancelled within the policy window. 0-100, default 100. */
+  cancellationForfeitPct?: number;
 
   // ── GigForm v2 additions (Plan 4) ──────────────────────────────
 
@@ -301,6 +303,12 @@ const GigSchema = new Schema<IGig>({
       type: String,
       enum: ['24h', '48h', '72h'],
       default: '48h',
+  },
+  cancellationForfeitPct: {
+      type: Number,
+      min: 0,
+      max: 100,
+      default: 100,
   },
 
   // ── GigForm v2 additions (Plan 4) ──────────────────────────────

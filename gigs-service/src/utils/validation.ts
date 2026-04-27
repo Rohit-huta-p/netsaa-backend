@@ -87,6 +87,7 @@ const gigBaseSchema = z.object({
     // ('full' / '48h') if omitted on a new gig.
     paymentStructure: z.enum(['full', 'advance_balance']).optional(),
     cancellationPolicy: z.enum(['24h', '48h', '72h']).optional(),
+    cancellationForfeitPct: z.number().min(0).max(100).optional(),
 
     // ── GigForm v2 additions (Plan 4) ──────────────────────────────
 

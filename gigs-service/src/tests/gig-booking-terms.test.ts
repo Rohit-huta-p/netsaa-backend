@@ -95,4 +95,28 @@ describe('Gig booking terms — Phase 2A', () => {
         expect(res.body.data.paymentStructure).toBe('advance_balance');
         expect(res.body.data.cancellationPolicy).toBe('24h');
     });
+
+    it('PATCH /v1/gigs/:id accepts cancellationForfeitPct: 50', async () => {
+        const gigId = await seedGig();
+
+        const res = await request(app)
+            .patch(`/v1/gigs/${gigId}`)
+            .set('Authorization', `Bearer ${token}`)
+            .send({ cancellationForfeitPct: 50 });
+
+        expect(res.status).toBe(200);
+        const fresh = await Gig.findById(gigId).lean();
+        expect(fresh!.cancellationForfeitPct).toBe(50);
+    });
+
+    it('PATCH rejects cancellationForfeitPct > 100', async () => {
+        const gigId = await seedGig();
+
+        const res = await request(app)
+            .patch(`/v1/gigs/${gigId}`)
+            .set('Authorization', `Bearer ${token}`)
+            .send({ cancellationForfeitPct: 150 });
+
+        expect(res.status).toBe(400);
+    });
 });
