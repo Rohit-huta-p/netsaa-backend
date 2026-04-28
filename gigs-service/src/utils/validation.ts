@@ -99,10 +99,6 @@ const gigBaseSchema = z.object({
 
     languagePreferences: z.array(z.string()).optional(),
 
-    ancillaryLogistics: z.object({
-        provided: z.array(z.string()).default([])
-    }).optional(),
-
     musicDetails: z.object({
         genres: z.array(z.string()).optional(),
         equipmentProvided: z.boolean().optional(),

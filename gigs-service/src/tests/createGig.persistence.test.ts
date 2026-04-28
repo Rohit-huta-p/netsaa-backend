@@ -1,11 +1,10 @@
 // netsa-backend/gigs-service/src/tests/createGig.persistence.test.ts
 //
 // Plan 4 Wave 4 — Task 9. Round-trip proof that the new v2 sub-documents
-// (musicDetails, modelDetails, visualDetails, crewDetails, ancillaryLogistics)
-// persist cleanly through Mongoose and read back exactly as written. The
-// final test is a backward-compat guard: a legacy-shape payload (no v2
-// fields) still creates and stores without picking up stray undefined
-// sub-doc fields.
+// (musicDetails, modelDetails, visualDetails, crewDetails) persist cleanly
+// through Mongoose and read back exactly as written. The final test is a
+// backward-compat guard: a legacy-shape payload (no v2 fields) still
+// creates and stores without picking up stray undefined sub-doc fields.
 //
 // Test JWTs are signed with role 'organizer' so requests pass the
 // `requireOrganizer` gate on POST /v1/gigs and reach the persistence layer.
@@ -30,7 +29,6 @@ describe('POST /v1/gigs — Plan 4 persistence', () => {
       artistTypes: ['Music Producer', 'Singer'],
       eventFunction: 'Music recording',
       languagePreferences: ['Hindi', 'English'],
-      ancillaryLogistics: { provided: ['Rehearsal space', 'Equipment'] },
       musicDetails: {
         genres: ['Bollywood', 'Sufi'],
         equipmentProvided: true,
@@ -54,7 +52,6 @@ describe('POST /v1/gigs — Plan 4 persistence', () => {
     const stored = await Gig.findById(gigId).lean();
     expect(stored?.eventFunction).toBe('Music recording');
     expect(stored?.languagePreferences).toEqual(['Hindi', 'English']);
-    expect(stored?.ancillaryLogistics?.provided).toEqual(['Rehearsal space', 'Equipment']);
     expect(stored?.musicDetails?.bpm).toBe(128);
     expect(stored?.musicDetails?.turnaroundDays).toBe(14);
     expect(stored?.musicDetails?.revisionsIncluded).toBe(3);
@@ -136,7 +133,7 @@ describe('POST /v1/gigs — Plan 4 persistence', () => {
     const payload = makeGigPayload({
       category: 'Wedding',
       physicalRequirements: 'Height: 5.2-5.8 ft'
-      // zero new fields (no eventFunction, no *Details, no ancillaryLogistics)
+      // zero new fields (no eventFunction, no *Details)
     });
 
     const res = await request(app)
@@ -161,7 +158,5 @@ describe('POST /v1/gigs — Plan 4 persistence', () => {
     expect(stored?.visualDetails?.roleType).toBeUndefined();
     expect(stored?.crewDetails?.deliverables).toBeUndefined();
     expect(stored?.crewDetails?.equipmentProvided).toBeUndefined();
-    // Array defaults are fine — Mongoose auto-inits them to [].
-    expect(stored?.ancillaryLogistics?.provided).toEqual([]);
   });
 });

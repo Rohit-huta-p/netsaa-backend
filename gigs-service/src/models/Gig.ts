@@ -120,11 +120,6 @@ export interface IGig extends Document {
   /** Multi-select languages the performer must speak/sing/host in. Optional; required in client only for audience-facing roles. */
   languagePreferences?: string[];
 
-  /** What the hirer provides on top of pay. Flexible chip list (presets + custom). */
-  ancillaryLogistics?: {
-    provided: string[];
-  };
-
   /** Conditional block — reveals when artistTypes includes a music performer (Singer/Musician/Band/DJ/Music Producer). */
   musicDetails?: {
     genres?: string[];
@@ -333,10 +328,6 @@ const GigSchema = new Schema<IGig>({
   eventFunction: { type: String, trim: true, maxlength: 80, index: true },
 
   languagePreferences: { type: [String], default: [] },
-
-  ancillaryLogistics: {
-    provided: { type: [String], default: [] }
-  },
 
   musicDetails: {
     genres: [String],
