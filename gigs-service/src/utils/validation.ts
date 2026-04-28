@@ -93,6 +93,14 @@ const gigBaseSchema = z.object({
         .max(5, 'At most 5 custom clauses')
         .optional(),
 
+    /**
+     * Hirer-authored Terms & Conditions from Page 4 of the GigForm.
+     * Surfaced to the artist on Apply Step 2 (Review Terms). Free-form
+     * text — chip templates on the form (Basic / Standard / Detailed)
+     * pre-fill it but the hirer can edit freely.
+     */
+    termsAndConditions: z.string().trim().max(4000, 'Terms & conditions must be ≤4000 characters').optional(),
+
     // ── GigForm v2 additions (Plan 4) ──────────────────────────────
 
     eventFunction: z.string().trim().min(1).max(80, 'Event function must be 80 characters or fewer').optional(),

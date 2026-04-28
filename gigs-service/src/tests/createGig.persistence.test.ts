@@ -129,6 +129,28 @@ describe('POST /v1/gigs — Plan 4 persistence', () => {
     expect(stored?.crewDetails?.equipmentProvided).toBe(false);
   });
 
+  it('201: persists hirer-authored termsAndConditions (Page 4 → gig)', async () => {
+    // Regression for the Apr-28 strip bug: Zod gigBaseSchema didn't list
+    // termsAndConditions, so safeParse was silently dropping it before the
+    // controller wrote to Mongoose. The artist Apply modal then rendered
+    // "no specific terms" even when the hirer had filled the field. Adding
+    // termsAndConditions to the schema closes that hole — this test locks
+    // the round-trip so it doesn't regress.
+    const tnc = `1. Payment: 30% advance, 70% on event day.\n2. Cancellation within 48h forfeits the advance.\n3. Travel covered by hirer for out-of-city.`;
+    const payload = makeGigPayload({
+      artistTypes: ['Dancer'],
+      termsAndConditions: tnc,
+    });
+    const res = await request(app)
+      .post('/v1/gigs')
+      .set('Authorization', `Bearer ${token}`)
+      .send(payload);
+    expect([200, 201]).toContain(res.status);
+    const gigId = res.body.data?._id ?? res.body.data?.gig?._id;
+    const stored = await Gig.findById(gigId).lean();
+    expect(stored?.termsAndConditions).toBe(tnc);
+  });
+
   it('201: backward compat — legacy-shape payload (no new fields) still succeeds', async () => {
     const payload = makeGigPayload({
       category: 'Wedding',
