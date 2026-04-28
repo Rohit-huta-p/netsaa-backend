@@ -16,6 +16,12 @@ export const recordOfflineSchema = z.object({
     gigId: z.string().optional(),
     eventId: z.string().optional(),
     contractId: z.string().optional(),
+    /**
+     * Application reference for hires that don't have a Contract artifact.
+     * Added post contract-rollback (Apr 28). Optional because event/sub-artist
+     * payments don't have an application either.
+     */
+    applicationId: z.string().optional(),
     toUserId: z.string().min(1, 'Payee ID is required'),
     amount: z.number().positive('Amount must be positive'),
     method: z.enum(['upi', 'bank_transfer', 'cash', 'google_pay', 'credit_card', 'debit_card', 'other']),

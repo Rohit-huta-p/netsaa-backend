@@ -52,6 +52,13 @@ export interface ITransaction extends Document {
     gigId?: mongoose.Types.ObjectId;
     eventId?: mongoose.Types.ObjectId;
     contractId?: mongoose.Types.ObjectId;
+    /**
+     * Optional reference to the GigApplication this transaction settles.
+     * Added in the post contract-rollback skeleton (Apr 28) so payments can
+     * be tied to a hire even when no Contract artifact exists. Co-exists
+     * with `contractId` — if/when contracts are restored, both can be set.
+     */
+    applicationId?: mongoose.Types.ObjectId;
     parentTransactionId?: mongoose.Types.ObjectId;
     type: 'gig_payment' | 'event_ticket' | 'sub_artist' | 'offline_record';
     paymentStructure: 'full' | 'advance_30' | 'balance_70';
@@ -145,6 +152,7 @@ const TransactionSchema = new Schema<ITransaction>({
     gigId: { type: Schema.Types.ObjectId, ref: 'Gig' },
     eventId: { type: Schema.Types.ObjectId, ref: 'Event' },
     contractId: { type: Schema.Types.ObjectId, ref: 'Contract' },
+    applicationId: { type: Schema.Types.ObjectId, ref: 'GigApplication', index: true },
     parentTransactionId: { type: Schema.Types.ObjectId, ref: 'Transaction' },
 
     type: {
@@ -228,6 +236,7 @@ TransactionSchema.index({ fromUserId: 1, status: 1 }); // Hirer payment history
 TransactionSchema.index({ toUserId: 1, status: 1 }); // Artist earnings
 TransactionSchema.index({ gigId: 1, type: 1 }); // Gig payment lookup
 TransactionSchema.index({ contractId: 1 }); // Contract payment lookup
+TransactionSchema.index({ applicationId: 1 }); // Application payment lookup (post contract-rollback)
 TransactionSchema.index({ status: 1, createdAt: 1 }); // Reconciliation
 TransactionSchema.index({ idempotencyKey: 1 }, { unique: true }); // Idempotency
 TransactionSchema.index({ razorpayOrderId: 1 }); // Webhook handler

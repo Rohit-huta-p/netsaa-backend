@@ -20,6 +20,7 @@ function deriveIdempotencyKey(input: {
     amount: number;
     method: string;
     contractId?: string;
+    applicationId?: string;
     gigId?: string;
     eventId?: string;
     referenceId?: string;
@@ -30,6 +31,7 @@ function deriveIdempotencyKey(input: {
         input.amount.toFixed(2),
         input.method,
         input.contractId ?? '',
+        input.applicationId ?? '',
         input.gigId ?? '',
         input.eventId ?? '',
         input.referenceId ?? '',
@@ -48,7 +50,7 @@ export const recordOfflinePayment = async (req: AuthRequest, res: Response) => {
             return sendResponse(res, 400, null, 'Validation failed', parsed.error.issues);
         }
 
-        const { toUserId, amount, method, referenceId, note, gigId, eventId, contractId } = parsed.data;
+        const { toUserId, amount, method, referenceId, note, gigId, eventId, contractId, applicationId } = parsed.data;
         const fromUserId = req.user.id;
 
         if (fromUserId === toUserId) {
@@ -61,7 +63,7 @@ export const recordOfflinePayment = async (req: AuthRequest, res: Response) => {
         const clientIdemKey = req.header('Idempotency-Key');
         const idempotencyKey = clientIdemKey
             ? `netsa_offline_${clientIdemKey.slice(0, 96)}`
-            : deriveIdempotencyKey({ fromUserId, toUserId, amount, method, contractId, gigId, eventId, referenceId });
+            : deriveIdempotencyKey({ fromUserId, toUserId, amount, method, contractId, applicationId, gigId, eventId, referenceId });
 
         // If a row already exists for this key, return it (200) instead of creating a duplicate.
         const existing = await Transaction.findOne({ idempotencyKey });
@@ -108,6 +110,7 @@ export const recordOfflinePayment = async (req: AuthRequest, res: Response) => {
                 gigId,
                 eventId,
                 contractId,
+                applicationId,
                 type: 'offline_record',
                 paymentStructure: 'full',
                 layer: 'primary',
