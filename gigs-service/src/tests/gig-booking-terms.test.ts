@@ -160,4 +160,30 @@ describe('Gig booking terms — Phase 2A', () => {
 
         expect(res.status).toBe(400);
     });
+
+    it('PATCH /v1/gigs/:id accepts cancellationCustomText', async () => {
+        const gigId = await seedGig();
+
+        const text = 'No refunds within 1 week of event under any circumstance.';
+        const res = await request(app)
+            .patch(`/v1/gigs/${gigId}`)
+            .set('Authorization', `Bearer ${token}`)
+            .send({ cancellationCustomText: text });
+
+        expect(res.status).toBe(200);
+        const fresh = await Gig.findById(gigId).lean();
+        expect(fresh!.cancellationCustomText).toBe(text);
+    });
+
+    it('PATCH rejects cancellationCustomText > 500 chars', async () => {
+        const gigId = await seedGig();
+
+        const tooLong = 'a'.repeat(501);
+        const res = await request(app)
+            .patch(`/v1/gigs/${gigId}`)
+            .set('Authorization', `Bearer ${token}`)
+            .send({ cancellationCustomText: tooLong });
+
+        expect(res.status).toBe(400);
+    });
 });

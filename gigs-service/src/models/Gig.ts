@@ -107,6 +107,8 @@ export interface IGig extends Document {
   cancellationPolicy?: '24h' | '48h' | '72h';
   /** Forfeit percentage if cancelled within the policy window. 0-100, default 100. */
   cancellationForfeitPct?: number;
+  /** Hirer-authored cancellation policy text. If set, used verbatim in contracts. If empty, contract shows only structured window + forfeit % fields. */
+  cancellationCustomText?: string;
   /** Phase 4A — 1-5 custom contract clauses, ≤500 chars each. Joined into per-hire contract terms.customTerms at hire time. */
   customClauses?: string[];
 
@@ -311,6 +313,11 @@ const GigSchema = new Schema<IGig>({
       min: 0,
       max: 100,
       default: 100,
+  },
+  cancellationCustomText: {
+      type: String,
+      trim: true,
+      maxlength: 500,
   },
   customClauses: {
       type: [String],

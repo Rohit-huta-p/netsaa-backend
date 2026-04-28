@@ -88,6 +88,7 @@ const gigBaseSchema = z.object({
     paymentStructure: z.enum(['full', 'advance_balance']).optional(),
     cancellationPolicy: z.enum(['24h', '48h', '72h']).optional(),
     cancellationForfeitPct: z.number().min(0).max(100).optional(),
+    cancellationCustomText: z.string().trim().max(500, 'Custom cancellation text must be ≤500 characters').optional(),
     customClauses: z.array(z.string().trim().min(1).max(500))
         .max(5, 'At most 5 custom clauses')
         .optional(),
