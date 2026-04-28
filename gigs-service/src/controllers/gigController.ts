@@ -447,12 +447,17 @@ export const updateApplicationStatus = async (req: AuthRequest, res: Response, n
             return sendResponse(res, 403, null, 'Not authorized to manage this application');
         }
 
-        // State Machine validation
+        // State Machine validation.
+        // 'applied' → 'hired' is allowed: the Hub UX lets the hirer hire
+        // directly from a fresh application without forcing a shortlist
+        // step. Shortlisting is an OPTIONAL waypoint, not a gate. The
+        // GigStats counter logic below already handles the skipped
+        // shortlist (no decrement when currentStatus === 'applied').
         const validTransitions: any = {
-            'applied': ['shortlisted', 'rejected'],
+            'applied': ['shortlisted', 'rejected', 'hired'],
             'shortlisted': ['hired', 'rejected'],
-            'rejected': [], // Terminal state? Maybe allow reconsidering? The spec implies strict flow.
-            'hired': []
+            'rejected': [], // Terminal — re-considering rejected applicants not in scope yet.
+            'hired': []     // Terminal — un-hire flow (cancel) not in scope yet.
         };
 
         const currentStatus = application.status;
