@@ -415,8 +415,17 @@ export const updateApplicationStatus = async (req: AuthRequest, res: Response, n
 
     try {
         const { applicationId } = req.params;
-        const { status } = req.body;
+        const { status, paymentMethod } = req.body;
         const organizerId = req.user.id;
+
+        // Optional: hirer's payment-route intent at hire time. Only meaningful
+        // when transitioning to 'hired' but accept on any status update so
+        // future flows (e.g. switch method post-hire) can reuse the field.
+        if (paymentMethod !== undefined && paymentMethod !== 'on_platform' && paymentMethod !== 'off_platform') {
+            await session.abortTransaction();
+            session.endSession();
+            return sendResponse(res, 400, null, `Invalid paymentMethod: ${paymentMethod}`);
+        }
 
         const application = await GigApplication.findById(applicationId).session(session);
         if (!application) {
@@ -457,6 +466,9 @@ export const updateApplicationStatus = async (req: AuthRequest, res: Response, n
 
         // Perform Update
         application.status = status;
+        if (paymentMethod !== undefined) {
+            application.paymentMethod = paymentMethod;
+        }
         await application.save({ session });
 
         // Update Stats Logic
