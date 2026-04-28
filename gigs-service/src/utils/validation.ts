@@ -101,6 +101,20 @@ const gigBaseSchema = z.object({
      */
     termsAndConditions: z.string().trim().max(4000, 'Terms & conditions must be ≤4000 characters').optional(),
 
+    /**
+     * Optional team WhatsApp group invite URL (e.g. https://chat.whatsapp.com/...).
+     * Surfaced on the team page so hired artists can tap to join. Loose
+     * URL shape only — NETSA doesn't ping WA to verify the invite is
+     * still valid (links rotate / get revoked, expected).
+     */
+    teamWhatsAppInviteUrl: z
+        .string()
+        .trim()
+        .url('teamWhatsAppInviteUrl must be a valid URL')
+        .max(256)
+        .optional()
+        .or(z.literal('')),
+
     // ── GigForm v2 additions (Plan 4) ──────────────────────────────
 
     eventFunction: z.string().trim().min(1).max(80, 'Event function must be 80 characters or fewer').optional(),

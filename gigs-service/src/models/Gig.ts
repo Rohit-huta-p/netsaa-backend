@@ -102,6 +102,15 @@ export interface IGig extends Document {
   updatedAt: Date;
   termsAndConditions?: string;
 
+  /**
+   * Optional WhatsApp group invite URL the hirer pastes in for fast
+   * team coordination. Surfaced on the team page so hired artists can
+   * tap to join. NETSA doesn't validate the link beyond URL shape —
+   * if WA invalidates the invite, the link goes dead and the hirer
+   * pastes a fresh one.
+   */
+  teamWhatsAppInviteUrl?: string;
+
   // Booking terms (Phase 2A — master/template terms instantiated into per-hire contracts)
   paymentStructure?: 'full' | 'advance_balance';
   cancellationPolicy?: '24h' | '48h' | '72h';
@@ -289,6 +298,7 @@ const GigSchema = new Schema<IGig>({
   publishedAt: Date,
   expiresAt: { type: Date, index: true }, // Index for expiration cleanup
   termsAndConditions: String,
+  teamWhatsAppInviteUrl: { type: String, maxlength: 256 },
 
   // Booking terms (Phase 2A) — master/template values that get instantiated
   // into the per-hire Contract at booking time. Optional + additive: existing

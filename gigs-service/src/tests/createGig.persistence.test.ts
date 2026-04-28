@@ -151,6 +151,33 @@ describe('POST /v1/gigs — Plan 4 persistence', () => {
     expect(stored?.termsAndConditions).toBe(tnc);
   });
 
+  it('201: persists teamWhatsAppInviteUrl when set', async () => {
+    const payload = makeGigPayload({
+      artistTypes: ['Dancer'],
+      teamWhatsAppInviteUrl: 'https://chat.whatsapp.com/InviteCodeXYZ',
+    });
+    const res = await request(app)
+      .post('/v1/gigs')
+      .set('Authorization', `Bearer ${token}`)
+      .send(payload);
+    expect([200, 201]).toContain(res.status);
+    const gigId = res.body.data?._id ?? res.body.data?.gig?._id;
+    const stored = await Gig.findById(gigId).lean();
+    expect(stored?.teamWhatsAppInviteUrl).toBe('https://chat.whatsapp.com/InviteCodeXYZ');
+  });
+
+  it('400: rejects malformed teamWhatsAppInviteUrl', async () => {
+    const payload = makeGigPayload({
+      artistTypes: ['Dancer'],
+      teamWhatsAppInviteUrl: 'not-a-url',
+    });
+    const res = await request(app)
+      .post('/v1/gigs')
+      .set('Authorization', `Bearer ${token}`)
+      .send(payload);
+    expect(res.status).toBe(400);
+  });
+
   it('201: backward compat — legacy-shape payload (no new fields) still succeeds', async () => {
     const payload = makeGigPayload({
       category: 'Wedding',
