@@ -9,6 +9,14 @@ export interface IGigApplication extends Document {
         artistType: string;
         profileImageUrl: string;
         rating: number;
+        /**
+         * Artist's phone number — populated ONLY when status flips to 'hired'.
+         * DPDP-conscious: phone stays private during the apply / shortlist
+         * phases so an artist's contact info isn't broadcast just for
+         * applying. Set by the updateApplicationStatus controller at hire
+         * time from User.phoneNumber.
+         */
+        phoneNumber?: string;
     };
 
     coverNote?: string;
@@ -40,7 +48,9 @@ const GigApplicationSchema = new Schema<IGigApplication>({
         displayName: String,
         artistType: String,
         profileImageUrl: String,
-        rating: Number
+        rating: Number,
+        // Optional; populated only at hire time. See interface comment.
+        phoneNumber: String,
     },
 
     coverNote: String,

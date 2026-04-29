@@ -4,6 +4,7 @@ import Gig from '../models/Gig';
 import GigStats from '../models/GigStats';
 import GigApplication from '../models/GigApplication';
 import SavedGig from '../models/SavedGig';
+import User from '../models/User';
 import { notificationEvents } from '../notifications/event.emitter';
 import { gigValidationSchema, gigUpdateSchema } from '../utils/validation';
 import { z } from 'zod';
@@ -474,6 +475,19 @@ export const updateApplicationStatus = async (req: AuthRequest, res: Response, n
         if (paymentMethod !== undefined) {
             application.paymentMethod = paymentMethod;
         }
+
+        // DPDP-conscious phone-share: only when status flips to 'hired'
+        // do we populate artistSnapshot.phoneNumber from the User record.
+        // Apply / shortlist phases keep the artist's phone private. The
+        // mobile ContactActionSheet reads this snapshot field and falls
+        // back to a "Phone not shared" toast when absent.
+        if (status === 'hired') {
+            const artist = await User.findById(application.artistId).select('phoneNumber').session(session);
+            if (artist?.phoneNumber) {
+                application.set('artistSnapshot.phoneNumber', artist.phoneNumber);
+            }
+        }
+
         await application.save({ session });
 
         // Update Stats Logic

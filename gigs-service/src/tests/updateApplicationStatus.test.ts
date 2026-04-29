@@ -51,6 +51,34 @@ describe('GigApplication.paymentMethod (schema-level)', () => {
         expect(fresh?.paymentMethod).toBeUndefined();
     });
 
+    it('persists artistSnapshot.phoneNumber when populated at hire time', async () => {
+        // The updateApplicationStatus controller writes
+        // application.artistSnapshot.phoneNumber from User.phoneNumber when
+        // status flips to 'hired'. This schema-level test confirms the
+        // model accepts + round-trips the field. (Controller integration is
+        // blocked by the transaction-required test harness; documented in
+        // the file header.)
+        const app = await GigApplication.create({
+            ...baseShape(),
+            artistSnapshot: {
+                displayName: 'A',
+                artistType: 'dancer',
+                profileImageUrl: '',
+                rating: 0,
+                phoneNumber: '+919876543210',
+            } as any,
+            status: 'hired',
+        });
+        const fresh = await GigApplication.findById(app._id);
+        expect((fresh?.artistSnapshot as any)?.phoneNumber).toBe('+919876543210');
+    });
+
+    it('omits artistSnapshot.phoneNumber when not set (DPDP default)', async () => {
+        const app = await GigApplication.create(baseShape());
+        const fresh = await GigApplication.findById(app._id);
+        expect((fresh?.artistSnapshot as any)?.phoneNumber).toBeUndefined();
+    });
+
     it('rejects paymentMethod values outside the enum', async () => {
         await expect(
             GigApplication.create({
