@@ -16,7 +16,12 @@ import {
     getSavedGigs,
     getOrganizerStats
 } from '../controllers/gigController';
-import { getGigDiscussion, addGigComment } from '../controllers/gigDiscussionController';
+import {
+    getGigDiscussion,
+    addGigComment,
+    togglePinGigComment,
+    deleteGigComment,
+} from '../controllers/gigDiscussionController';
 import { protect, optionalAuth } from '../middleware/auth';
 
 const router = express.Router();
@@ -51,6 +56,14 @@ router.route('/gigs/:id').patch(protect, updateGig).delete(protect, deleteGig);
 router.route('/gigs/:gigId/discussion')
     .get(protect, getGigDiscussion)
     .post(protect, addGigComment);
+
+// Apr 30 — moderation. Pin (organizer-only, cap 3) + soft-delete (author OR
+// organizer OR admin). Authorization is enforced inside each controller so
+// the route-level middleware stays plain `protect`.
+router.route('/gigs/:gigId/discussion/:commentId/pin')
+    .put(protect, togglePinGigComment);
+router.route('/gigs/:gigId/discussion/:commentId')
+    .delete(protect, deleteGigComment);
 
 // Organizer Stats Route (public - for trust card)
 router.route('/users/:userId/organizer-stats').get(getOrganizerStats);
