@@ -107,8 +107,31 @@ export interface GigApplicationReceivedEvent extends BaseNotificationEvent {
 }
 
 /**
+ * Emitted when the gig owner first OPENS / VIEWS an applicant's
+ * application card. Used to nudge the applicant ("the hirer just
+ * opened your application").
+ *
+ * Triggers notification to: applicant
+ * Notification type: gig.application.viewed
+ *
+ * Idempotency: 24-hour bucket per (hirer × applicant × gig) so a hirer
+ * scrolling back through the list multiple times doesn't spam the
+ * applicant. Bucket key includes a YYYY-MM-DD date stamp.
+ */
+export interface GigApplicationViewedEvent extends BaseNotificationEvent {
+    eventName: 'gig.application.viewed';
+    payload: {
+        gigId: Types.ObjectId;            // Gig document ID
+        applicationId: Types.ObjectId;    // Application document ID
+        applicantId: Types.ObjectId;      // User who applied (receives notification)
+        gigOwnerId: Types.ObjectId;       // User who viewed the application
+        gigTitle: string;                 // Gig title for notification text
+    };
+}
+
+/**
  * Emitted when a gig application status changes (shortlisted, hired, rejected)
- * 
+ *
  * Triggers notification to: applicant
  * Notification type: varies based on newStatus
  */
@@ -302,6 +325,33 @@ export interface ContractSignedEvent extends BaseNotificationEvent {
 }
 
 // ============================================================================
+// PROFILE EVENTS
+// ============================================================================
+
+/**
+ * Emitted when a user views another user's public profile. Used for
+ * "X viewed your profile" nudges (LinkedIn-style — light social-proof
+ * loop that nudges artists back into the app).
+ *
+ * Triggers notification to: profile owner
+ * Notification type: profile.viewed
+ *
+ * Privacy + idempotency: 24-hour bucket per (viewer × owner) so the
+ * notification fires at most once per day per viewer. Self-views
+ * (viewerId === profileOwnerId) MUST be filtered at the trigger
+ * site — they never produce a notification.
+ */
+export interface ProfileViewedEvent extends BaseNotificationEvent {
+    eventName: 'profile.viewed';
+    payload: {
+        profileOwnerId: Types.ObjectId;   // User whose profile was viewed (receives notification)
+        viewerId: Types.ObjectId;         // User who viewed the profile
+        viewerDisplayName: string;        // Pre-resolved for notification body
+        viewerArtistType?: string;        // Optional context ("Bharatanatyam dancer")
+    };
+}
+
+// ============================================================================
 // UNION TYPE FOR ALL EVENTS
 // ============================================================================
 
@@ -314,6 +364,7 @@ export type NotificationEvent =
     | ConnectionAcceptedEvent
     | MessageSentEvent
     | GigApplicationReceivedEvent
+    | GigApplicationViewedEvent
     | GigApplicationStatusChangedEvent
     | GigCancelledEvent
     | EventRegistrationCompletedEvent
@@ -323,7 +374,8 @@ export type NotificationEvent =
     | PaymentCompletedEvent
     | PaymentFailedEvent
     | ContractSentEvent
-    | ContractSignedEvent;
+    | ContractSignedEvent
+    | ProfileViewedEvent;
 
 /**
  * Event names as a union type for validation

@@ -25,6 +25,11 @@ import { getIO } from '../sockets/socket.instance';
 import { NotificationEvent } from './notification.events';
 import { notificationFactory } from './notification.factory';
 import { notificationService } from './notification.service';
+import { pushNotificationService } from './push.service';
+import { emailNotificationService } from './email.service';
+import { smsNotificationService } from './sms.service';
+import { whatsappNotificationService } from './whatsapp.service';
+import User from '../models/User';
 
 /**
  * Redis channel for notification events
@@ -177,15 +182,37 @@ class NotificationWorker {
             // 2. Deliver via Socket.IO if user is online
             const delivered = await this.deliverViaSocket(notification);
 
-            // 3. Queue push notification if user is offline
-            if (!delivered && payload.channel.push) {
-                await this.queuePushNotification(notification);
-            }
+            // 3. Fan out to non-inApp channels in parallel. Push only fires
+            //    when the in-app socket delivery couldn't reach the user
+            //    (offline). Email / WhatsApp / SMS are always-on when their
+            //    flag is true — they're the cross-app reach for users who
+            //    aren't currently in NETSA.
+            //
+            //    User contact lookup is done once and shared across the
+            //    three off-app channels (saves 3x DB hits per notification).
+            const offAppNeeded =
+                payload.channel.email ||
+                payload.channel.sms ||
+                payload.channel.whatsapp;
 
-            // 4. Queue email if configured
-            if (payload.channel.email) {
-                await this.queueEmailNotification(notification);
-            }
+            const userContact = offAppNeeded
+                ? await this.lookupUserContact(payload.userId)
+                : null;
+
+            await Promise.allSettled([
+                !delivered && payload.channel.push
+                    ? this.dispatchPush(notification)
+                    : Promise.resolve(),
+                payload.channel.email && userContact?.email
+                    ? this.dispatchEmail(notification, userContact.email)
+                    : Promise.resolve(),
+                payload.channel.sms && userContact?.phoneNumber
+                    ? this.dispatchSms(notification, userContact.phoneNumber)
+                    : Promise.resolve(),
+                payload.channel.whatsapp && userContact?.phoneNumber
+                    ? this.dispatchWhatsApp(notification, userContact.phoneNumber)
+                    : Promise.resolve(),
+            ]);
 
         } catch (error) {
             console.error('[NotificationWorker] Error processing notification:', {
@@ -246,67 +273,152 @@ class NotificationWorker {
     }
 
     /**
-     * Queue push notification for offline user
-     * In production, this would use a service like Firebase Cloud Messaging
+     * One-shot User lookup for the off-app channels. Returns null on any
+     * failure (worker keeps going — off-app delivery is best-effort).
      */
-    private async queuePushNotification(notification: any): Promise<void> {
+    private async lookupUserContact(
+        userId: any
+    ): Promise<{ email?: string; phoneNumber?: string } | null> {
         try {
-            // TODO: Implement push notification queuing
-            // Options:
-            // 1. Use BullMQ to queue jobs for push notification service
-            // 2. Call Firebase Cloud Messaging API directly
-            // 3. Use a third-party service like OneSignal
+            const user = await User.findById(userId)
+                .select('email phoneNumber')
+                .lean();
+            if (!user) return null;
+            return {
+                email: (user as any).email,
+                phoneNumber: (user as any).phoneNumber,
+            };
+        } catch (err) {
+            console.warn(
+                '[NotificationWorker] User contact lookup failed:',
+                err instanceof Error ? err.message : err
+            );
+            return null;
+        }
+    }
 
-            console.log('[NotificationWorker] Push notification queued:', {
+    private async dispatchPush(notification: any): Promise<void> {
+        // TODO: resolve User.devices[].deviceToken (FCM/APNs token store
+        // is not yet modelled on the User schema), then call:
+        //   pushNotificationService.send(deviceToken, { title, body, data })
+        // for each token. Until the device-token store ships, log the
+        // intended dispatch so worker fan-out behaviour is observable.
+        try {
+            console.log('[NotificationWorker] push dispatch (stub):', {
                 userId: notification.userId,
                 notificationId: notification._id,
                 title: notification.title,
+                provider: pushNotificationService.constructor.name,
             });
+        } catch (err) {
+            console.warn(
+                '[NotificationWorker] push dispatch failed:',
+                err instanceof Error ? err.message : err
+            );
+        }
+    }
 
-            // Placeholder: In production, you would:
-            // await pushQueue.add('send-push', {
-            //     userId: notification.userId,
-            //     title: notification.title,
-            //     body: notification.body,
-            //     data: notification.data,
-            // });
+    private async dispatchEmail(
+        notification: any,
+        toEmail: string
+    ): Promise<void> {
+        try {
+            await emailNotificationService.send({
+                userId: notification.userId,
+                to: toEmail,
+                subject: notification.title,
+                body: notification.body,
+                ctaUrl: this.buildDeepLink(notification),
+                notificationType: notification.subtype,
+            });
+        } catch (err) {
+            console.warn(
+                '[NotificationWorker] email dispatch failed:',
+                err instanceof Error ? err.message : err
+            );
+        }
+    }
 
-        } catch (error) {
-            console.error('[NotificationWorker] Failed to queue push notification:', error);
-            // Don't throw - push is best-effort
+    private async dispatchSms(
+        notification: any,
+        toPhone: string
+    ): Promise<void> {
+        try {
+            await smsNotificationService.send({
+                userId: notification.userId,
+                to: toPhone,
+                // SMS has a 160-char segment limit — keep it tight.
+                body: this.truncate(`${notification.title}: ${notification.body}`, 155),
+                notificationType: notification.subtype,
+            });
+        } catch (err) {
+            console.warn(
+                '[NotificationWorker] sms dispatch failed:',
+                err instanceof Error ? err.message : err
+            );
+        }
+    }
+
+    private async dispatchWhatsApp(
+        notification: any,
+        toPhone: string
+    ): Promise<void> {
+        try {
+            // Pre-approved templates are required by Meta's WA Business
+            // policy; mapping notification.subtype → templateName lives
+            // in the provider adapter (mock just logs).
+            await whatsappNotificationService.send({
+                userId: notification.userId,
+                to: toPhone,
+                templateName: this.subtypeToWaTemplate(notification.subtype),
+                templateVars: [notification.title, notification.body],
+                ctaUrl: this.buildDeepLink(notification),
+                notificationType: notification.subtype,
+            });
+        } catch (err) {
+            console.warn(
+                '[NotificationWorker] whatsapp dispatch failed:',
+                err instanceof Error ? err.message : err
+            );
         }
     }
 
     /**
-     * Queue email notification
-     * In production, this would use a service like SendGrid or AWS SES
+     * Notification subtype → WA template name mapping. Real templates
+     * have to be approved by Meta upfront; this map needs to stay in
+     * sync with what's been registered. Fallback `netsa_generic`
+     * template covers anything not yet mapped.
      */
-    private async queueEmailNotification(notification: any): Promise<void> {
-        try {
-            // TODO: Implement email notification queuing
-            // Options:
-            // 1. Use BullMQ to queue jobs for email service
-            // 2. Call SendGrid/AWS SES API directly
-            // 3. Use a transactional email service
+    private subtypeToWaTemplate(subtype?: string): string {
+        if (!subtype) return 'netsa_generic';
+        const map: Record<string, string> = {
+            'gig.application.shortlisted': 'netsa_gig_shortlisted',
+            'gig.application.hired': 'netsa_gig_hired',
+            'gig.application.rejected': 'netsa_gig_rejected',
+            'gig.application.viewed': 'netsa_gig_application_viewed',
+            'profile.viewed': 'netsa_profile_viewed',
+        };
+        return map[subtype] ?? 'netsa_generic';
+    }
 
-            console.log('[NotificationWorker] Email notification queued:', {
-                userId: notification.userId,
-                notificationId: notification._id,
-                title: notification.title,
-            });
-
-            // Placeholder: In production, you would:
-            // await emailQueue.add('send-email', {
-            //     userId: notification.userId,
-            //     subject: notification.title,
-            //     body: notification.body,
-            //     template: 'notification',
-            // });
-
-        } catch (error) {
-            console.error('[NotificationWorker] Failed to queue email notification:', error);
-            // Don't throw - email is best-effort
+    /**
+     * Build a netsa.app deep link for the email/WA CTA buttons.
+     */
+    private buildDeepLink(notification: any): string | undefined {
+        const route = notification.data?.route;
+        const params = notification.data?.params || {};
+        if (!route) return undefined;
+        const base = process.env.PUBLIC_APP_BASE_URL || 'https://netsa.app';
+        const qs = new URLSearchParams();
+        for (const [k, v] of Object.entries(params)) {
+            qs.append(k, String(v));
         }
+        const qsStr = qs.toString();
+        return qsStr ? `${base}/${route}?${qsStr}` : `${base}/${route}`;
+    }
+
+    private truncate(s: string, max: number): string {
+        return s.length <= max ? s : `${s.slice(0, max - 1)}…`;
     }
 
     /**

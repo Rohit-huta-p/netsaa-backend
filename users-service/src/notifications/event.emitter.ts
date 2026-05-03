@@ -207,6 +207,41 @@ class NotificationEventEmitter {
     }
 
     /**
+     * Helper method to emit gig.application.viewed event.
+     *
+     * The 24-hour idempotency bucket lives in the key itself: keying off
+     * a YYYY-MM-DD date string means a hirer who reopens the same
+     * application within the same UTC day produces the SAME idempotency
+     * key, and `notificationService.createNotification` short-circuits
+     * via its 7-day duplicate-check window.
+     */
+    emitGigApplicationViewed(payload: {
+        gigId: string;
+        applicationId: string;
+        applicantId: string;
+        gigOwnerId: string;
+        gigTitle: string;
+    }): void {
+        const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+        const event: NotificationEvent = {
+            eventName: 'gig.application.viewed',
+            idempotencyKey: generateIdempotencyKey(
+                'gig.application.viewed',
+                `${payload.applicationId}:${today}`
+            ),
+            payload: {
+                gigId: payload.gigId as any,
+                applicationId: payload.applicationId as any,
+                applicantId: payload.applicantId as any,
+                gigOwnerId: payload.gigOwnerId as any,
+                gigTitle: payload.gigTitle,
+            },
+        };
+
+        this.emit(event);
+    }
+
+    /**
      * Helper method to emit gig.application.status.changed event
      */
     emitGigApplicationStatusChanged(payload: {
@@ -232,6 +267,38 @@ class NotificationEventEmitter {
                 gigTitle: payload.gigTitle,
                 oldStatus: payload.oldStatus,
                 newStatus: payload.newStatus,
+            },
+        };
+
+        this.emit(event);
+    }
+
+    /**
+     * Helper method to emit profile.viewed event.
+     *
+     * 24-hour bucket per (viewer × profile owner) so a viewer scrolling
+     * back to a profile multiple times in one day only fires one
+     * notification. Self-views must be filtered out at the trigger
+     * site — this emit doesn't double-check.
+     */
+    emitProfileViewed(payload: {
+        profileOwnerId: string;
+        viewerId: string;
+        viewerDisplayName: string;
+        viewerArtistType?: string;
+    }): void {
+        const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+        const event: NotificationEvent = {
+            eventName: 'profile.viewed',
+            idempotencyKey: generateIdempotencyKey(
+                'profile.viewed',
+                `${payload.viewerId}:${payload.profileOwnerId}:${today}`
+            ),
+            payload: {
+                profileOwnerId: payload.profileOwnerId as any,
+                viewerId: payload.viewerId as any,
+                viewerDisplayName: payload.viewerDisplayName,
+                viewerArtistType: payload.viewerArtistType,
             },
         };
 

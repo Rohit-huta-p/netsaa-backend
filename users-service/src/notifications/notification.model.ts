@@ -9,15 +9,21 @@ export type EntityType = 'gig' | 'event' | 'conversation' | 'contract';
 /**
  * Channel configuration for multi-channel notification delivery
  * - inApp: Show in notification center (always true for user-facing notifications)
- * - push: Send push notification to mobile device
- * - email: Send email notification (optional)
- * - sms: Send SMS notification (optional)
+ * - push: Send push notification to mobile device (FCM/APNs)
+ * - email: Send email notification (optional, transactional via SES/SendGrid)
+ * - sms: Send SMS notification (optional, MSG91 transactional route)
+ * - whatsapp: Send WhatsApp notification (optional, MSG91 WA Business API)
+ *
+ * NOTE: Adding `whatsapp` to the schema is additive — existing
+ * notifications without the field continue to deserialize cleanly
+ * (Mongoose treats missing booleans as undefined ≈ false).
  */
 export interface INotificationChannel {
     inApp: boolean;
     push: boolean;
     email?: boolean;
     sms?: boolean;
+    whatsapp?: boolean;
 }
 
 /**
@@ -132,6 +138,11 @@ const NotificationSchema: Schema = new Schema(
                 default: false,
             },
             sms: {
+                type: Boolean,
+                required: false,
+                default: false,
+            },
+            whatsapp: {
                 type: Boolean,
                 required: false,
                 default: false,

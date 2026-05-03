@@ -23,6 +23,7 @@ import {
     ConnectionAcceptedEvent,
     MessageSentEvent,
     GigApplicationReceivedEvent,
+    GigApplicationViewedEvent,
     GigApplicationStatusChangedEvent,
     GigCancelledEvent,
     EventRegistrationCompletedEvent,
@@ -33,6 +34,7 @@ import {
     PaymentFailedEvent,
     ContractSentEvent,
     ContractSignedEvent,
+    ProfileViewedEvent,
 } from './notification.events';
 import {
     NotificationType,
@@ -42,6 +44,7 @@ import {
     EventSubtype,
     PaymentSubtype,
     ContractSubtype,
+    ProfileSubtype,
 } from './notification.types';
 import { INotificationChannel, INotificationData } from './notification.model';
 
@@ -80,10 +83,14 @@ class NotificationFactory {
                 return this.createMessageSent(event);
             case 'gig.application.received':
                 return this.createGigApplicationReceived(event);
+            case 'gig.application.viewed':
+                return this.createGigApplicationViewed(event);
             case 'gig.application.status.changed':
                 return this.createGigApplicationStatusChanged(event);
             case 'gig.cancelled':
                 return this.createGigCancelled(event);
+            case 'profile.viewed':
+                return this.createProfileViewed(event);
             case 'event.registration.completed':
                 return this.createEventRegistrationCompleted(event);
             case 'event.reservation.expiring':
@@ -222,6 +229,70 @@ class NotificationFactory {
         }];
     }
 
+    private createGigApplicationViewed(event: GigApplicationViewedEvent): NotificationPayload[] {
+        return [{
+            userId: event.payload.applicantId,
+            actorId: event.payload.gigOwnerId,
+            type: NotificationType.GIG,
+            subtype: GigSubtype.APPLICATION_VIEWED,
+            title: 'Hirer viewed your application',
+            body: `Your application for "${event.payload.gigTitle}" was just opened by the hirer.`,
+            entityType: 'gig',
+            entityId: event.payload.gigId,
+            data: {
+                route: 'gig-details',
+                params: {
+                    gigId: event.payload.gigId.toString(),
+                },
+            },
+            // Plan 5 — view-tracking is informational, not transactional.
+            //   • inApp     — yes (notification center is the right home)
+            //   • push      — yes (artists love this signal — drives re-engagement)
+            //   • email     — no (too spammy if hirer browses many candidates)
+            //   • sms / wa  — no (cost > signal)
+            channel: {
+                inApp: true,
+                push: true,
+                email: false,
+                whatsapp: false,
+                sms: false,
+            },
+        }];
+    }
+
+    private createProfileViewed(event: ProfileViewedEvent): NotificationPayload[] {
+        const ctx = event.payload.viewerArtistType
+            ? `${event.payload.viewerDisplayName}, ${event.payload.viewerArtistType}`
+            : event.payload.viewerDisplayName;
+
+        return [{
+            userId: event.payload.profileOwnerId,
+            actorId: event.payload.viewerId,
+            type: NotificationType.PROFILE,
+            subtype: ProfileSubtype.VIEWED,
+            title: 'Someone viewed your profile',
+            body: `${ctx} just viewed your profile.`,
+            // No entityType because the "entity" is the owner's own profile;
+            // route lands them on the viewer's profile so they can connect.
+            data: {
+                route: 'profile',
+                params: {
+                    userId: event.payload.viewerId.toString(),
+                },
+            },
+            // Plan 5 — light social-proof loop. inApp + push only.
+            //   • email     — no (LinkedIn-style; nudge inside the app, don't intrude)
+            //   • sms / wa  — no (cost > signal)
+            channel: {
+                inApp: true,
+                push: true,
+                email: false,
+                whatsapp: false,
+                sms: false,
+            },
+        }];
+    }
+
     private createGigApplicationStatusChanged(event: GigApplicationStatusChangedEvent): NotificationPayload[] {
         const { newStatus, gigTitle } = event.payload;
 
@@ -265,11 +336,22 @@ class NotificationFactory {
                     gigId: event.payload.gigId.toString(),
                 },
             },
+            // Plan 5 — application status changes are high-signal moments.
+            // Fan out across every channel we have so the artist hears about
+            // it whether they're online, offline, or away from the app.
+            //   • inApp     — always: notification center + badge
+            //   • push      — always: FCM/APNs lock-screen alert
+            //   • email     — always: transactional email with deep link
+            //   • whatsapp  — always: India-first nudge via MSG91 WA Business
+            //   • sms       — only on `hired`: high-cost, reserved for the
+            //                  most important transition. (Producer-paid
+            //                  channel; cheap-skating on shortlist/reject.)
             channel: {
                 inApp: true,
                 push: true,
-                email: newStatus === 'hired', // Send email for hired status
-                sms: false,
+                email: true,
+                whatsapp: true,
+                sms: newStatus === 'hired',
             },
         }];
     }

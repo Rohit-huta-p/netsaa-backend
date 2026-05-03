@@ -1,9 +1,11 @@
-import { Request, Response } from 'express';
+import { Response } from 'express';
 import User from '../models/User';
 import Organizer from '../models/Organizer';
 import Artist from '../models/Artist';
+import { AuthRequest } from '../middleware/auth';
+import { notificationEvents } from '../notifications/event.emitter';
 
-export const getUserById = async (req: Request, res: Response) => {
+export const getUserById = async (req: AuthRequest, res: Response) => {
     try {
         const { id } = req.params;
 
@@ -26,6 +28,30 @@ export const getUserById = async (req: Request, res: Response) => {
         ]);
         if (artistDetails) userObj.artistDetails = artistDetails;
         if (organizerDetails) userObj.organizerDetails = organizerDetails;
+
+        // Plan 5 — fire profile.viewed event for non-self authenticated viewers.
+        // The 24-hour idempotency bucket lives in event.emitter so a viewer
+        // re-opening the same profile within the same UTC day produces no
+        // additional notifications. Self-views are filtered here.
+        // Fire-and-forget — never blocks the response.
+        try {
+            const viewer = (req as AuthRequest).user as any;
+            const viewerId = viewer?._id?.toString();
+            const ownerId = user._id.toString();
+            if (viewerId && viewerId !== ownerId) {
+                notificationEvents.emitProfileViewed({
+                    profileOwnerId: ownerId,
+                    viewerId,
+                    viewerDisplayName:
+                        viewer.displayName ||
+                        [viewer.firstName, viewer.lastName].filter(Boolean).join(' ') ||
+                        'Someone on NETSA',
+                    viewerArtistType: viewer.artistType,
+                });
+            }
+        } catch {
+            // Notification dispatch is best-effort. Never break the read.
+        }
 
         res.json(userObj);
     } catch (err: any) {

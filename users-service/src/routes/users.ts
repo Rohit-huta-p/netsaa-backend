@@ -1,7 +1,7 @@
 import express from 'express';
 import { getUserById } from '../controllers/users.controller';
 import { patchMode } from '../controllers/mode.controller';
-import { protect } from '../middleware/auth';
+import { protect, optionalAuth } from '../middleware/auth';
 
 const router = express.Router();
 
@@ -9,7 +9,9 @@ const router = express.Router();
 // IMPORTANT: must be defined BEFORE /:id route to avoid /:id matching 'me'
 router.patch('/me/mode', protect, patchMode);
 
-// GET /api/users/:id
-router.get('/:id', getUserById);
+// GET /api/users/:id — public, but optionally identifies the viewer so
+// we can fire a profile.viewed notification when one signed-in user
+// opens another's profile.
+router.get('/:id', optionalAuth, getUserById);
 
 export default router;

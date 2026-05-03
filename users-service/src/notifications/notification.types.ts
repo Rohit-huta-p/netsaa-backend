@@ -22,6 +22,8 @@ export enum NotificationType {
     PAYMENT = 'payment',
     CONTRACT = 'contract',
     SYSTEM = 'system',
+    /** Plan 5 — profile-view notifications (e.g. "X viewed your profile"). */
+    PROFILE = 'profile',
 }
 
 /**
@@ -45,11 +47,17 @@ export const MessageSubtype = {
 // Gig-related notifications
 export const GigSubtype = {
     APPLICATION_RECEIVED: 'gig.application.received',     // Gig owner: New application received
+    APPLICATION_VIEWED: 'gig.application.viewed',         // Applicant: Hirer opened your application
     APPLICATION_SHORTLISTED: 'gig.application.shortlisted', // Applicant: You were shortlisted
     APPLICATION_HIRED: 'gig.application.hired',           // Applicant: You were hired
     APPLICATION_REJECTED: 'gig.application.rejected',     // Applicant: Application rejected (optional)
     DEADLINE_APPROACHING: 'gig.deadline.approaching',     // Gig owner: Application deadline approaching
     GIG_CANCELLED: 'gig.cancelled',                       // Applicants: Gig was cancelled
+} as const;
+
+// Profile-related notifications (Plan 5 — view-tracking signals)
+export const ProfileSubtype = {
+    VIEWED: 'profile.viewed',                             // Profile owner: someone viewed your profile
 } as const;
 
 // Event-related notifications
@@ -97,7 +105,8 @@ export type NotificationSubtype =
     | typeof EventSubtype[keyof typeof EventSubtype]
     | typeof PaymentSubtype[keyof typeof PaymentSubtype]
     | typeof ContractSubtype[keyof typeof ContractSubtype]
-    | typeof SystemSubtype[keyof typeof SystemSubtype];
+    | typeof SystemSubtype[keyof typeof SystemSubtype]
+    | typeof ProfileSubtype[keyof typeof ProfileSubtype];
 
 /**
  * Helper to get all subtypes as an array (useful for validation)
@@ -110,6 +119,7 @@ export const ALL_NOTIFICATION_SUBTYPES = [
     ...Object.values(PaymentSubtype),
     ...Object.values(ContractSubtype),
     ...Object.values(SystemSubtype),
+    ...Object.values(ProfileSubtype),
 ] as const;
 
 /**
@@ -122,6 +132,7 @@ export function getNotificationTypeFromSubtype(subtype: NotificationSubtype): No
     if (subtype.startsWith('gig.')) return NotificationType.GIG;
     if (subtype.startsWith('event.')) return NotificationType.EVENT;
     if (subtype.startsWith('payment.')) return NotificationType.PAYMENT;
+    if (subtype.startsWith('profile.')) return NotificationType.PROFILE;
     if (subtype.startsWith('contract.')) return NotificationType.CONTRACT;
     if (subtype.startsWith('system.')) return NotificationType.SYSTEM;
 
