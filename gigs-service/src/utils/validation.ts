@@ -115,6 +115,16 @@ const gigBaseSchema = z.object({
         .optional()
         .or(z.literal('')),
 
+    /**
+     * Plan 5 — gig detail v2 redesign. 1-8 short bullets describing
+     * what the artist will do. Each bullet ≤200 chars. Optional —
+     * UI auto-hides when empty.
+     */
+    responsibilities: z
+        .array(z.string().trim().min(1).max(200, 'Each responsibility must be ≤200 characters'))
+        .max(8, 'responsibilities must be at most 8 items')
+        .optional(),
+
     // ── GigForm v2 additions (Plan 4) ──────────────────────────────
 
     eventFunction: z.string().trim().min(1).max(80, 'Event function must be 80 characters or fewer').optional(),

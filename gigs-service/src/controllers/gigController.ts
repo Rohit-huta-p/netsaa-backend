@@ -159,6 +159,13 @@ export const getGigById = async (req: Request, res: Response, next: NextFunction
             return sendResponse(res, 404, null, 'Gig not found');
         }
 
+        // Capture the raw organizerId BEFORE populate. Mongoose's populate
+        // replaces the field with `null` when the referenced User isn't
+        // found (e.g. cross-service scenarios where users-service hasn't
+        // mirrored the user yet). Holding onto the original ObjectId here
+        // lets us still run the count below even when populate fails.
+        const rawOrganizerId = gig.organizerId;
+
         // Populate organizer details from User collection if possible
         // We cast to any because we want to check if population worked
         await gig.populate('organizerId', 'displayName profileImageUrl cached kycStatus testimonials');
@@ -167,6 +174,15 @@ export const getGigById = async (req: Request, res: Response, next: NextFunction
 
         let organizerSnapshot = gig.organizerSnapshot;
 
+        // Refresh denorm trust signals on read so a stale snapshot doesn't
+        // show "0 gigs hosted" forever. Cheap — uses the organizerId index.
+        // Use the pre-populate ObjectId so the count works even when the
+        // User isn't mirrored into this service's User collection yet.
+        const freshGigsHosted = await Gig.countDocuments({
+            organizerId: rawOrganizerId,
+            status: { $ne: 'draft' },
+        });
+
         // If we successfully populated the user, use fresh data
         if (organizer && organizer._id) {
             organizerSnapshot = {
@@ -174,13 +190,20 @@ export const getGigById = async (req: Request, res: Response, next: NextFunction
                 organizationName: organizerSnapshot.organizationName, // Keep original or fetch if stored in User
                 profileImageUrl: organizer.profileImageUrl || organizerSnapshot.profileImageUrl,
                 rating: organizer.cached?.averageRating || organizerSnapshot.rating,
+                gigsHosted: freshGigsHosted,
+                avgReplyMinutes: organizer.cached?.avgReplyMinutes ?? organizerSnapshot.avgReplyMinutes,
                 testimonials: organizer.testimonials || organizerSnapshot.testimonials || [],
                 // Add verification status
                 // @ts-ignore - Adding dynamic property not in original schema interface for response
                 isVerified: organizer.kycStatus === 'approved'
             };
         } else {
-            // Fallback if population fails or user deleted
+            // Fallback if population fails or user deleted — still refresh
+            // gigsHosted (it's independent of User), keep everything else.
+            organizerSnapshot = {
+                ...organizerSnapshot,
+                gigsHosted: freshGigsHosted,
+            };
             // @ts-ignore
             organizerSnapshot.isVerified = false;
         }
@@ -249,11 +272,23 @@ export const createGig = async (req: AuthRequest, res: Response, next: NextFunct
 
         // TODO: Use Organizer snapshot from Auth User Profile
         const organizerId = req.user.id;
+
+        // Denorm trust signals — count this organizer's existing non-draft
+        // gigs. Cheap (indexed query). Excludes the gig we're about to
+        // create. avgReplyMinutes lives in users-service / messaging-service
+        // and is pushed in by a periodic job; left undefined here.
+        const gigsHosted = await Gig.countDocuments({
+            organizerId,
+            status: { $ne: 'draft' },
+        });
+
         const organizerSnapshot = {
             displayName: req.user.displayName || req.user.name || 'Organizer',
             organizationName: req.user.organizationName || 'TBD',
             profileImageUrl: req.user.profileImageUrl || '',
             rating: 0, // Default or fetch
+            gigsHosted,
+            avgReplyMinutes: (req.user as any)?.avgReplyMinutes,
             testimonials: (req.user as any)?.testimonials || []
         };
 

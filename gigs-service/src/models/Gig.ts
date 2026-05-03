@@ -16,6 +16,19 @@ export interface IGig extends Document {
     organizationName: string;
     profileImageUrl: string;
     rating: number;
+    /**
+     * Count of non-draft gigs this organizer has hosted at the moment this
+     * snapshot was written. Denormalised for fast render on the gig detail
+     * page; refreshed at create time and on /gigs/:id read. Does NOT include
+     * the gig the snapshot belongs to.
+     */
+    gigsHosted?: number;
+    /**
+     * Average minutes between an applicant message and the organizer's first
+     * reply, computed by the messaging side and pushed in via a periodic job.
+     * Optional — undefined when the organizer has no message history yet.
+     */
+    avgReplyMinutes?: number;
     testimonials?: {
       text: string;
       author: string;
@@ -52,6 +65,18 @@ export interface IGig extends Document {
     venueName: string;
     address: string;
     isRemote: boolean;
+    /**
+     * Geocoded coordinates of the venue address. Populated by a Mongoose
+     * pre-save hook that calls geocodeAddress() when location.address or
+     * location.city changes. Optional — geocoding can fail (offline / rate
+     * limited / unparseable address) and we never block the save on it.
+     * Used downstream for distance-from-artist computation on the gig detail
+     * page and for nearby-gig search ranking.
+     */
+    geo?: {
+      lat: number;
+      lng: number;
+    };
   };
 
   // Schedule
@@ -101,6 +126,14 @@ export interface IGig extends Document {
   createdAt: Date;
   updatedAt: Date;
   termsAndConditions?: string;
+  /**
+   * Plan 5 — gig detail v2 redesign. 1-8 short bullet points the hirer
+   * writes describing what the artist will actually do on the gig
+   * (e.g. "Perform a 3-song fusion piece", "Attend 3 rehearsals").
+   * Surfaced inline on the artist-side detail page under "What you'll
+   * do". Optional — section auto-hides when empty.
+   */
+  responsibilities?: string[];
 
   /**
    * Optional WhatsApp group invite URL the hirer pastes in for fast
@@ -197,6 +230,10 @@ const GigSchema = new Schema<IGig>({
     organizationName: String,
     profileImageUrl: String,
     rating: Number,
+    // New denorm trust signals (Plan 5 — gig detail page redesign).
+    // Both optional so existing snapshots without them keep deserialising.
+    gigsHosted: { type: Number, default: 0, min: 0 },
+    avgReplyMinutes: { type: Number, min: 0 },
     testimonials: [{
       text: String,
       author: String,
@@ -244,7 +281,15 @@ const GigSchema = new Schema<IGig>({
     country: String,
     venueName: String,
     address: String,
-    isRemote: { type: Boolean, default: false }
+    isRemote: { type: Boolean, default: false },
+    // Geocoded lat/lng. Populated by pre-save hook (see bottom of file).
+    // Optional + nullable — geocoding can legitimately fail and we don't
+    // want to block the save. Distance computation on the read path falls
+    // back to city-level haversine when geo is absent.
+    geo: {
+      lat: { type: Number, min: -90, max: 90 },
+      lng: { type: Number, min: -180, max: 180 }
+    }
   },
 
   schedule: {
@@ -299,6 +344,18 @@ const GigSchema = new Schema<IGig>({
   expiresAt: { type: Date, index: true }, // Index for expiration cleanup
   termsAndConditions: String,
   teamWhatsAppInviteUrl: { type: String, maxlength: 256 },
+  // Plan 5 — gig detail v2: 1-8 short responsibility bullets, ≤200 chars each
+  responsibilities: {
+    type: [String],
+    default: undefined,
+    validate: {
+      validator: (arr: string[]) =>
+        !arr ||
+        (arr.length <= 8 &&
+          arr.every((s) => typeof s === 'string' && s.length <= 200)),
+      message: 'responsibilities must be at most 8 items, each ≤200 characters',
+    },
+  },
 
   // Booking terms (Phase 2A) — master/template values that get instantiated
   // into the per-hire Contract at booking time. Optional + additive: existing
@@ -403,11 +460,64 @@ const GigSchema = new Schema<IGig>({
   },
 }, { timestamps: true });
 
+// ──────────────────────────────────────────────────────────────────────
+// Pre-save hook — geocode the venue address.
+// Fires only when the location.address or .city changed (or first save).
+// Geocoding failure is non-fatal: the gig saves regardless.
+// ──────────────────────────────────────────────────────────────────────
+GigSchema.pre('save', async function (next) {
+    try {
+        const locTouched =
+            this.isNew ||
+            this.isModified('location.address') ||
+            this.isModified('location.city') ||
+            this.isModified('location.state') ||
+            this.isModified('location.country');
+
+        if (!locTouched) return next();
+
+        const parts = [
+            (this.location as any)?.venueName,
+            (this.location as any)?.address,
+            (this.location as any)?.city,
+            (this.location as any)?.state,
+            (this.location as any)?.country,
+        ].filter((s) => typeof s === 'string' && s.trim().length > 0);
+
+        const fullAddr = parts.join(', ');
+        if (!fullAddr) return next();
+
+        // Lazy import — avoids a hard dependency if axios fails to load
+        // in some constrained test runner.
+        const { geocodeAddress } = await import('../services/geocoding.service');
+        const geo = await geocodeAddress(fullAddr);
+
+        if (geo) {
+            (this.location as any).geo = { lat: geo.lat, lng: geo.lng };
+        }
+        // If geo is null, leave existing geo untouched (don't blank it
+        // out — a bad geocode shouldn't erase a previous good one).
+        return next();
+    } catch (err) {
+        // Belt-and-suspenders: the service already swallows errors, but
+        // if anything escapes we still don't want to block the save.
+        console.warn('[Gig pre-save] geocoding hook error (non-fatal):', err);
+        return next();
+    }
+});
+
 // Compound Indexes from Spec
 GigSchema.index({ status: 1, publishedAt: -1 });
 GigSchema.index({ "location.city": 1 });
 GigSchema.index({ isUrgent: 1, publishedAt: -1 });
 GigSchema.index({ isFeatured: 1, publishedAt: -1 });
+
+// 2dsphere index for proximity queries on location.geo.
+// Sparse — only indexes gigs that actually got geocoded successfully.
+// Note: 2dsphere expects GeoJSON-style { type: 'Point', coordinates: [lng,lat] }
+// for native $near operators; our { lat, lng } object is for fast in-app
+// haversine. If we later want $near, we'll add a parallel GeoJSON field.
+GigSchema.index({ 'location.geo.lat': 1, 'location.geo.lng': 1 }, { sparse: true });
 
 // Plan 4 — event-function browse + moderator nudity audit
 GigSchema.index({ eventFunction: 1, 'location.city': 1 });
