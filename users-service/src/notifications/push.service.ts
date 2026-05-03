@@ -404,6 +404,84 @@ class PushNotificationService {
     getProviderName(): string {
         return this.provider.name;
     }
+
+    /**
+     * Send a push notification to every registered, non-revoked device of
+     * a single user. Looks up User.devices[].pushToken and fans out via
+     * the configured provider's sendMultiple(). On per-token permanent
+     * failures, marks the device row as revoked so future notifications
+     * don't retry a dead token.
+     *
+     * Plan 5 — wired by NotificationWorker.dispatchPush. Returns the
+     * per-token results so the caller can log delivery rate without
+     * caring about token storage.
+     */
+    async sendToUser(
+        userId: any,
+        payload: PushNotificationPayload,
+        options?: { ignoreQuietHours?: boolean }
+    ): Promise<PushNotificationResult[]> {
+        // Lazy import keeps this file's test footprint smaller — User
+        // pulls in the full Mongoose schema graph.
+        const { default: User } = await import('../models/User');
+
+        const user: any = await User.findById(userId)
+            .select('devices')
+            .lean();
+
+        const liveDevices: Array<{ _id: any; pushToken: string }> =
+            (user?.devices ?? [])
+                .filter((d: any) => !d.revoked && typeof d.pushToken === 'string' && d.pushToken.length > 0)
+                .map((d: any) => ({ _id: d._id, pushToken: d.pushToken }));
+
+        if (liveDevices.length === 0) {
+            console.log('[PushNotificationService] No live devices for user:', userId);
+            return [];
+        }
+
+        const tokens = liveDevices.map((d) => d.pushToken);
+        const results = await this.sendMultiple(tokens, payload, options);
+
+        // Token-level failure handling. FCM/APNs report two kinds of
+        // failure: transient (don't revoke) and permanent (token is
+        // unregistered). The mock provider doesn't surface this
+        // distinction, so we only revoke on results whose error message
+        // explicitly says so. Real adapters should set a structured
+        // `permanent: true` flag on the result for cleaner triage.
+        const revokeIds: any[] = [];
+        results.forEach((r, i) => {
+            if (
+                !r.success &&
+                r.error &&
+                /unregistered|invalid token|not registered|notregistered/i.test(r.error)
+            ) {
+                revokeIds.push(liveDevices[i]._id);
+            }
+        });
+
+        if (revokeIds.length > 0) {
+            try {
+                await User.updateOne(
+                    { _id: userId },
+                    {
+                        $set: {
+                            'devices.$[d].revoked': true,
+                        },
+                    },
+                    {
+                        arrayFilters: [{ 'd._id': { $in: revokeIds } }],
+                    }
+                );
+            } catch (err) {
+                console.warn(
+                    '[PushNotificationService] Failed to mark dead tokens as revoked:',
+                    err instanceof Error ? err.message : err
+                );
+            }
+        }
+
+        return results;
+    }
 }
 
 // Export singleton instance

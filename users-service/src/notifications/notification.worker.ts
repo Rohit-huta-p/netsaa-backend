@@ -298,17 +298,32 @@ class NotificationWorker {
     }
 
     private async dispatchPush(notification: any): Promise<void> {
-        // TODO: resolve User.devices[].deviceToken (FCM/APNs token store
-        // is not yet modelled on the User schema), then call:
-        //   pushNotificationService.send(deviceToken, { title, body, data })
-        // for each token. Until the device-token store ships, log the
-        // intended dispatch so worker fan-out behaviour is observable.
         try {
-            console.log('[NotificationWorker] push dispatch (stub):', {
+            // Plan 5 — push.service.sendToUser fans out to every live
+            // (non-revoked) device on the user's User.devices[] array.
+            // Returns per-token results; token-level permanent failures
+            // get auto-revoked inside the service.
+            const results = await pushNotificationService.sendToUser(
+                notification.userId,
+                {
+                    userId: notification.userId,
+                    title: notification.title,
+                    body: notification.body,
+                    data: {
+                        notificationId: String(notification._id),
+                        route: notification.data?.route,
+                        params: notification.data?.params,
+                    },
+                }
+            );
+
+            const okCount = results.filter((r) => r.success).length;
+            console.log('[NotificationWorker] push dispatch:', {
                 userId: notification.userId,
                 notificationId: notification._id,
-                title: notification.title,
-                provider: pushNotificationService.constructor.name,
+                tokens: results.length,
+                ok: okCount,
+                failed: results.length - okCount,
             });
         } catch (err) {
             console.warn(

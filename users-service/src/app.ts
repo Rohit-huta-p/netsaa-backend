@@ -11,6 +11,7 @@ import usersRoutes from './routes/users';
 import settingsRoutes from './settings/settings.routes';
 import securityRoutes from './routes/security.routes';
 import dangerRoutes from './routes/danger.routes';
+import devicesRoutes from './routes/devices';
 
 dotenv.config();
 
@@ -28,6 +29,7 @@ app.use('/api/organizers', organizerRoutes);
 app.use('/api/users/me/settings', settingsRoutes);
 app.use('/api/users/me', securityRoutes);
 app.use('/api/users/me', dangerRoutes);
+app.use('/api/users/me/devices', devicesRoutes);
 app.use('/api/users', usersRoutes);
 
 export default app;

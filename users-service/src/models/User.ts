@@ -119,9 +119,27 @@ export interface IUser extends Document {
   blocked?: boolean;
   referralCode?: string;
   devices?: Array<{
+    /**
+     * Stable per-install device identifier the client generates once
+     * (e.g. expo-application getAndroidId / installation UUID stored
+     * in SecureStore). Used as the upsert key — registering the same
+     * deviceId twice updates the existing token instead of creating a
+     * duplicate row.
+     */
+    deviceId?: string;
     platform: 'ios' | 'android' | 'web';
+    /** FCM / APNs / Web Push token. Rotates; refresh on every app boot. */
     pushToken?: string;
+    /** Last time the client checked in (boot, foreground, login). */
     lastActive?: Date;
+    /** First time we saw this deviceId. Stable across token rotations. */
+    registeredAt?: Date;
+    /**
+     * Marked true when push delivery returns a permanent failure
+     * (token unregistered / disabled). Soft flag so we keep the row
+     * for diagnostics rather than hard-deleting on first failure.
+     */
+    revoked?: boolean;
     appVersion?: string;
   }>;
   cached?: IUserCached; // denormalized quick-read fields
@@ -193,9 +211,15 @@ export interface IUser extends Document {
 
 const DeviceSubSchema = new Schema(
   {
+    // Stable per-install client-generated id. Used as the upsert key
+    // by the device-register controller. Indexed sparsely on the
+    // sub-doc level so legacy rows without deviceId still validate.
+    deviceId: { type: String, index: true, sparse: true },
     platform: { type: String, enum: ['ios', 'android', 'web'], required: true },
     pushToken: { type: String },
     lastActive: { type: Date },
+    registeredAt: { type: Date },
+    revoked: { type: Boolean, default: false },
     appVersion: { type: String }
   },
   { _id: true }
