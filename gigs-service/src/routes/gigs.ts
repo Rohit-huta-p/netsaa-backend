@@ -11,6 +11,7 @@ import {
     deleteGig,
     getGigApplications,
     updateApplicationStatus,
+    markApplicationViewed,
     withdrawApplication,
     getUserApplications,
     getSavedGigs,
@@ -44,6 +45,9 @@ router.route('/organizers/me/gigs/:gigId/applications').get(protect, getGigAppli
 // any future generic/parametric path on this prefix.
 router.route('/organizers/me/applicants').get(protect, getOrganizerApplicants);
 router.route('/applications/:applicationId/status').patch(protect, updateApplicationStatus);
+// Plan 5 — record that the hirer opened (viewed) this application card.
+// Fires gig.application.viewed event with day-bucket idempotency.
+router.route('/applications/:applicationId/view').post(protect, markApplicationViewed);
 // Artist self-service withdraw. Placed before any potential generic
 // /applications/:id route so the specific suffix wins.
 router.patch('/applications/:id/withdraw', protect, withdrawApplication);

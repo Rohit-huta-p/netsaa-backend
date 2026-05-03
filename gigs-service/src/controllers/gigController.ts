@@ -581,6 +581,69 @@ export const updateApplicationStatus = async (req: AuthRequest, res: Response, n
     }
 };
 
+// @desc    Mark an application as viewed by the gig owner.
+// @route   POST /v1/applications/:applicationId/view
+// @access  Private (Hirer — gig owner only)
+//
+// Plan 5 — fires gig.application.viewed event so the artist gets a
+// "your application was just opened" notification. Day-bucket
+// idempotency lives in the emitter, so a hirer scrolling back through
+// the same applicant card multiple times in one UTC day produces at
+// most one notification per applicant per day.
+//
+// This is a write endpoint by intent (POST) even though it doesn't
+// mutate the application document — calling it is the explicit signal
+// that the hirer has chosen to open this card. We do NOT fire the
+// event on bulk list fetches (`getGigApplications`) because that's
+// "browsed past", not "viewed".
+export const markApplicationViewed = async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+        if (!req.user) {
+            return sendResponse(res, 401, null, 'Not authorized');
+        }
+        const { applicationId } = req.params;
+        if (!applicationId || !applicationId.match(/^[0-9a-fA-F]{24}$/)) {
+            return sendResponse(res, 400, null, 'Invalid application id');
+        }
+
+        const application = await GigApplication.findById(applicationId);
+        if (!application) {
+            return sendResponse(res, 404, null, 'Application not found');
+        }
+
+        const gig = await Gig.findById(application.gigId);
+        if (!gig) {
+            return sendResponse(res, 404, null, 'Associated gig not found');
+        }
+
+        // Only the gig owner can record a view.
+        if (gig.organizerId.toString() !== req.user.id) {
+            return sendResponse(res, 403, null, 'Not authorized to view this application');
+        }
+
+        // No-op if the hirer is opening their OWN application card (edge
+        // case but harmless to guard).
+        if (application.artistId.toString() === req.user.id) {
+            return sendResponse(res, 200, { skipped: 'self' }, 'No-op: self view');
+        }
+
+        // Fire-and-forget. The day-bucket idempotency key + the
+        // notificationService dedupe window keep this from spamming.
+        notificationEvents.emitGigApplicationViewed({
+            gigId: gig._id.toString(),
+            applicationId: application._id.toString(),
+            applicantId: application.artistId.toString(),
+            gigOwnerId: req.user.id,
+            gigTitle: gig.title,
+        });
+
+        return sendResponse(res, 200, { recorded: true }, 'View recorded');
+    } catch (err: any) {
+        console.error(err);
+        return sendResponse(res, 500, null, 'Server Error', [{ message: err.message }]);
+    }
+};
+
 // @desc    Withdraw the authenticated artist's own application
 // @route   PATCH /v1/applications/:id/withdraw
 // @access  Private (Artist — owner only)
