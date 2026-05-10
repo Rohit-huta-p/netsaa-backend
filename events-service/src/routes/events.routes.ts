@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { protect } from '../middleware/auth';
 import rateLimit from 'express-rate-limit';
 import { postCreateEvent, getEventDetail, getEventsList } from '../controllers/eventsCompose.controller';
+import registrationsRoutes from './registrations.routes';
 
 const router = Router();
 
@@ -17,6 +18,10 @@ const hirerEventRateLimit = rateLimit({
 
 router.post('/', protect, hirerEventRateLimit, postCreateEvent);
 router.get('/', getEventsList);
+// Sub-router must be mounted BEFORE the leaf GET /:id so Express tries further
+// segments (/register, /registrations/me) first. mergeParams:true in the
+// sub-router ensures req.params.id is available inside it.
+router.use('/:id', registrationsRoutes);
 router.get('/:id', getEventDetail);
 
 export default router;
