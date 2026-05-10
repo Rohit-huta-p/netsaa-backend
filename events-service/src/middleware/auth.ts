@@ -87,3 +87,14 @@ export const optionalAuth = async (req: AuthRequest, res: Response, next: NextFu
     }
     next();
 };
+
+export const adminOnly = (req: AuthRequest, res: Response, next: NextFunction) => {
+    if (req.user && req.user.role === 'admin') {
+        next();
+    } else {
+        res.status(403).json({
+            meta: { status: 403, message: 'Forbidden: Admin access required' },
+            errors: [{ message: 'User is not an admin' }]
+        });
+    }
+};
