@@ -7,14 +7,32 @@ export interface IAttendeeInfo {
     notes?: string;
 }
 
+export interface IContactSnapshot {
+    name: string;
+    phone?: string;
+    city?: string;
+}
+
 export interface IEventRegistration extends Document {
     eventId: mongoose.Types.ObjectId;
     userId: mongoose.Types.ObjectId;
     ticketTypeId?: mongoose.Types.ObjectId;
-    status: 'registered' | 'cancelled' | 'attended' | 'no-show';
+    status: 'confirmed' | 'cancelled' | 'attended' | 'no-show' | 'registered';
     registeredAt: Date;
     quantity: number;
     attendees?: IAttendeeInfo[];
+    visibility: 'public' | 'private';
+    source: 'rsvp' | 'paid';
+    contactSnapshot?: IContactSnapshot;
+    linkAccessKey?: string;            // HKDF salt for online link decryption
+    ticketCode?: string;               // T2 QR
+    paidAmount?: number;               // T2
+    paymentStatus?: 'pending' | 'completed' | 'refunded' | 'failed';
+    razorpayOrderId?: string;
+    razorpayPaymentId?: string;
+    attendedMarkedAt?: Date;
+    attendedMarkedBy?: 'hirer' | 'system';
+    cancelledAt?: Date;
 }
 
 const attendeeInfoSchema = new Schema(
@@ -34,11 +52,27 @@ const eventRegistrationSchema = new Schema<IEventRegistration>({
     quantity: { type: Number, default: 1 },
     status: {
         type: String,
-        enum: ['registered', 'cancelled', 'attended', 'no-show'],
-        default: 'registered',
+        enum: ['confirmed', 'cancelled', 'attended', 'no-show', 'registered'],
+        default: 'confirmed',
     },
     registeredAt: { type: Date, default: Date.now },
     attendees: [attendeeInfoSchema],
+    visibility: { type: String, enum: ['public', 'private'], default: 'private', index: true },
+    source: { type: String, enum: ['rsvp', 'paid'], required: true, default: 'rsvp' },
+    contactSnapshot: {
+        name: { type: String },
+        phone: { type: String },
+        city: { type: String },
+    },
+    linkAccessKey: { type: String },
+    ticketCode: { type: String },
+    paidAmount: { type: Number },
+    paymentStatus: { type: String, enum: ['pending', 'completed', 'refunded', 'failed'] },
+    razorpayOrderId: { type: String },
+    razorpayPaymentId: { type: String },
+    attendedMarkedAt: { type: Date },
+    attendedMarkedBy: { type: String, enum: ['hirer', 'system'] },
+    cancelledAt: { type: Date },
 });
 
 // Indexes
