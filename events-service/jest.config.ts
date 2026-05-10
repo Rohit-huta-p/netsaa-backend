@@ -8,6 +8,7 @@ const config: Config = {
     moduleFileExtensions: ['ts', 'js', 'json'],
     transform: {
         '^.+\\.ts$': ['ts-jest', { tsconfig: 'tsconfig.test.json' }],
+        '^.+\\.js$': ['ts-jest', { tsconfig: 'tsconfig.test.json' }],
     },
     collectCoverageFrom: [
         'src/**/*.ts',
@@ -16,6 +17,10 @@ const config: Config = {
     ],
     testTimeout: 30000,
     silent: true,
+    // uuid v13+ ships ESM-only; transform it so Jest (CJS) can consume it
+    transformIgnorePatterns: [
+        '/node_modules/(?!uuid)',
+    ],
 };
 
 export default config;

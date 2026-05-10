@@ -30,7 +30,7 @@ export const getEvents = async (req: Request, res: Response, next: NextFunction)
     if (eventType) query.eventType = eventType;
     if (city) query['location.city'] = city;
     if (status) query.status = status;
-    else query.status = 'published'; // Default to published events only
+    else query.status = 'live'; // Default to live events only
     if (skillLevel) query.skillLevel = skillLevel;
     if (isFeatured) query.isFeatured = isFeatured === 'true';
     if (category) query.category = category;
@@ -327,7 +327,7 @@ export const publishEvent = async (req: Request, res: Response, next: NextFuncti
       });
     }
     console.log("event publishing...: ", event);
-    event.status = 'published';
+    event.status = 'live';
     event.publishedAt = new Date();
     await event.save();
 

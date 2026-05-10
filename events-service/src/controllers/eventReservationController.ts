@@ -94,18 +94,18 @@ export const reserveTickets = async (req: Request, res: Response) => {
             // --- FIXED PRICE FLOW ---
 
             // 1. Validate Event Status
-            if (event.status !== 'published') {
+            if (event.status !== 'live') {
                 throw new Error('Event is not published for registration.');
             }
 
             // 2. Check Registration Deadline (if exists)
-            if (event.registrationDeadline && now > event.registrationDeadline) {
+            if ((event as any).registrationDeadline && now > (event as any).registrationDeadline) {
                 throw new Error('Registration deadline has passed');
             }
 
             // 3. Use Event Price & Capacity
-            price = event.ticketPrice;
-            limit = event.maxParticipants;
+            price = (event as any).ticketPrice;
+            limit = (event as any).maxParticipants;
 
             // 4. Count ALL Confirmed Registrations for this Event
             const confirmedCount = await EventRegistration.countDocuments({
