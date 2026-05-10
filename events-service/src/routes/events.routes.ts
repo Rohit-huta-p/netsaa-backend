@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { protect } from '../middleware/auth';
 import rateLimit from 'express-rate-limit';
-import { postCreateEvent } from '../controllers/eventsCompose.controller';
+import { postCreateEvent, getEventDetail, getEventsList } from '../controllers/eventsCompose.controller';
 
 const router = Router();
 
@@ -16,5 +16,7 @@ const hirerEventRateLimit = rateLimit({
 });
 
 router.post('/', protect, hirerEventRateLimit, postCreateEvent);
+router.get('/', getEventsList);
+router.get('/:id', getEventDetail);
 
 export default router;
