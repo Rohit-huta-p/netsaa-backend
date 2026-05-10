@@ -1,9 +1,9 @@
 import mongoose, { Schema, Document } from 'mongoose';
 
-const REGISTRATION_MODES = ['free_rsvp', 'paid_ticket'] as const;
-const DURATION_KINDS = ['m30', 'h1', 'h2', 'h3', 'half', 'full', 'multi'] as const;
-const STATUSES = ['draft', 'pending_review', 'live', 'cancelled', 'completed'] as const;
-const LOCATION_KINDS = ['in_person', 'online'] as const;
+export const REGISTRATION_MODES = ['free_rsvp', 'paid_ticket'] as const;
+export const DURATION_KINDS = ['m30', 'h1', 'h2', 'h3', 'half', 'full', 'multi'] as const;
+export const STATUSES = ['draft', 'pending_review', 'live', 'cancelled', 'completed'] as const;
+export const LOCATION_KINDS = ['in_person', 'online'] as const;
 
 interface IMedia {
     kind: 'photo' | 'video';
