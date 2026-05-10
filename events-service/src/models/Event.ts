@@ -1,189 +1,166 @@
-import mongoose, { Schema, Document, Model } from 'mongoose';
+import mongoose, { Schema, Document } from 'mongoose';
 
-export interface IEvent extends Document {
-  title: string;
-  description: string;
-  thumbnailUrl?: string;
+const REGISTRATION_MODES = ['free_rsvp', 'paid_ticket'] as const;
+const DURATION_KINDS = ['m30', 'h1', 'h2', 'h3', 'half', 'full', 'multi'] as const;
+const STATUSES = ['draft', 'pending_review', 'live', 'cancelled', 'completed'] as const;
+const LOCATION_KINDS = ['in_person', 'online'] as const;
 
-  eventType: 'workshop' | 'competition' | 'meetup' | 'showcase';
-  category: string;
-  tags: string[];
-
-  organizerId: mongoose.Types.ObjectId;
-  organizerSnapshot: {
-    name: string;
-    organizationName: string;
-    profileImageUrl?: string;
-    rating?: number;
-  };
-
-  hostId?: mongoose.Types.ObjectId;
-  hostSnapshot?: {
-    name: string;
-    bio: string;
-    profileImageUrl?: string;
-    rating?: number;
-  };
-
-  skillLevel: 'all' | 'beginner' | 'intermediate' | 'advanced';
-  eligibleArtistTypes: string[];
-  pricingMode: 'fixed' | 'ticketed';
-  ticketPrice: number;
-
-  schedule: {
-    startDate: Date;
-    endDate: Date;
-    totalDurationMinutes: number;
-    dayBreakdown: Array<{
-      date: Date;
-      durationMinutes: number;
-      notes?: string;
-    }>;
-  };
-
-  location: {
-    type: 'physical' | 'online' | 'hybrid';
-    venueName?: string;
-    address?: string;
-    city: string;
-    state: string;
-    country: string;
-    meetingLink?: string;
-  };
-
-  registrationDeadline?: Date;
-  maxParticipants: number;
-  allowWaitlist: boolean;
-
-  eventConfig?: {
-    materialsProvided?: boolean;
-    preparationRequired?: boolean;
-    preparationNotes?: string;
-    competitionFormat?: string;
-    judgingCriteria?: string[];
-    prizes?: Array<{ position: string; reward: string }>;
-  };
-
-  status: 'draft' | 'published' | 'cancelled' | 'completed';
-  isFeatured: boolean;
-
-  publishedAt?: Date;
-  createdAt: Date;
-  updatedAt: Date;
+interface IMedia {
+    kind: 'photo' | 'video';
+    url: string;
+    thumbnailUrl?: string;
+    width: number;
+    height: number;
+    duration?: number;
+    isHero: boolean;
+    sortOrder: number;
 }
 
-const eventSchema = new Schema<IEvent>(
-  {
-    title: { type: String, required: true },
-    description: { type: String, required: true },
+const MediaSchema = new Schema<IMedia>({
+    kind: { type: String, enum: ['photo', 'video'], required: true },
+    url: { type: String, required: true },
     thumbnailUrl: { type: String },
+    width: { type: Number, required: true },
+    height: { type: Number, required: true },
+    duration: { type: Number },
+    isHero: { type: Boolean, default: false },
+    sortOrder: { type: Number, default: 0 },
+}, { _id: false });
 
-    eventType: {
-      type: String,
-      enum: ['workshop', 'competition', 'meetup', 'showcase'],
-      required: true,
-    },
-    category: { type: String, required: true },
-    tags: [{ type: String }],
+export interface IEvent extends Document {
+    organizerId: mongoose.Types.ObjectId;
+    title: string;
+    tagline?: string;
+    topicTags: string[];
+    registrationMode: typeof REGISTRATION_MODES[number];
+    about: string;
+    whatToExpect?: string;
+    skills: string[];
+    startsAt: Date;
+    endsAt?: Date;
+    durationKind: typeof DURATION_KINDS[number];
+    location: {
+        kind: typeof LOCATION_KINDS[number];
+        venueName?: string;
+        address?: string;
+        landmark?: string;
+        geo?: { type: 'Point'; coordinates: [number, number] };
+        onlinePlatform?: string;
+        onlineLinkEnc?: string;        // ciphertext
+        onlineLinkSalt?: string;       // HKDF salt
+    };
+    capacity: {
+        total: number;
+        registeredCount: number;
+        // slotsLeft NOT stored — computed in queries
+    };
+    pricing?: {
+        amount: number;
+        currency: 'INR';
+        refundPolicy?: 'flex_24h' | 'firm' | 'custom';
+        refundCustomNote?: string;
+    };
+    media: IMedia[];
+    status: typeof STATUSES[number];
+    moderationQueueAt?: Date;
+    moderationApprovedAt?: Date;
+    moderationFlagReason?: string;
+    stats: { views: number; saves: number; sharesCount: number };
+    cancelledAt?: Date;
+    cancelReason?: string;
+    cancelNote?: string;
+    rescheduledFromAt?: Date;
+    rescheduleNoticeAt?: Date;
+    publishedAt?: Date;
+    createdAt: Date;
+    updatedAt: Date;
+}
 
-    organizerId: { type: Schema.Types.ObjectId, ref: 'Organizer', required: true },
-    organizerSnapshot: {
-      name: { type: String, required: true },
-      organizationName: { type: String, required: true },
-      profileImageUrl: String,
-      rating: Number,
-    },
-
-    hostId: { type: Schema.Types.ObjectId, ref: 'User' },
-    hostSnapshot: {
-      name: String,
-      bio: String,
-      profileImageUrl: String,
-      rating: Number,
-    },
-
-    skillLevel: {
-      type: String,
-      enum: ['all', 'beginner', 'intermediate', 'advanced'],
-      default: 'all',
-    },
-    eligibleArtistTypes: [{ type: String }],
-
-    pricingMode: {
-      type: String,
-      enum: ['fixed', 'ticketed'],
-      default: 'fixed',
-      required: true
-    },
-
-    ticketPrice: { type: Number, default: 0 },
-
-    schedule: {
-      startDate: { type: Date, required: true },
-      endDate: { type: Date, required: true },
-      totalDurationMinutes: { type: Number, required: true },
-      dayBreakdown: [
-        {
-          date: { type: Date, required: true },
-          durationMinutes: { type: Number, required: true },
-          notes: String,
+const EventSchema = new Schema<IEvent>({
+    organizerId: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    title: { type: String, required: true, minlength: 6, maxlength: 80 },
+    tagline: { type: String, maxlength: 80 },
+    topicTags: {
+        type: [String],
+        required: true,
+        validate: {
+            validator: (v: string[]) => v.length >= 1 && v.length <= 3,
+            message: 'topicTags must contain 1-3 tags',
         },
-      ],
+        index: true,
     },
+    registrationMode: { type: String, enum: REGISTRATION_MODES, required: true, default: 'free_rsvp' },
+    about: { type: String, required: true, minlength: 100, maxlength: 2000 },
+    whatToExpect: { type: String, maxlength: 500 },
+    skills: { type: [String], default: [], validate: { validator: (v: string[]) => v.length <= 5, message: 'skills max 5' }, index: true },
+
+    startsAt: { type: Date, required: true, index: true },
+    endsAt: { type: Date },
+    durationKind: { type: String, enum: DURATION_KINDS, required: true },
 
     location: {
-      type: {
-        type: String,
-        enum: ['physical', 'online', 'hybrid'],
-        required: true,
-      },
-      venueName: String,
-      address: String,
-      city: { type: String, required: true },
-      state: { type: String, required: true },
-      country: { type: String, required: true },
-      meetingLink: String,
-    },
-
-    registrationDeadline: { type: Date },
-    maxParticipants: { type: Number, required: true },
-    allowWaitlist: { type: Boolean, default: false },
-
-    eventConfig: {
-      materialsProvided: { type: Boolean, default: false },
-      preparationRequired: { type: Boolean, default: false },
-      preparationNotes: String,
-      competitionFormat: String,
-      judgingCriteria: [String],
-      prizes: [
-        {
-          position: String,
-          reward: String,
+        kind: { type: String, enum: LOCATION_KINDS, required: true },
+        venueName: { type: String, maxlength: 100 },
+        address: { type: String, maxlength: 300 },
+        landmark: { type: String, maxlength: 200 },
+        geo: {
+            type: { type: String, enum: ['Point'] },
+            coordinates: { type: [Number] },
         },
-      ],
+        onlinePlatform: { type: String },
+        onlineLinkEnc: { type: String },
+        onlineLinkSalt: { type: String },
     },
 
-    status: {
-      type: String,
-      enum: ['draft', 'published', 'cancelled', 'completed'],
-      default: 'draft',
+    capacity: {
+        total: { type: Number, required: true, min: 1, max: 1000 },
+        registeredCount: { type: Number, default: 0, min: 0 },
     },
-    isFeatured: { type: Boolean, default: false },
 
-    publishedAt: Date,
-  },
-  { timestamps: true }
-);
+    pricing: {
+        amount: { type: Number, min: 0 },
+        currency: { type: String, enum: ['INR'] },
+        refundPolicy: { type: String, enum: ['flex_24h', 'firm', 'custom'] },
+        refundCustomNote: { type: String, maxlength: 200 },
+    },
 
-// Indexes
-eventSchema.index({ organizerId: 1 });
-eventSchema.index({ status: 1, publishedAt: -1 });
-eventSchema.index({ eventType: 1 });
-eventSchema.index({ category: 1 });
-eventSchema.index({ 'location.city': 1 });
-eventSchema.index({ skillLevel: 1 });
-eventSchema.index({ 'schedule.startDate': 1 });
+    media: { type: [MediaSchema], default: [] },
 
-const Event: Model<IEvent> = mongoose.model<IEvent>('Event', eventSchema);
+    status: { type: String, enum: STATUSES, required: true, default: 'draft', index: true },
 
-export default Event;
+    moderationQueueAt: { type: Date },
+    moderationApprovedAt: { type: Date },
+    moderationFlagReason: { type: String },
+
+    stats: {
+        views: { type: Number, default: 0 },
+        saves: { type: Number, default: 0 },
+        sharesCount: { type: Number, default: 0 },
+    },
+
+    cancelledAt: { type: Date },
+    cancelReason: { type: String },
+    cancelNote: { type: String, maxlength: 200 },
+
+    rescheduledFromAt: { type: Date },
+    rescheduleNoticeAt: { type: Date },
+
+    publishedAt: { type: Date },
+}, {
+    timestamps: true,
+});
+
+// Compound indexes for discovery queries
+EventSchema.index({ topicTags: 1, startsAt: 1, status: 1 });
+EventSchema.index({ 'location.geo': '2dsphere' });
+EventSchema.index({ status: 1, startsAt: 1 });
+
+// Strip storage of slotsLeft if anyone tries to set it
+EventSchema.pre('save', function(next) {
+    if ((this.capacity as any)?.slotsLeft !== undefined) {
+        delete (this.capacity as any).slotsLeft;
+    }
+    next();
+});
+
+export default mongoose.model<IEvent>('Event', EventSchema);
