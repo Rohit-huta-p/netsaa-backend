@@ -5,6 +5,7 @@ import connectDB from './config/db';
 import eventRoutes from './routes/eventRoutes';
 import searchRoutes from './routes/search';
 import { startReservationExpiryWorker } from './workers/reservationExpiryWorker';
+import { startReconciliationWorker } from './workers/reconciliation.worker';
 import './models/User';
 
 dotenv.config();
@@ -25,4 +26,7 @@ const PORT = process.env.PORT || 5003;
 app.listen(PORT, () => {
     console.log(`Events service running on port ${PORT}`);
     startReservationExpiryWorker();
+    if (process.env.NODE_ENV !== 'test') {
+        startReconciliationWorker();
+    }
 });
