@@ -5,6 +5,7 @@ import app from './app';
 import { startReservationExpiryWorker } from './workers/reservationExpiryWorker';
 import { startReconciliationWorker } from './workers/reconciliation.worker';
 import { startReminderWorkers } from './workers/reminders.worker';
+import { startCapacityUrgencyWorker } from './workers/capacityUrgency.worker';
 
 connectDB();
 
@@ -16,5 +17,6 @@ app.listen(PORT, () => {
     if (process.env.NODE_ENV !== 'test') {
         startReconciliationWorker();
         startReminderWorkers();
+        startCapacityUrgencyWorker();
     }
 });
