@@ -4,6 +4,7 @@ import connectDB from './config/db';
 import app from './app';
 import { startReservationExpiryWorker } from './workers/reservationExpiryWorker';
 import { startReconciliationWorker } from './workers/reconciliation.worker';
+import { startReminderWorkers } from './workers/reminders.worker';
 
 connectDB();
 
@@ -14,5 +15,6 @@ app.listen(PORT, () => {
     startReservationExpiryWorker();
     if (process.env.NODE_ENV !== 'test') {
         startReconciliationWorker();
+        startReminderWorkers();
     }
 });
