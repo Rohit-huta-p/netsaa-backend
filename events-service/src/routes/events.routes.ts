@@ -7,6 +7,7 @@ import rosterRoutes from './roster.routes';
 import calendarRoutes from './calendar.routes';
 import { postCancelEvent, postRescheduleEvent } from '../controllers/eventCancel.controller';
 import { requireOrganizer } from '../middleware/ownerOnly';
+import { getFunnelMetrics } from '../controllers/funnel.controller';
 
 const router = Router();
 
@@ -30,6 +31,7 @@ router.use('/:id', rosterRoutes);
 router.use('/:id', calendarRoutes);
 router.post('/:id/cancel', protect, requireOrganizer, postCancelEvent);
 router.post('/:id/reschedule', protect, requireOrganizer, postRescheduleEvent);
+router.get('/:id/funnel-metrics', protect, requireOrganizer, getFunnelMetrics);
 router.get('/:id', getEventDetail);
 
 export default router;

@@ -3,6 +3,7 @@ import cors from 'cors';
 import gigsRoutes from './routes/gigs';
 import searchRoutes from './routes/search';
 import aiRoutes from './routes/ai';
+import internalRoutes from './routes/internal.routes';
 
 const app: Application = express();
 
@@ -13,5 +14,8 @@ app.use(express.json());
 app.use('/v1', gigsRoutes);
 app.use('/v1/search', searchRoutes);
 app.use('/v1/ai', aiRoutes);
+
+// Internal routes — VPC-only, not exposed to public internet
+app.use('/internal', internalRoutes);
 
 export default app;

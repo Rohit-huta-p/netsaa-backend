@@ -320,7 +320,7 @@ export const applyToGig = async (req: AuthRequest, res: Response, next: NextFunc
     session.startTransaction();
 
     try {
-        const { coverNote, portfolioLinks } = req.body;
+        const { coverNote, portfolioLinks, source } = req.body;
         const gigId = req.params.id;
         const artistId = req.user.id;
 
@@ -380,7 +380,8 @@ export const applyToGig = async (req: AuthRequest, res: Response, next: NextFunc
             artistSnapshot,
             coverNote,
             portfolioLinks,
-            status: 'applied'
+            status: 'applied',
+            ...(source && { source }),
         }], { session });
 
         // Update Stats

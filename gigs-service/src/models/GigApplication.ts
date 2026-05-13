@@ -35,6 +35,14 @@ export interface IGigApplication extends Document {
      */
     paymentMethod?: 'on_platform' | 'off_platform';
 
+    /**
+     * Funnel provenance tag written by the mobile client when the artist
+     * discovered the gig through an event. Format: 'event:<eventId>'.
+     * Used by the events-service funnel-metrics endpoint to calculate
+     * how many event registrants converted into gig applicants.
+     */
+    source?: string;
+
     appliedAt: Date;
     updatedAt: Date;
     withdrawnAt?: Date;
@@ -66,6 +74,7 @@ const GigApplicationSchema = new Schema<IGigApplication>({
         enum: ['on_platform', 'off_platform'],
         required: false
     },
+    source: { type: String, index: true },
 
     appliedAt: { type: Date, default: Date.now },
     withdrawnAt: { type: Date }
