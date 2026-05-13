@@ -3,6 +3,7 @@ import Event from '../models/Event';
 import { checkEventContent } from '../utils/autoFlag';
 import { incrementTagUsage } from '../services/tagGovernance.service';
 import { publishNotification } from '../services/notificationPublisher.service';
+import { emit } from '../utils/observability';
 
 const MIN_PRIOR_EVENTS_TO_AUTO_PUBLISH = 3;
 const MIN_HOURS_AHEAD = 0.25;          // 15 min
@@ -87,6 +88,13 @@ export async function postCreateEvent(req: Request, res: Response) {
             moderationQueueAt,
             publishedAt: status === 'live' ? new Date() : undefined,
         });
+
+        if (flagResult.flagged) {
+            emit('auto_flag_triggered', 'info', {
+                reason: flagResult.reasons[0],
+                eventId: (event as any)._id.toString(),
+            });
+        }
 
         if (status === 'live') {
             await incrementTagUsage(body.topicTags);

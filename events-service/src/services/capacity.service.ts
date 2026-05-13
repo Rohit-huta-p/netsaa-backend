@@ -1,4 +1,5 @@
 import Event from '../models/Event';
+import { emit } from '../utils/observability';
 
 export type ReserveResult =
     | { ok: true; event: any }
@@ -42,7 +43,10 @@ export async function releaseSpot(eventId: string): Promise<void> {
         });
     } catch (e) {
         // Swallow. Reconciliation cron will heal the drift.
-        console.warn('releaseSpot compensation failed:', e);
+        emit('reservation_compensation_failed', 'error', {
+            eventId,
+            error: String(e),
+        });
     }
 }
 

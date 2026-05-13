@@ -1,4 +1,5 @@
 import Event from '../models/Event';
+import { emit } from '../utils/observability';
 
 export interface DriftResult {
     driftCount: number;
@@ -57,7 +58,7 @@ export async function detectAndFixDrift(): Promise<DriftResult> {
             'capacity.registeredCount': row.computed,
         });
         fixed.push({ eventId: row._id, stored: row.stored, computed: row.computed });
-        console.warn('capacity_drift_detected', {
+        emit('capacity_drift_detected', 'warn', {
             eventId: row._id,
             stored: row.stored,
             computed: row.computed,

@@ -3,6 +3,7 @@ import Redis from 'ioredis';
 import Event from '../models/Event';
 import EventRegistration from '../models/EventRegistration';
 import { publishNotification } from '../services/notificationPublisher.service';
+import { emit } from '../utils/observability';
 
 export type ReminderKind = 'reminder_24h' | 'reminder_2h';
 
@@ -70,6 +71,12 @@ export async function sweepReminders(
         await redis
             .set(idemKey, 'sent', 'EX', 25 * 3600)
             .catch((e) => console.warn('[reminders] redis set failed', e));
+
+        emit('reminder_sent', 'info', {
+            kind,
+            eventId: id.toString(),
+            count: regs.length,
+        });
 
         eventsProcessed++;
         remindersSent += regs.length;
