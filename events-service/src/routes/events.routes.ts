@@ -4,6 +4,8 @@ import rateLimit from 'express-rate-limit';
 import { postCreateEvent, getEventDetail, getEventsList } from '../controllers/eventsCompose.controller';
 import registrationsRoutes from './registrations.routes';
 import rosterRoutes from './roster.routes';
+import { postCancelEvent, postRescheduleEvent } from '../controllers/eventCancel.controller';
+import { requireOrganizer } from '../middleware/ownerOnly';
 
 const router = Router();
 
@@ -24,6 +26,8 @@ router.get('/', getEventsList);
 // each sub-router ensures req.params.id is available inside them.
 router.use('/:id', registrationsRoutes);
 router.use('/:id', rosterRoutes);
+router.post('/:id/cancel', protect, requireOrganizer, postCancelEvent);
+router.post('/:id/reschedule', protect, requireOrganizer, postRescheduleEvent);
 router.get('/:id', getEventDetail);
 
 export default router;
