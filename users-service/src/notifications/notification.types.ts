@@ -138,3 +138,30 @@ export function getNotificationTypeFromSubtype(subtype: NotificationSubtype): No
 
     throw new Error(`Unknown notification subtype: ${subtype}`);
 }
+
+// ============================================================================
+// PLAN 6 — EVENTS-SERVICE CROSS-SERVICE NOTIFICATION SUBTYPES
+// ============================================================================
+
+/**
+ * Fine-grained event subtypes consumed from the `notification:events` Redis
+ * channel (published by events-service via notificationPublisher.service.ts).
+ * These are distinct from the legacy EventSubtype object above which uses the
+ * old dot-notation path (event.registration.success, etc.) for the internal
+ * notification factory. The new subtypes use the canonical Plan 6 shape and
+ * are handled by the startEventNotificationWorker subscriber.
+ */
+export const EVENT_SUBTYPES = [
+    'event.new_from_followed_organizer',
+    'event.first_registration_ever',
+    'event.new_registration',
+    'event.registration_confirmed',
+    'event.reminder_24h',
+    'event.reminder_2h',
+    'event.capacity_urgency',
+    'event.cancelled',
+    'event.rescheduled',
+    'event.mark_attendees_prompt',
+] as const;
+
+export type EventCrossServiceSubtype = typeof EVENT_SUBTYPES[number];

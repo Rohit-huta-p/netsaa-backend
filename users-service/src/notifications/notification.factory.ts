@@ -621,3 +621,32 @@ class NotificationFactory {
 
 // Export singleton instance
 export const notificationFactory = new NotificationFactory();
+
+// ============================================================================
+// PLAN 6 — EVENTS-SERVICE CROSS-SERVICE CHANNEL FLAGS
+// ============================================================================
+
+import { EventCrossServiceSubtype } from './notification.types';
+
+/**
+ * Channel flags for each event cross-service subtype.
+ * Determines which delivery adapters fire for each notification.
+ * push=true fires FCM/APNs; email fires SES; whatsapp fires MSG91 WA
+ * (templates must be pre-approved by Meta — founder responsibility §25.7);
+ * inapp always writes to the InAppNotification collection.
+ */
+export const EVENT_CHANNEL_FLAGS: Record<
+    EventCrossServiceSubtype,
+    { push: boolean; email: boolean; whatsapp: boolean; inapp: boolean; sms: boolean }
+> = {
+    'event.new_from_followed_organizer': { push: true,  email: false, whatsapp: false, inapp: true,  sms: false },
+    'event.first_registration_ever':     { push: true,  email: false, whatsapp: false, inapp: true,  sms: false },
+    'event.new_registration':            { push: false, email: false, whatsapp: false, inapp: true,  sms: false }, // digest path
+    'event.registration_confirmed':      { push: true,  email: true,  whatsapp: false, inapp: true,  sms: false },
+    'event.reminder_24h':                { push: true,  email: false, whatsapp: true,  inapp: true,  sms: false },
+    'event.reminder_2h':                 { push: true,  email: false, whatsapp: false, inapp: true,  sms: false },
+    'event.capacity_urgency':            { push: true,  email: false, whatsapp: false, inapp: true,  sms: false },
+    'event.cancelled':                   { push: true,  email: true,  whatsapp: true,  inapp: true,  sms: false },
+    'event.rescheduled':                 { push: true,  email: true,  whatsapp: true,  inapp: true,  sms: false },
+    'event.mark_attendees_prompt':       { push: true,  email: false, whatsapp: false, inapp: true,  sms: false },
+};

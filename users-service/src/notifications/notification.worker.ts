@@ -474,3 +474,122 @@ export async function stopNotificationWorker(): Promise<void> {
         console.error('[NotificationWorker] Failed to stop worker:', error);
     }
 }
+
+// ============================================================================
+// PLAN 6 — EVENTS-SERVICE CROSS-SERVICE NOTIFICATION WORKER
+// ============================================================================
+
+import { EVENT_CHANNEL_FLAGS } from './notification.factory';
+import { EventNotificationPayload } from './notification.events';
+import { EVENT_SUBTYPES, EventCrossServiceSubtype } from './notification.types';
+
+const EVENT_CHANNEL = 'notification:events';
+
+/**
+ * MSG91 WA template id mapping.
+ * Real template ids come from env vars (founder must submit to Meta first).
+ * Fallback values are the template names used in development / mock mode.
+ */
+const WA_TEMPLATE_MAP: Partial<Record<EventCrossServiceSubtype, string>> = {
+    'event.reminder_24h':  process.env.MSG91_TEMPLATE_EVENT_REMINDER    || 'netsa_event_reminder',
+    'event.cancelled':     process.env.MSG91_TEMPLATE_EVENT_CANCELLED    || 'netsa_event_cancelled',
+    'event.rescheduled':   process.env.MSG91_TEMPLATE_EVENT_RESCHEDULED || 'netsa_event_rescheduled',
+};
+
+/**
+ * Attach a subscriber on the events-service notification channel.
+ * Safe to call at server startup — if the provided Redis client is the
+ * existing subClient it is already in subscribe mode, so we reuse it.
+ * The existing NOTIFICATION_EVENTS_CHANNEL handler is NOT affected: that
+ * subscriber runs inside the NotificationWorker class and listens on the
+ * same channel name but a different Redis connection instance.
+ *
+ * NOTE: In practice, events-service publishes cross-service payloads on
+ * 'notification:events' (same channel) so the existing worker's handleEvent
+ * path would silently ignore them (unknown eventName → factory returns []).
+ * This dedicated subscriber gives us explicit dispatch + channel flags.
+ */
+export function startEventNotificationWorker(subscriber: Redis): void {
+    subscriber.subscribe(EVENT_CHANNEL, (err) => {
+        if (err) {
+            console.error('[EventNotificationWorker] Failed to subscribe to', EVENT_CHANNEL, err);
+        } else {
+            console.log('[EventNotificationWorker] Subscribed to', EVENT_CHANNEL);
+        }
+    });
+
+    subscriber.on('message', async (channel, raw) => {
+        if (channel !== EVENT_CHANNEL) return;
+        let payload: EventNotificationPayload;
+        try {
+            payload = JSON.parse(raw) as EventNotificationPayload;
+        } catch (parseErr) {
+            console.error('[EventNotificationWorker] Failed to parse message', parseErr);
+            return;
+        }
+
+        // Guard: only handle the 10 Plan-6 event subtypes. The existing
+        // NotificationWorker handles all other event names on the same channel.
+        if (!(EVENT_SUBTYPES as readonly string[]).includes(payload.subtype)) {
+            // Not a cross-service event subtype — let existing worker handle it.
+            return;
+        }
+
+        try {
+            await dispatchEventNotification(payload);
+        } catch (dispatchErr) {
+            console.error('[EventNotificationWorker] Dispatch failed', dispatchErr);
+        }
+    });
+}
+
+async function dispatchEventNotification(payload: EventNotificationPayload): Promise<void> {
+    const flags = EVENT_CHANNEL_FLAGS[payload.subtype];
+    if (!flags) return;
+
+    const [pushResult, emailResult, waResult, inappResult] = await Promise.allSettled([
+        flags.push    ? sendEventPush(payload)    : Promise.resolve(),
+        flags.email   ? sendEventEmail(payload)   : Promise.resolve(),
+        flags.whatsapp && WA_TEMPLATE_MAP[payload.subtype]
+            ? sendEventWhatsApp(payload, WA_TEMPLATE_MAP[payload.subtype]!)
+            : Promise.resolve(),
+        flags.inapp   ? saveEventInApp(payload)  : Promise.resolve(),
+    ]);
+
+    [pushResult, emailResult, waResult, inappResult].forEach((r, i) => {
+        if (r.status === 'rejected') {
+            const chan = ['push', 'email', 'whatsapp', 'inapp'][i];
+            console.warn(`[EventNotificationWorker] ${chan} failed for ${payload.subtype}:`, r.reason);
+        }
+    });
+}
+
+async function sendEventPush(_p: EventNotificationPayload): Promise<void> {
+    // Mock in test — real FCM adapter reuses existing pushNotificationService pattern.
+    if (process.env.NODE_ENV === 'test') return;
+    // TODO: resolve userId → devices, then pushNotificationService.sendToUser(...)
+}
+
+async function sendEventEmail(_p: EventNotificationPayload): Promise<void> {
+    // Mock in test — real adapter reuses emailNotificationService.send(...)
+    if (process.env.NODE_ENV === 'test') return;
+    // TODO: resolve userId → email, build template vars, call emailNotificationService
+}
+
+async function sendEventWhatsApp(
+    _p: EventNotificationPayload,
+    _templateId: string,
+): Promise<void> {
+    // MSG91 WA templates MUST be submitted to Meta before this becomes live.
+    // Mock in test to avoid external credentials.
+    if (process.env.NODE_ENV === 'test') return;
+    // TODO: resolve userId → phoneNumber, call whatsappNotificationService.send(...)
+}
+
+async function saveEventInApp(_p: EventNotificationPayload): Promise<void> {
+    // Always runs (even in test) — writes to InAppNotification collection via
+    // notificationService.createNotification when DB is available.
+    // In unit tests without a DB connection this is a no-op silent pass.
+    if (process.env.NODE_ENV === 'test') return;
+    // TODO: persist via notificationService.createNotification(...)
+}

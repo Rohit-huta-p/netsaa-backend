@@ -394,6 +394,32 @@ export function generateIdempotencyKey(
     return `${eventName}:${primaryEntityId.toString()}:${timestamp.getTime()}`;
 }
 
+// ============================================================================
+// PLAN 6 — EVENTS-SERVICE CROSS-SERVICE PAYLOAD
+// ============================================================================
+
+import { EventCrossServiceSubtype } from './notification.types';
+
+/**
+ * Payload shape published on the `notification:events` Redis channel by
+ * events-service (notificationPublisher.service.ts — Plan 6 Task 9/11).
+ * Consumed by startEventNotificationWorker in notification.worker.ts.
+ */
+export interface EventNotificationPayload {
+    subtype: EventCrossServiceSubtype;
+    eventId: string;
+    organizerId?: string;
+    userId?: string;
+    title?: string;
+    registrantName?: string;
+    reason?: string;
+    note?: string;
+    newStartsAt?: string;
+    oldStartsAt?: string;
+    slotsLeft?: number;
+    ts?: string;
+}
+
 /**
  * Event name constants for easy reference
  */
