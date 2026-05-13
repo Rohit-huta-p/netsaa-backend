@@ -6,6 +6,8 @@ import { startReservationExpiryWorker } from './workers/reservationExpiryWorker'
 import { startReconciliationWorker } from './workers/reconciliation.worker';
 import { startReminderWorkers } from './workers/reminders.worker';
 import { startCapacityUrgencyWorker } from './workers/capacityUrgency.worker';
+import { startMarkAttendeesWorker } from './workers/markAttendees.worker';
+import { startAutoCompleteWorker } from './workers/autoComplete.worker';
 
 connectDB();
 
@@ -18,5 +20,7 @@ app.listen(PORT, () => {
         startReconciliationWorker();
         startReminderWorkers();
         startCapacityUrgencyWorker();
+        startMarkAttendeesWorker();
+        startAutoCompleteWorker();
     }
 });
