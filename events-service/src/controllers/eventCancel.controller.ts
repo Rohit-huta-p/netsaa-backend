@@ -3,6 +3,7 @@ import Event from '../models/Event';
 import EventRegistration from '../models/EventRegistration';
 import { publishNotification } from '../services/notificationPublisher.service';
 import { recordAudit } from '../services/auditLog.service';
+import { fanoutReschedule } from '../services/rescheduleFanout.service';
 
 export async function postCancelEvent(req: Request, res: Response) {
     try {
@@ -87,15 +88,16 @@ export async function postRescheduleEvent(req: Request, res: Response) {
             metadata: { newStartsAt, reason },
         });
 
-        // Fanout deferred to Task 20 (batched). For now, log intent.
-        const registrants = await EventRegistration.find({
+        // Fire-and-forget fanout batching (Task 20)
+        fanoutReschedule({
             eventId,
-            status: { $in: ['confirmed', 'attended'] },
-        }).select('userId').lean();
+            oldStartsAt: new Date(event.startsAt ?? Date.now()).toISOString(),
+            newStartsAt: newStart.toISOString(),
+            title: event.title,
+            reason,
+        }).catch((err) => console.error('reschedule fanout failed:', err));
 
-        console.log(`[reschedule] event ${eventId} — ${registrants.length} registrants need fanout (deferred to batched worker)`);
-
-        res.json({ data: { ok: true, fanoutPending: registrants.length } });
+        res.json({ data: { ok: true, fanoutScheduled: true } });
     } catch (err) {
         console.error('postRescheduleEvent error:', err);
         res.status(500).json({ message: 'Internal server error' });
