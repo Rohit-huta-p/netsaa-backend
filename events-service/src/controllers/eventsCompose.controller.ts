@@ -5,7 +5,6 @@ import { incrementTagUsage } from '../services/tagGovernance.service';
 import { publishNotification } from '../services/notificationPublisher.service';
 import { emit } from '../utils/observability';
 
-const MIN_PRIOR_EVENTS_TO_AUTO_PUBLISH = 3;
 const MIN_HOURS_AHEAD = 0.25;          // 15 min
 const MAX_DAYS_AHEAD = 180;            // 6 months
 
@@ -70,16 +69,13 @@ export async function postCreateEvent(req: Request, res: Response) {
         let moderationFlagReason: string | undefined;
         let moderationQueueAt: Date | undefined;
 
+        // Auto-flag still routes spam/scam to moderation. The first-N-events
+        // gate is OFF — any user can publish directly. Re-enable by adding back
+        // the priorCount check if we see abuse post-launch.
         if (flagResult.flagged) {
             status = 'pending_review';
             moderationFlagReason = flagResult.reasons[0];
             moderationQueueAt = new Date();
-        } else {
-            const priorCount = await Event.countDocuments({ organizerId: userId });
-            if (priorCount < MIN_PRIOR_EVENTS_TO_AUTO_PUBLISH) {
-                status = 'pending_review';
-                moderationQueueAt = new Date();
-            }
         }
 
         const event = await Event.create({
