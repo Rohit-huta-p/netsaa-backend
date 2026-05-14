@@ -43,6 +43,20 @@ export async function postCreateEvent(req: Request, res: Response) {
             return res.status(400).json({ message: 'capacity > 1000 requires admin approval' });
         }
 
+        // Paid-ticket validation: amount > 0, refundPolicy valid, custom note required when policy=custom
+        if (body.registrationMode === 'paid_ticket') {
+            const p = body.pricing;
+            if (!p || typeof p.amount !== 'number' || p.amount <= 0 || p.amount > 100000) {
+                return res.status(400).json({ message: 'paid_ticket requires pricing.amount between 1 and 100000 INR' });
+            }
+            if (!['flex_24h', 'firm', 'custom'].includes(p.refundPolicy)) {
+                return res.status(400).json({ message: 'pricing.refundPolicy must be flex_24h, firm, or custom' });
+            }
+            if (p.refundPolicy === 'custom' && (!p.refundCustomNote || !p.refundCustomNote.trim())) {
+                return res.status(400).json({ message: 'pricing.refundCustomNote required when refundPolicy=custom' });
+            }
+        }
+
         // Auto-flag check
         const flagResult = checkEventContent({
             title: body.title,
@@ -82,6 +96,14 @@ export async function postCreateEvent(req: Request, res: Response) {
             durationKind: body.durationKind,
             location: body.location,
             capacity: { total: body.capacity.total, registeredCount: 0 },
+            pricing: body.registrationMode === 'paid_ticket' && body.pricing
+                ? {
+                      amount: body.pricing.amount,
+                      currency: body.pricing.currency || 'INR',
+                      refundPolicy: body.pricing.refundPolicy,
+                      refundCustomNote: body.pricing.refundCustomNote,
+                  }
+                : undefined,
             media: body.media,
             status,
             moderationFlagReason,
@@ -159,6 +181,7 @@ export async function getEventDetail(req: Request, res: Response) {
 
 export async function getEventsList(req: Request, res: Response) {
     try {
+        console.log("fetching events list...")
         const { topicTag, city, mode, skill, q, page = '1', limit = '20' } = req.query as Record<string, string>;
 
         const query: any = { status: 'live' };

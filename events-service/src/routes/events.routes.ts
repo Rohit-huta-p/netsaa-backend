@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { protect } from '../middleware/auth';
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { postCreateEvent, getEventDetail, getEventsList } from '../controllers/eventsCompose.controller';
 import registrationsRoutes from './registrations.routes';
 import rosterRoutes from './roster.routes';
@@ -15,7 +15,7 @@ const router = Router();
 const hirerEventRateLimit = rateLimit({
     windowMs: 24 * 60 * 60 * 1000,
     max: process.env.NODE_ENV === 'test' ? 10_000 : 3,
-    keyGenerator: (req) => (req as any).user?.id || req.ip,
+    keyGenerator: (req, res) => (req as any).user?.id || ipKeyGenerator(req.ip ?? '', false),
     message: { message: 'Daily event-publish limit reached (3/day). Try tomorrow.' },
     standardHeaders: true,
     legacyHeaders: false,
