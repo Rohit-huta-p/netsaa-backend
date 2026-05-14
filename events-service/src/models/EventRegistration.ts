@@ -24,6 +24,13 @@ export interface IEventRegistration extends Document {
     visibility: 'public' | 'private';
     source: 'rsvp' | 'paid';
     contactSnapshot?: IContactSnapshot;
+    // T1 register-sheet fields (collected at register time, editable from profile)
+    attendeeName: string;              // primary registrant name
+    attendeeEmail?: string;            // optional, for ticket confirmation
+    attendeePhone: string;             // REQUIRED for event ops (transactional consent)
+    attendeeCount: number;             // 1-5 — counts seats reserved (used by capacity math)
+    guestNames?: string[];             // length = attendeeCount - 1 if provided
+    notes?: string;                    // max 300 chars
     linkAccessKey?: string;            // HKDF salt for online link decryption
     ticketCode?: string;               // T2 QR
     paidAmount?: number;               // T2
@@ -64,6 +71,13 @@ const eventRegistrationSchema = new Schema<IEventRegistration>({
         phone: { type: String },
         city: { type: String },
     },
+    // T1 register-sheet fields
+    attendeeName: { type: String, required: true },
+    attendeeEmail: { type: String },
+    attendeePhone: { type: String, required: true },
+    attendeeCount: { type: Number, default: 1, min: 1, max: 5 },
+    guestNames: { type: [String], default: [] },
+    notes: { type: String, maxlength: 300 },
     linkAccessKey: { type: String },
     ticketCode: { type: String },
     paidAmount: { type: Number },

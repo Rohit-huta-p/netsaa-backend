@@ -17,6 +17,9 @@ export interface DriftResult {
  * (Beats the per-event countDocuments loop which was 10k+ queries.)
  */
 export async function detectAndFixDrift(): Promise<DriftResult> {
+    // Computed truth is SUM of attendeeCount across confirmed registrations
+    // (one registration may book 1-5 seats). Legacy rows without attendeeCount
+    // are treated as 1 via $ifNull.
     const driftRows = await Event.aggregate([
         { $match: { status: { $in: ['live', 'completed'] } } },
         {
@@ -30,7 +33,12 @@ export async function detectAndFixDrift(): Promise<DriftResult> {
                             status: 'confirmed',
                         },
                     },
-                    { $count: 'count' },
+                    {
+                        $group: {
+                            _id: null,
+                            seats: { $sum: { $ifNull: ['$attendeeCount', 1] } },
+                        },
+                    },
                 ],
                 as: 'registrations',
             },
@@ -39,7 +47,7 @@ export async function detectAndFixDrift(): Promise<DriftResult> {
             $project: {
                 stored: '$capacity.registeredCount',
                 computed: {
-                    $ifNull: [{ $arrayElemAt: ['$registrations.count', 0] }, 0],
+                    $ifNull: [{ $arrayElemAt: ['$registrations.seats', 0] }, 0],
                 },
             },
         },
