@@ -92,7 +92,26 @@ const eventRegistrationSchema = new Schema<IEventRegistration>({
 // Indexes
 eventRegistrationSchema.index({ eventId: 1 });
 eventRegistrationSchema.index({ userId: 1 });
-eventRegistrationSchema.index({ eventId: 1, userId: 1 }, { unique: true });
+
+/**
+ * Partial unique index — only enforces (eventId, userId) uniqueness for ACTIVE
+ * statuses. Cancelled rows are kept for audit/funnel history but don't block
+ * the same user from re-registering after a cancellation.
+ *
+ * If you migrate an existing DB, drop the old non-partial index first:
+ *   db.eventregistrations.dropIndex("eventId_1_userId_1")
+ * Then this new partial index will be auto-created on next mongoose connect
+ * (or run `EventRegistration.syncIndexes()` explicitly).
+ */
+eventRegistrationSchema.index(
+    { eventId: 1, userId: 1 },
+    {
+        unique: true,
+        partialFilterExpression: {
+            status: { $in: ['confirmed', 'attended', 'no-show', 'registered'] },
+        },
+    }
+);
 
 const EventRegistration: Model<IEventRegistration> = mongoose.model<IEventRegistration>(
     'EventRegistration',
