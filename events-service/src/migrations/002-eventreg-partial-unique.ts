@@ -22,8 +22,8 @@ const NEW_PARTIAL_FILTER = {
 };
 
 async function run() {
-    const uri = process.env.MONGODB_URI;
-    if (!uri) throw new Error('MONGODB_URI required');
+    const uri = process.env.EVENTS_MONGO_URI || process.env.MONGODB_URI;
+    if (!uri) throw new Error('EVENTS_MONGO_URI (or MONGODB_URI) required');
 
     await mongoose.connect(uri);
     console.log('Connected.');
