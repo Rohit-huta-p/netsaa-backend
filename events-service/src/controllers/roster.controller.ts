@@ -89,7 +89,7 @@ export async function getMyRegistration(req: Request, res: Response) {
         const reg = await EventRegistration.findOne({
             eventId: req.params.id,
             userId,
-            status: { $in: ['confirmed', 'attended'] },
+            status: { $in: ['confirmed', 'attended', 'pending_payment'] },
         }).lean();
 
         if (!reg) return res.status(404).json({ message: 'No active registration' });
