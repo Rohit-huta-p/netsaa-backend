@@ -21,7 +21,12 @@ describe('capacity.service', () => {
                 expect.objectContaining({
                     _id: eventId,
                     status: 'live',
-                    $expr: { $gt: ['$capacity.total', '$capacity.registeredCount'] },
+                    $expr: {
+                        $gte: [
+                            { $subtract: ['$capacity.total', '$capacity.registeredCount'] },
+                            1,
+                        ],
+                    },
                 }),
                 { $inc: { 'capacity.registeredCount': 1 } },
                 { new: true }

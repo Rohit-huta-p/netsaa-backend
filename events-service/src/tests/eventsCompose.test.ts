@@ -79,19 +79,10 @@ describe('POST /api/events', () => {
         }));
     });
 
-    it('200 routes new hirer (<3 prior events) to pending_review without firing notification', async () => {
-        (Event.create as jest.Mock).mockResolvedValue({ _id: 'evt1', status: 'pending_review', topicTags: ['audition'] });
-        (Event.countDocuments as jest.Mock).mockResolvedValue(1);
-
-        const res = await request(app)
-            .post('/api/events')
-            .set('Authorization', `Bearer ${token}`)
-            .send(validEventBody);
-
-        expect(res.status).toBe(200);
-        expect(res.body.data.event.status).toBe('pending_review');
-        expect(publishNotification).not.toHaveBeenCalled();
-    });
+    // Removed test: "200 routes new hirer (<3 prior events) to pending_review"
+    // The first-3-events moderation gate was dropped (commit 3cbe8b7). Anyone
+    // publishes directly to 'live' now; only auto-flagged content goes to
+    // pending_review (covered by the test below).
 
     it('200 routes auto-flagged content to pending_review even for verified hirer', async () => {
         const flagged = {
