@@ -11,7 +11,7 @@ import app from '../app';
 import Event from '../models/Event';
 import EventRegistration from '../models/EventRegistration';
 import User from '../models/User';
-import { reserveSpot, releaseSpot } from '../services/capacity.service';
+import { reserveSpots, releaseSpots } from '../services/capacity.service';
 import { publishNotification } from '../services/notificationPublisher.service';
 
 const JWT_SECRET = 'test_secret';
@@ -34,6 +34,13 @@ beforeEach(() => {
     });
 });
 
+// Valid register payload — multi-attendee schema (Plan 6 Task 22)
+const validBody = {
+    attendeeName: 'Anjali Ramesh',
+    attendeePhone: '+919876543210',
+    attendeeCount: 1,
+};
+
 describe('POST /api/events/:id/register', () => {
     it('401 without auth', async () => {
         const res = await request(app).post(`/api/events/${eventId}/register`);
@@ -49,7 +56,7 @@ describe('POST /api/events/:id/register', () => {
                 startsAt: new Date(Date.now() + 86400_000),
             }),
         });
-        (reserveSpot as jest.Mock).mockResolvedValue({ ok: true, event: { _id: eventId, capacity: { total: 50, registeredCount: 33 } } });
+        (reserveSpots as jest.Mock).mockResolvedValue({ ok: true, event: { _id: eventId, capacity: { total: 50, registeredCount: 33 } } });
         (EventRegistration.create as jest.Mock).mockResolvedValue({
             _id: 'reg1',
             eventId,
@@ -62,7 +69,7 @@ describe('POST /api/events/:id/register', () => {
         const res = await request(app)
             .post(`/api/events/${eventId}/register`)
             .set('Authorization', `Bearer ${token}`)
-            .send({ visibility: 'private' });
+            .send({ ...validBody, visibility: 'private' });
 
         expect(res.status).toBe(200);
         expect(EventRegistration.create).toHaveBeenCalledWith(expect.objectContaining({
@@ -89,12 +96,12 @@ describe('POST /api/events/:id/register', () => {
         (Event.findById as jest.Mock).mockReturnValue({
             select: jest.fn().mockResolvedValue({ _id: eventId, organizerId, status: 'live', startsAt: new Date(Date.now() + 86400_000) }),
         });
-        (reserveSpot as jest.Mock).mockResolvedValue({ ok: false, reason: 'full_or_inactive' });
+        (reserveSpots as jest.Mock).mockResolvedValue({ ok: false, reason: 'full_or_inactive' });
 
         const res = await request(app)
             .post(`/api/events/${eventId}/register`)
             .set('Authorization', `Bearer ${token}`)
-            .send({});
+            .send(validBody);
 
         expect(res.status).toBe(409);
         expect(EventRegistration.create).not.toHaveBeenCalled();
@@ -104,7 +111,7 @@ describe('POST /api/events/:id/register', () => {
         (Event.findById as jest.Mock).mockReturnValue({
             select: jest.fn().mockResolvedValue({ _id: eventId, organizerId, status: 'live', startsAt: new Date(Date.now() + 86400_000) }),
         });
-        (reserveSpot as jest.Mock).mockResolvedValue({ ok: true, event: { _id: eventId } });
+        (reserveSpots as jest.Mock).mockResolvedValue({ ok: true, event: { _id: eventId } });
         const dupErr: any = new Error('dup');
         dupErr.code = 11000;
         (EventRegistration.create as jest.Mock).mockRejectedValue(dupErr);
@@ -112,11 +119,11 @@ describe('POST /api/events/:id/register', () => {
         const res = await request(app)
             .post(`/api/events/${eventId}/register`)
             .set('Authorization', `Bearer ${token}`)
-            .send({});
+            .send(validBody);
 
         expect(res.status).toBe(409);
         expect(res.body.message).toMatch(/already.registered/i);
-        expect(releaseSpot).toHaveBeenCalledWith(eventId);
+        expect(releaseSpots).toHaveBeenCalledWith(eventId, 1);
     });
 
     it('403 when artist tries to RSVP own event', async () => {
@@ -127,7 +134,7 @@ describe('POST /api/events/:id/register', () => {
         const res = await request(app)
             .post(`/api/events/${eventId}/register`)
             .set('Authorization', `Bearer ${token}`)
-            .send({});
+            .send(validBody);
 
         expect(res.status).toBe(403);
     });
@@ -140,8 +147,9 @@ describe('DELETE /api/events/:id/registrations/me', () => {
             eventId,
             userId,
             status: 'cancelled',
+            attendeeCount: 1,
         });
-        (releaseSpot as jest.Mock).mockResolvedValue(undefined);
+        (releaseSpots as jest.Mock).mockResolvedValue(undefined);
 
         const res = await request(app)
             .delete(`/api/events/${eventId}/registrations/me`)
@@ -153,7 +161,7 @@ describe('DELETE /api/events/:id/registrations/me', () => {
             { status: 'cancelled', cancelledAt: expect.any(Date) },
             { new: true }
         );
-        expect(releaseSpot).toHaveBeenCalledWith(eventId);
+        expect(releaseSpots).toHaveBeenCalledWith(eventId, 1);
     });
 
     it('404 when not currently registered', async () => {
@@ -162,6 +170,6 @@ describe('DELETE /api/events/:id/registrations/me', () => {
             .delete(`/api/events/${eventId}/registrations/me`)
             .set('Authorization', `Bearer ${token}`);
         expect(res.status).toBe(404);
-        expect(releaseSpot).not.toHaveBeenCalled();
+        expect(releaseSpots).not.toHaveBeenCalled();
     });
 });
