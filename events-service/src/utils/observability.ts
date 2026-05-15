@@ -9,7 +9,13 @@ export type MetricName =
     | 'event_cancelled'
     | 'event_rescheduled'
     | 'csv_exported'
-    | 'cron_swept';
+    | 'cron_swept'
+    | 'razorpay_webhook_received'
+    | 'razorpay_webhook_signature_invalid'
+    | 'razorpay_webhook_unhandled'
+    | 'razorpay_webhook_orphan_capture'
+    | 'razorpay_payment_failed'
+    | 'razorpay_refund_processed';
 
 interface EmitProps {
     [key: string]: any;

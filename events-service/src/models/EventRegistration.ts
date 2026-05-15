@@ -37,6 +37,9 @@ export interface IEventRegistration extends Document {
     paymentStatus?: 'pending' | 'completed' | 'refunded' | 'failed';
     razorpayOrderId?: string;
     razorpayPaymentId?: string;
+    paymentCapturedAt?: Date;
+    refundedAt?: Date;
+    refundAmount?: number;
     attendedMarkedAt?: Date;
     attendedMarkedBy?: 'hirer' | 'system';
     cancelledAt?: Date;
@@ -84,6 +87,9 @@ const eventRegistrationSchema = new Schema<IEventRegistration>({
     paymentStatus: { type: String, enum: ['pending', 'completed', 'refunded', 'failed'] },
     razorpayOrderId: { type: String },
     razorpayPaymentId: { type: String },
+    paymentCapturedAt: { type: Date },
+    refundedAt: { type: Date },
+    refundAmount: { type: Number },
     attendedMarkedAt: { type: Date },
     attendedMarkedBy: { type: String, enum: ['hirer', 'system'] },
     cancelledAt: { type: Date },
