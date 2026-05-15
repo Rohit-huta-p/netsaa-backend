@@ -17,7 +17,7 @@ export interface IEventRegistration extends Document {
     eventId: mongoose.Types.ObjectId;
     userId: mongoose.Types.ObjectId;
     ticketTypeId?: mongoose.Types.ObjectId;
-    status: 'confirmed' | 'cancelled' | 'attended' | 'no-show' | 'registered';
+    status: 'confirmed' | 'cancelled' | 'attended' | 'no-show' | 'registered' | 'pending_payment';
     registeredAt: Date;
     quantity: number;
     attendees?: IAttendeeInfo[];
@@ -62,7 +62,7 @@ const eventRegistrationSchema = new Schema<IEventRegistration>({
     quantity: { type: Number, default: 1 },
     status: {
         type: String,
-        enum: ['confirmed', 'cancelled', 'attended', 'no-show', 'registered'],
+        enum: ['confirmed', 'cancelled', 'attended', 'no-show', 'registered', 'pending_payment'],
         default: 'confirmed',
     },
     registeredAt: { type: Date, default: Date.now },
@@ -114,7 +114,7 @@ eventRegistrationSchema.index(
     {
         unique: true,
         partialFilterExpression: {
-            status: { $in: ['confirmed', 'attended', 'no-show', 'registered'] },
+            status: { $in: ['confirmed', 'attended', 'no-show', 'registered', 'pending_payment'] },
         },
     }
 );

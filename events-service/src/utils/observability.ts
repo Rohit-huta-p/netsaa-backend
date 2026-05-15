@@ -15,7 +15,8 @@ export type MetricName =
     | 'razorpay_webhook_unhandled'
     | 'razorpay_webhook_orphan_capture'
     | 'razorpay_payment_failed'
-    | 'razorpay_refund_processed';
+    | 'razorpay_refund_processed'
+    | 'razorpay_order_create_failed';
 
 interface EmitProps {
     [key: string]: any;
