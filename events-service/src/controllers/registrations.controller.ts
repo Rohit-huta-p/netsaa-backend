@@ -243,10 +243,11 @@ export async function deleteMyRegistration(req: Request, res: Response) {
 
     const eventId = req.params.id;
 
-    // Find the active registration. KEEP the find+update step compatible with existing
-    // tests — they assert the exact filter/update/options.
+    // Cancel either an active confirmed registration OR a pending_payment row
+    // (user opened Razorpay checkout but never completed). Both hold seats and
+    // both should release on cancel.
     const updated = await EventRegistration.findOneAndUpdate(
-        { eventId, userId, status: 'confirmed' },
+        { eventId, userId, status: { $in: ['confirmed', 'pending_payment'] } },
         { status: 'cancelled', cancelledAt: new Date() },
         { new: true }
     );

@@ -159,7 +159,7 @@ describe('DELETE /api/events/:id/registrations/me', () => {
 
         expect(res.status).toBe(200);
         expect(EventRegistration.findOneAndUpdate).toHaveBeenCalledWith(
-            { eventId, userId, status: 'confirmed' },
+            { eventId, userId, status: { $in: ['confirmed', 'pending_payment'] } },
             { status: 'cancelled', cancelledAt: expect.any(Date) },
             { new: true }
         );
