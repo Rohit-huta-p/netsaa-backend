@@ -40,6 +40,7 @@ export interface IEventRegistration extends Document {
     paymentCapturedAt?: Date;
     refundedAt?: Date;
     refundAmount?: number;
+    refundStatus?: 'pending_organizer_review' | 'processed' | 'rejected';
     attendedMarkedAt?: Date;
     attendedMarkedBy?: 'hirer' | 'system';
     cancelledAt?: Date;
@@ -90,6 +91,7 @@ const eventRegistrationSchema = new Schema<IEventRegistration>({
     paymentCapturedAt: { type: Date },
     refundedAt: { type: Date },
     refundAmount: { type: Number },
+    refundStatus: { type: String, enum: ['pending_organizer_review', 'processed', 'rejected'] },
     attendedMarkedAt: { type: Date },
     attendedMarkedBy: { type: String, enum: ['hirer', 'system'] },
     cancelledAt: { type: Date },

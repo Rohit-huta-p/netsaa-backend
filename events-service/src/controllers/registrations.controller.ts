@@ -4,8 +4,9 @@ import EventRegistration from '../models/EventRegistration';
 import User from '../models/User';
 import { reserveSpots, releaseSpots } from '../services/capacity.service';
 import { publishNotification } from '../services/notificationPublisher.service';
-import { createEventOrder } from '../services/razorpay.service';
+import { createEventOrder, triggerRefund } from '../services/razorpay.service';
 import { emit } from '../utils/observability';
+import { computeRefundAmount, isRefundEligible } from '../utils/refundEligibility';
 
 // Validation helpers
 const PHONE_RE = /^(\+91[\s-]?)?[6-9]\d{9}$/;       // Indian mobile (with or without +91)
@@ -242,6 +243,8 @@ export async function deleteMyRegistration(req: Request, res: Response) {
 
     const eventId = req.params.id;
 
+    // Find the active registration. KEEP the find+update step compatible with existing
+    // tests — they assert the exact filter/update/options.
     const updated = await EventRegistration.findOneAndUpdate(
         { eventId, userId, status: 'confirmed' },
         { status: 'cancelled', cancelledAt: new Date() },
@@ -252,8 +255,68 @@ export async function deleteMyRegistration(req: Request, res: Response) {
         return res.status(404).json({ message: 'No active registration found' });
     }
 
-    // Release ALL seats this registration held (multi-seat support)
     const seats = (updated as any).attendeeCount ?? 1;
+    const paymentStatus = (updated as any).paymentStatus;
+    const wasPaid = paymentStatus === 'completed';
+
+    let refundIssued = false;
+    let refundAmount = 0;
+    let refundStatusFlag: string | undefined;
+
+    if (wasPaid) {
+        // Load event to read pricing + startsAt
+        const event = await Event.findById(eventId).select('pricing startsAt').lean();
+        const pricing = (event as any)?.pricing ?? {};
+        const startsAt = (event as any)?.startsAt;
+
+        const eligibility = isRefundEligible(pricing, startsAt);
+
+        if (eligibility === false) {
+            // Cancellation window passed — rollback the cancel so the user can try again
+            // or accept the no-refund and stay registered. Releases no seats.
+            await EventRegistration.findByIdAndUpdate((updated as any)._id, {
+                status: 'confirmed',
+                cancelledAt: undefined,
+            });
+            return res.status(422).json({
+                message: 'Cancellation window has passed. This event does not allow refunds.',
+                refundIssued: false,
+            });
+        }
+
+        if (eligibility === null) {
+            // custom policy — flag for organizer review; seats still released
+            refundStatusFlag = 'pending_organizer_review';
+            await EventRegistration.findByIdAndUpdate((updated as any)._id, {
+                refundStatus: 'pending_organizer_review',
+            });
+        } else {
+            // eligibility === true → issue refund
+            refundAmount = computeRefundAmount(pricing, startsAt, (updated as any).paidAmount ?? 0);
+            const paymentId = (updated as any).razorpayPaymentId;
+            if (refundAmount > 0 && paymentId) {
+                try {
+                    await triggerRefund(paymentId, refundAmount);
+                    refundIssued = true;
+                    // refund.processed webhook (Task 3) flips paymentStatus to 'refunded'
+                } catch (err) {
+                    emit('razorpay_refund_failed', 'error', {
+                        paymentId,
+                        error: String(err),
+                    });
+                    // Don't block cancel — release seats anyway, manual refund later
+                }
+            }
+        }
+    }
+
+    // Release ALL seats this registration held (multi-seat support)
     await releaseSpots(eventId, seats);
-    res.json({ data: { ok: true, releasedSeats: seats } });
+
+    const data: any = { ok: true, releasedSeats: seats, refundIssued, refundAmount };
+    if (refundStatusFlag) {
+        data.refundStatus = refundStatusFlag;
+        data.message = 'Cancellation accepted. Organizer will review your refund per the custom policy.';
+    }
+    res.json({ data });
 }
