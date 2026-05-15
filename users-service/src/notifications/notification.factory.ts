@@ -649,4 +649,6 @@ export const EVENT_CHANNEL_FLAGS: Record<
     'event.cancelled':                   { push: true,  email: true,  whatsapp: true,  inapp: true,  sms: false },
     'event.rescheduled':                 { push: true,  email: true,  whatsapp: true,  inapp: true,  sms: false },
     'event.mark_attendees_prompt':       { push: true,  email: false, whatsapp: false, inapp: true,  sms: false },
+    'event.payment_captured':            { push: true,  email: true,  whatsapp: false, inapp: true,  sms: false },
+    'event.payment_failed':              { push: true,  email: false, whatsapp: false, inapp: true,  sms: false },
 };

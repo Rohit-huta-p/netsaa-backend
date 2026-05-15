@@ -162,6 +162,8 @@ export const EVENT_SUBTYPES = [
     'event.cancelled',
     'event.rescheduled',
     'event.mark_attendees_prompt',
+    'event.payment_captured',
+    'event.payment_failed',
 ] as const;
 
 export type EventCrossServiceSubtype = typeof EVENT_SUBTYPES[number];
