@@ -8,6 +8,7 @@ import { startReminderWorkers } from './workers/reminders.worker';
 import { startCapacityUrgencyWorker } from './workers/capacityUrgency.worker';
 import { startMarkAttendeesWorker } from './workers/markAttendees.worker';
 import { startAutoCompleteWorker } from './workers/autoComplete.worker';
+import { startStalePendingCleanupWorker } from './workers/stalePendingCleanup.worker';
 
 connectDB();
 
@@ -22,5 +23,6 @@ app.listen(PORT, () => {
         startCapacityUrgencyWorker();
         startMarkAttendeesWorker();
         startAutoCompleteWorker();
+        startStalePendingCleanupWorker();
     }
 });

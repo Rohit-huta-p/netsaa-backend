@@ -17,7 +17,8 @@ export type MetricName =
     | 'razorpay_payment_failed'
     | 'razorpay_refund_processed'
     | 'razorpay_refund_failed'
-    | 'razorpay_order_create_failed';
+    | 'razorpay_order_create_failed'
+    | 'stale_pending_cleanup';
 
 interface EmitProps {
     [key: string]: any;
