@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { searchService } from './search.service';
 import { searchPreviewService } from './search.preview.service';
 import { SEARCH_CONFIG } from '../../config';
+import { emitSearchMetric } from '../../analytics/metrics';
 
 /**
  * Flattens the nested frontend filter structure to flat structure.
@@ -186,7 +187,21 @@ export class SearchController {
             const reqAny = req as any;
             const viewerId = reqAny.user?.id ?? (req.query.viewerId as string | undefined);
 
+            const start = Date.now();
             const results = await searchPreviewService.executePreview(q, { mode, viewerId });
+            const latencyMs = Date.now() - start;
+            emitSearchMetric({
+              surface: 'preview',
+              query: q,
+              viewerId,
+              latencyMs,
+              resultCounts: {
+                people: results.people.length,
+                gigs:   results.gigs.length,
+                events: results.events.length,
+              },
+              intent: { dominantVertical: results.intent.dominantVertical, confidence: results.intent.confidence },
+            });
 
             return res.json(results);
         } catch (error) {

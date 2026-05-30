@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { similarService } from './similar.service';
+import { emitSimilarMetric } from '../analytics/metrics';
 
 const DEFAULT_RAIL_LIMIT = 6;
 const DEFAULT_PAGE_SIZE = 20;
@@ -22,7 +23,16 @@ export const similarController = {
       opts = { limit };
     }
 
+    const start = Date.now();
     const result = await similarService.read(artistId, opts);
+    const latencyMs = Date.now() - start;
+    emitSimilarMetric({
+      artistId,
+      latencyMs,
+      mode: 'page' in opts ? 'page' : 'rail',
+      total: result.total,
+      fallback: result.computedAt === null,
+    });
     return res.json(result);
   },
 };

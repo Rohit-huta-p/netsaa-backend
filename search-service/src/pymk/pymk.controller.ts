@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { pymkService } from './pymk.service';
 import { dismissArtist } from './pymk.dismiss';
+import { emitPymkMetric } from '../analytics/metrics';
 
 const MAX_PAGE_SIZE = 50;
 const DEFAULT_PAGE_SIZE = 10;
@@ -14,7 +15,17 @@ export const pymkController = {
     const requestedPageSize = parseInt(req.query.pageSize as string) || DEFAULT_PAGE_SIZE;
     const pageSize = Math.min(MAX_PAGE_SIZE, Math.max(1, requestedPageSize));
 
+    const start = Date.now();
     const result = await pymkService.read(viewerId, page, pageSize);
+    const latencyMs = Date.now() - start;
+    emitPymkMetric({
+      viewerId,
+      latencyMs,
+      strategy: result.strategy,
+      total: result.total,
+      page,
+      fallback: result.computedAt === null,
+    });
     return res.json(result);
   },
 
