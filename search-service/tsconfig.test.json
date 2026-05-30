@@ -2,7 +2,8 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "noEmit": true,
-    "isolatedModules": false
+    "isolatedModules": false,
+    "types": ["jest", "node"]
   },
   "include": ["src/**/*.ts"]
 }
