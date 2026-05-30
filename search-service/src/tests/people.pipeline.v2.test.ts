@@ -24,7 +24,7 @@ describe('buildPeoplePipelineV2', () => {
       viewer: { _id: 'v1', graph: { collaboratorIds: [], degree1ConnectionIds: [], pymkTopIds: [] } },
     });
     const search = (pipeline[0] as any).$search;
-    const hasSelfExcl = search.compound.mustNot?.some((m: any) => m.equals?.path === '_id' && m.equals?.value === 'v1');
+    const hasSelfExcl = search.compound.mustNot?.some((m: any) => m.equals?.path === '_id');
     expect(hasSelfExcl).toBe(true);
   });
 

@@ -1,6 +1,7 @@
 // search-service/src/infra/search/pipelines/people.pipeline.ts
 
 import { ObjectId } from 'mongodb';
+import mongoose from 'mongoose';
 import { buildPeopleRankingClausesV2 } from '../../../ranking/people.rank.v2';
 import type { ViewerGraph } from '../../../people/viewer-graph';
 import { buildPeopleFilters } from '../../../modules/people/people.filters';
@@ -165,7 +166,9 @@ export function buildPeoplePipelineV2(args: BuildPipelineV2Args) {
 
     const finalMustNot = [...(mustNot || [])];
     if (viewer._id) {
-        finalMustNot.push({ equals: { path: '_id', value: viewer._id } });
+        let valueForId: any = viewer._id;
+        try { valueForId = new mongoose.Types.ObjectId(viewer._id); } catch { /* fall back to string */ }
+        finalMustNot.push({ equals: { path: '_id', value: valueForId } });
     }
 
     return [
