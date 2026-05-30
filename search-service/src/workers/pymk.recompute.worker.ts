@@ -62,6 +62,27 @@ export async function computePymkForViewer(viewerId: string): Promise<ComputeRes
   return { list: ranked, strategy: 'graph' };
 }
 
+export async function recomputeHandler(
+  job: Job,
+  compute: (viewerId: string) => Promise<ComputeResult> = computePymkForViewer,
+): Promise<void> {
+  const viewerId = job.data.viewerId as string;
+  const out = await compute(viewerId);
+  await PymkRecommendation.updateOne(
+    { userId: new mongoose.Types.ObjectId(viewerId) } as any,
+    {
+      $set: {
+        userId: new mongoose.Types.ObjectId(viewerId),
+        strategy: out.strategy,
+        list: out.list,
+        computedAt: new Date(),
+        version: 1,
+      },
+    },
+    { upsert: true },
+  );
+}
+
 // Worker bootstrap — only when run as standalone process
 if (require.main === module) {
   const connection = new IORedis(
@@ -69,21 +90,5 @@ if (require.main === module) {
     { maxRetriesPerRequest: null }
   );
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const worker = new Worker('pymk.recompute', async (job: Job) => {
-    const viewerId = job.data.viewerId as string;
-    const out = await computePymkForViewer(viewerId);
-    await PymkRecommendation.updateOne(
-      { userId: new mongoose.Types.ObjectId(viewerId) } as any,
-      {
-        $set: {
-          userId: new mongoose.Types.ObjectId(viewerId),
-          strategy: out.strategy,
-          list: out.list,
-          computedAt: new Date(),
-          version: 1,
-        },
-      },
-      { upsert: true },
-    );
-  }, { connection });
+  const worker = new Worker('pymk.recompute', (job: Job) => recomputeHandler(job), { connection });
 }

@@ -50,3 +50,11 @@ After 14 days at 100% with no rollback, delete:
 - The flag itself
 
 This decommission is its own commit/PR; do not bundle with the rollout.
+
+## Worker controls
+
+| Env var | Default | Purpose |
+|---|---|---|
+| `PYMK_WORKER_ENABLED` | `true` | Set to `false` on API-only replicas in multi-replica deploys |
+| `PYMK_CRON_PATTERN` | `0 */6 * * *` | Cron pattern for the fanout scheduler (every 6h) |
+| `PYMK_WORKER_CONCURRENCY` | `10` | Number of concurrent per-user pymk.recompute jobs per worker process |
