@@ -178,6 +178,10 @@ export interface IUser extends Document {
   hasPhotos?: boolean;
   galleryUrls?: string[];  // Up to 5 photo URLs
   videoUrls?: string[];    // Up to 3 video URLs
+
+  // Backwards-compat virtual getters (derived from contexts / kycLevel)
+  readonly role?: 'artist' | 'organizer';
+  readonly kycStatus?: 'unverified' | 'phone_verified' | 'id_verified' | 'enhanced';
 }
 
 /* ---------- Mongoose Schemas ---------- */
@@ -545,6 +549,36 @@ UserSchema.index({ trustScore: -1 });
 // Age-gate indexes (PRD v4 §8.3.2)
 UserSchema.index({ dateOfBirth: 1 });                    // daily cron: flip isMinor when user turns 18
 UserSchema.index({ guardianStatus: 1, isMinor: 1 });     // ops query: pending-guardian minors
+
+/* ── Backwards-compat virtual getters (PRD v4 migration stopgap) ──
+ * The `role` field was removed in favor of `contexts: { artist, hirer }`.
+ * The `kycStatus` field was removed in favor of `kycLevel: number`.
+ * Until all call sites migrate, these virtuals preserve the legacy read interface.
+ */
+
+UserSchema.virtual('role').get(function(this: IUser) {
+  const c = this.contexts;
+  if (!c) return undefined;
+  // Prefer artist if both enabled — historical default for OTP/profile flows.
+  if (c.artist?.enabled && !c.hirer?.enabled) return 'artist';
+  if (c.hirer?.enabled && !c.artist?.enabled) return 'organizer';
+  if (c.artist?.enabled && c.hirer?.enabled) return 'artist';
+  return undefined;
+});
+
+UserSchema.virtual('kycStatus').get(function(this: IUser) {
+  switch (this.kycLevel) {
+    case 0: return 'unverified';
+    case 1: return 'phone_verified';
+    case 2: return 'id_verified';
+    case 3: return 'enhanced';
+    default: return 'unverified';
+  }
+});
+
+// Ensure virtuals appear in toJSON / toObject output (so res.json(user) includes them).
+UserSchema.set('toJSON',   { virtuals: true });
+UserSchema.set('toObject', { virtuals: true });
 
 const User: Model<IUser> = mongoose.model<IUser>('User', UserSchema);
 
