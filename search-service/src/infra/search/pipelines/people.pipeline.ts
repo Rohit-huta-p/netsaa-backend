@@ -38,17 +38,11 @@ export function buildPeoplePipeline({
         }
     });
 
-    // Only show active accounts
-    mustClauses.push({
-        text: {
-            path: 'accountStatus',
-            query: 'active'
-        }
-    });
-
-    // Role filter (default = artist search)
     // Role filter (default = artist search)
     // Use 'text' instead of 'equals' because dynamic mapping indexes strings as text, not tokens.
+    // (accountStatus filter removed — field is not in the Atlas Search index, so the clause
+    //  always returned 0 matches. `blocked=false` covers deactivated/deleted accounts via
+    //  the existing soft-delete + block flow.)
     mustClauses.push({
         text: {
             path: 'role',
