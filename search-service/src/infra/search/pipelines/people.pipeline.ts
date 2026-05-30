@@ -1,6 +1,9 @@
 // search-service/src/infra/search/pipelines/people.pipeline.ts
 
 import { ObjectId } from 'mongodb';
+import { buildPeopleRankingClausesV2 } from '../../../ranking/people.rank.v2';
+import type { ViewerGraph } from '../../../people/viewer-graph';
+import { buildPeopleFilters } from '../../../modules/people/people.filters';
 
 interface BuildPeoplePipelineArgs {
     query: string;
@@ -143,5 +146,49 @@ export function buildPeoplePipeline({
                 passwordHash: 0
             }
         }
+    ];
+}
+
+export interface BuildPipelineV2Args {
+    query: string;
+    filters: Record<string, any>;
+    limit: number;
+    skip: number;
+    viewer: { _id?: string; graph: ViewerGraph };
+}
+
+export function buildPeoplePipelineV2(args: BuildPipelineV2Args) {
+    const { query, filters, limit, skip, viewer } = args;
+    const { must, filter, mustNot } = buildPeopleFilters(filters);
+
+    const should = buildPeopleRankingClausesV2(query, viewer.graph);
+
+    const finalMustNot = [...(mustNot || [])];
+    if (viewer._id) {
+        finalMustNot.push({ equals: { path: '_id', value: viewer._id } });
+    }
+
+    return [
+        {
+            $search: {
+                index: 'people_search_index',
+                compound: {
+                    must: [
+                        { equals: { path: 'blocked', value: false } },
+                        { text: { path: 'role', query: filters?.role ?? 'artist' } },
+                        ...must,
+                    ],
+                    should,
+                    filter,
+                    mustNot: finalMustNot,
+                    minimumShouldMatch: should.length > 0 ? 1 : 0,
+                },
+            },
+        },
+        { $addFields: { _score: { $meta: 'searchScore' } } },
+        { $sort: { _score: -1, 'cached.averageRating': -1 } },
+        { $skip: skip },
+        { $limit: limit },
+        { $project: { email: 0, phoneNumber: 0, passwordHash: 0, otp: 0, devices: 0 } },
     ];
 }
