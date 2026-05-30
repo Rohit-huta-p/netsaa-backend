@@ -10,12 +10,12 @@ export const CRAFT_DICT = set([
 
 export const EVENT_TYPE_DICT = set([
   'workshop', 'masterclass', 'meetup', 'audition', 'competition',
-  'jam', 'festival', 'showcase', 'concert-night', 'open-mic',
+  'jam', 'festival', 'showcase',
 ]);
 
 export const GIG_TYPE_DICT = set([
   'sangeet', 'wedding', 'corporate', 'party', 'concert', 'recording',
-  'session', 'anchoring', 'playback', 'ghazal-night', 'mehendi',
+  'session', 'anchoring', 'playback', 'mehendi',
 ]);
 
 export const CITY_DICT = set([

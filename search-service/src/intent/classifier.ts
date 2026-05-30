@@ -45,9 +45,9 @@ export function classifyIntent(query: string): IntentResult {
 
   let dominantVertical: Vertical = 'people';
   if (sum > 0) {
-    if (gigs === max && gigs > 0) dominantVertical = 'gigs';
+    if (people === max && people > 0) dominantVertical = 'people';
     else if (events === max && events > 0) dominantVertical = 'events';
-    else dominantVertical = 'people';
+    else if (gigs === max && gigs > 0) dominantVertical = 'gigs';
   }
 
   const confidence = sum > 0 ? max / sum : 0;

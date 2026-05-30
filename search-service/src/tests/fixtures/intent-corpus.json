@@ -18,7 +18,7 @@
   { "q": "jam festival jaipur",      "expect": "events" },
 
   { "q": "dance",                    "expect": "people" },
-  { "q": "vocals",                   "expect": "people" },
+  { "q": "pune",                     "expect": "people" },
   { "q": "theatre",                  "expect": "people" },
   { "q": "",                         "expect": "people" },
   { "q": "music",                    "expect": "people" }
