@@ -182,8 +182,11 @@ export class SearchController {
     async previewSearch(req: Request, res: Response, next: NextFunction) {
         try {
             const q = (req.query.q as string) || '';
+            const mode = (req.query.mode === 'typeahead' ? 'typeahead' : 'preview') as 'preview' | 'typeahead';
+            const reqAny = req as any;
+            const viewerId = reqAny.user?.id ?? (req.query.viewerId as string | undefined);
 
-            const results = await searchPreviewService.executePreview(q);
+            const results = await searchPreviewService.executePreview(q, { mode, viewerId });
 
             return res.json(results);
         } catch (error) {
