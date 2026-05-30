@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import { SEARCH_CONFIG } from '../../config';
+import { env } from '../../config/env';
 import { buildPeopleFilters } from './people.filters';
 import { mapPersonToSearchResult } from './people.mapper';
 import { atlasClient } from '../../infra/search/atlas.client';
@@ -53,7 +54,7 @@ export const searchPeopleInDb = async (
     }
 
     // 1. Build Pipeline (ID + Score only)
-    const useV2 = process.env.SEARCH_PEOPLE_V2 === 'true';
+    const useV2 = env.SEARCH_PEOPLE_V2;
     const pipeline = useV2
         ? buildPeoplePipelineV2({
               query,
