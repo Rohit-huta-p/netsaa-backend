@@ -30,4 +30,14 @@ export const cacheClient = {
             console.warn(`[Cache] Set error for key ${key}:`, error);
         }
     },
+
+    del: async (key: string): Promise<void> => {
+        try {
+            const redis = getRedisClient();
+            if (!redis) return;
+            await redis.del(key);
+        } catch (error) {
+            console.warn(`[Cache] Del error for key ${key}:`, error);
+        }
+    },
 };

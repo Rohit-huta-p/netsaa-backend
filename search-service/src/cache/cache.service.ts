@@ -23,4 +23,8 @@ export const cacheService = {
         const stringValue = JSON.stringify(value);
         await cacheClient.set(key, stringValue, ttlSeconds);
     },
+
+    del: async (key: string): Promise<void> => {
+        await cacheClient.del(key);
+    },
 };
