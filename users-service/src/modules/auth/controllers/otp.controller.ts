@@ -106,15 +106,20 @@ export const sendOtp = async (req: Request, res: Response) => {
 };
 
 /**
- * @desc    Verify OTP and Login (existing users only)
+ * @desc    Verify OTP — login for existing users, client account creation for new phones
  * @route   POST /api/users/auth/verify-otp
  * @access  Public
  *
  * Boundaries:
  *   - Identity Verification: OTP session lookup, expiry check, attempt limiting, hash comparison.
+ *   - Registration pre-validation: body-shape checks on the optional registration payload run
+ *                                  BEFORE the OTP is burned so a 400 here never costs the user
+ *                                  their code.
+ *   - OTP burn: atomic findOneAndUpdate so a double-tap race returns 400 to the loser.
  *   - Login Boundary:        Existing user lookup, reactivation of deactivated accounts, JWT issuance.
- *   - Registration Boundary: NOT handled here. If the phone number has no associated user,
- *                            the client receives a 404 and must direct the user to a registration flow.
+ *   - Registration Boundary: When a validated registration payload accompanies a fresh phone,
+ *                            a client account is created (with E11000 fallback for create races).
+ *                            No registration payload → historic 404 for artist/CL login flows.
  */
 export const verifyOtp = async (req: Request, res: Response) => {
     try {
@@ -177,30 +182,94 @@ export const verifyOtp = async (req: Request, res: Response) => {
             });
         }
 
-        // 4. Valid OTP — mark session as used
-        session.isUsed = true;
-        await session.save();
+        // 3.5 Validate the optional registration payload BEFORE burning the OTP —
+        // a 400 here must not cost the user their code (pure body checks).
+        const { registration } = req.body as {
+            registration?: { displayName?: string; role?: string; ageConfirmed?: boolean };
+        };
+        if (registration) {
+            if (registration.role !== 'client') {
+                return res.status(400).json({
+                    meta: { status: 400, message: 'OTP signup is available for the client role only' },
+                    data: null,
+                    errors: [{ field: 'registration.role', message: 'Must be "client"' }],
+                });
+            }
+            const dn = (registration.displayName || '').trim();
+            if (dn.length < 1 || dn.length > 60) {
+                return res.status(400).json({
+                    meta: { status: 400, message: 'displayName is required (1-60 chars)' },
+                    data: null,
+                    errors: [{ field: 'registration.displayName', message: 'Required (1-60 chars)' }],
+                });
+            }
+            if (registration.ageConfirmed !== true) {
+                return res.status(400).json({
+                    meta: { status: 400, message: 'You must confirm you are 18 or older' },
+                    data: null,
+                    errors: [{ field: 'registration.ageConfirmed', message: 'Must be true' }],
+                });
+            }
+        }
+
+        // 4. Valid OTP — burn the session atomically (loser of a double-tap race gets 400)
+        const burned = await OtpSession.findOneAndUpdate(
+            { _id: session._id, isUsed: false },
+            { $set: { isUsed: true } },
+        );
+        if (!burned) {
+            return res.status(400).json({
+                meta: { status: 400, message: 'This OTP was already used. Please request a new one.' },
+                data: null,
+                errors: [],
+            });
+        }
 
         // ──────────────────────────────────────────────
-        // REGISTRATION BOUNDARY (guard)
-        // If the phone number is not associated with an existing user,
-        // return 404 so the client can redirect to a registration flow.
-        // No user is silently created here.
+        // USER RESOLUTION BOUNDARY
+        // Find or create the user account.
         // ──────────────────────────────────────────────
 
         // 5. Lookup existing user by phone number
-        const user = await User.findOne({ phoneNumber: phone });
+        let user: any = await User.findOne({ phoneNumber: phone });
+        let createdAccount = false;
 
         if (!user) {
-            console.log(`[verifyOtp] No account found for phone: ${phone}`);
-            return res.status(404).json({
-                meta: { status: 404, message: 'Account not found' },
-                data: {
-                    userExists: false,
+            // No registration payload -> preserve historic behavior:
+            // 404 so the client app can route to a signup flow.
+            if (!registration) {
+                console.log(`[verifyOtp] No account found for phone: ${phone}`);
+                return res.status(404).json({
+                    meta: { status: 404, message: 'Account not found' },
+                    data: { userExists: false, phoneNumber: phone },
+                    errors: [],
+                });
+            }
+
+            // OTP-signup path (2026-06 client onboarding): registration already validated above.
+            const displayName = (registration.displayName || '').trim();
+            const now = new Date();
+            try {
+                user = await User.create({
+                    displayName,
                     phoneNumber: phone,
-                },
-                errors: [],
-            });
+                    role: 'client',
+                    roleChangedAt: now,
+                    authProvider: 'phone',
+                    phoneVerifiedAt: now,
+                    ageConfirmedAt: now,
+                });
+                createdAccount = true;
+                console.log(`[verifyOtp] Created client account for phone: ${phone}`);
+            } catch (err: any) {
+                if (err?.code === 11000) {
+                    // Lost a create race — the account exists now; continue as login.
+                    user = await User.findOne({ phoneNumber: phone });
+                    if (!user) throw err;
+                } else {
+                    throw err;
+                }
+            }
         }
 
         // ──────────────────────────────────────────────
@@ -242,6 +311,7 @@ export const verifyOtp = async (req: Request, res: Response) => {
                     meta: { status: 200, message: 'Login successful' },
                     data: {
                         userExists: true,
+                        created: createdAccount,
                         token,
                         user: { ...user.toObject(), id: user.id },
                     },

@@ -3,13 +3,15 @@ import mongoose, { Schema, Document, Model } from 'mongoose';
 export interface IGig extends Document {
   title: string;
   description: string;
+  responsibilities?: string[];
 
   type: 'one-time' | 'recurring' | 'contract';
-  category: string;
   tags: string[];
 
   // Organizer info
   organizerId: mongoose.Types.ObjectId;
+  // Three-role wall: which tier posted this. Legacy gigs (missing) = creative_lead.
+  posterRole?: 'client' | 'creative_lead';
   organizerSnapshot: {
     displayName: string;
     organizationName: string;
@@ -27,6 +29,7 @@ export interface IGig extends Document {
   artistTypes: string[];
   requiredSkills: string[];
   experienceLevel: 'beginner' | 'intermediate' | 'professional';
+  minExperienceYears?: number;
 
   ageRange: {
     min: number;
@@ -50,6 +53,7 @@ export interface IGig extends Document {
     venueName: string;
     address: string;
     isRemote: boolean;
+    geo?: { lat: number; lng: number };
   };
 
   // Schedule
@@ -103,16 +107,22 @@ export interface IGig extends Document {
 const GigSchema = new Schema<IGig>({
   title: { type: String, required: true },
   description: { type: String },
+  responsibilities: [String],
 
   type: {
     type: String,
     enum: ['one-time', 'recurring', 'contract'],
     required: true
   },
-  category: { type: String, required: false },
   tags: [String],
 
   organizerId: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true }, // Index for finding gigs by organizer
+  posterRole: {
+    type: String,
+    enum: ['client', 'creative_lead'],
+    default: 'creative_lead',
+    index: true,
+  },
   organizerSnapshot: {
     displayName: String,
     organizationName: String,
@@ -133,6 +143,7 @@ const GigSchema = new Schema<IGig>({
     enum: ['beginner', 'intermediate', 'professional'],
     required: true
   },
+  minExperienceYears: { type: Number },
 
   ageRange: {
     min: Number,
@@ -164,7 +175,8 @@ const GigSchema = new Schema<IGig>({
     country: String,
     venueName: String,
     address: String,
-    isRemote: { type: Boolean, default: false }
+    isRemote: { type: Boolean, default: false },
+    geo: { lat: Number, lng: Number }
   },
 
   schedule: {

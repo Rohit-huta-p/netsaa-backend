@@ -30,7 +30,8 @@ export const searchGigsInDb = async (
     query: string,
     rawFilters: Record<string, any> = {},
     page: number = 1,
-    pageSize: number = SEARCH_CONFIG.DEFAULT_PAGE_SIZE
+    pageSize: number = SEARCH_CONFIG.DEFAULT_PAGE_SIZE,
+    viewerRole: 'client' | 'creative_lead' | 'artist' | 'admin' = 'artist'
 ) => {
     try {
         // --- 1. Normalize raw filters ---
@@ -49,8 +50,8 @@ export const searchGigsInDb = async (
 
         const { hardFilters, boostSignals, sortMode } = normalizedFilters;
 
-        // --- 2. Generate cache key ---
-        const cacheKey = generateSearchKey('gigs', query, rawFilters, page, pageSize);
+        // --- 2. Generate cache key (role-scoped: the wall differs per viewer role) ---
+        const cacheKey = generateSearchKey('gigs', query, { ...rawFilters, __viewerRole: viewerRole }, page, pageSize);
         const cached = await cacheService.get<{ results: any[]; total: number }>(cacheKey);
         if (cached) return cached;
 
@@ -79,7 +80,8 @@ export const searchGigsInDb = async (
             rankingClauses, // Pass ranking as should clauses
             hardFilters,
             skip,
-            pageSize
+            pageSize,
+            viewerRole
         );
 
         // --- 7. Add sort stage if needed (for newest/highestPay) ---

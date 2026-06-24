@@ -19,10 +19,42 @@ export const getUserById = async (req: Request, res: Response) => {
         }
 
         const userObj = user.toObject() as any;
-        if (user.role === 'organizer') {
+        if (user.role === 'creative_lead' || user.role === 'client') {
             const organizerDetails = await Organizer.findOne({ userId: user._id });
             if (organizerDetails) userObj.organizerDetails = organizerDetails;
-        } else if (user.role === 'artist') {
+        }
+
+        // Tiered, privacy-safe public profile for clients (Part D, 2026-06).
+        // This is a PUBLIC endpoint (no `protect`, no owner concept) — the owner
+        // reads their own editable data via /me + /organizers/me. We must NEVER
+        // surface email / phoneNumber / billingDetails / otp* here. Lean tier for
+        // individual/company/venue; agency adds showcase fields only.
+        if (user.role === 'client') {
+            const org = userObj.organizerDetails as any | undefined;
+            const clientDto: Record<string, any> = {
+                _id: userObj._id,
+                displayName: userObj.displayName,
+                role: 'client',
+                profileImageUrl: userObj.profileImageUrl,
+                city: userObj.cached?.primaryCity || userObj.location,
+                verified: !!userObj.phoneVerifiedAt,
+                joined: userObj.createdAt,
+                organizationName: org?.organizationName,
+                organizerTypeCategory: org?.organizerTypeCategory,
+            };
+            if (org?.organizerTypeCategory === 'agency') {
+                clientDto.logoUrl = org.logoUrl;
+                clientDto.organizationWebsite = org.organizationWebsite;
+                clientDto.bio = org.bio;
+                clientDto.services = org.services;
+                clientDto.photos = org.photos;
+                clientDto.yearsInBusiness = org.yearsInBusiness;
+                clientDto.teamSize = org.teamSize;
+            }
+            return res.json(clientDto);
+        }
+
+        if (user.role === 'creative_lead' || user.role === 'artist') {
             const artistDetails = await Artist.findOne({ userId: user._id });
             if (artistDetails) userObj.artistDetails = artistDetails;
         }

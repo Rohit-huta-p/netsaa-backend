@@ -3,13 +3,14 @@ import { z } from 'zod';
 export const gigValidationSchema = z.object({
     title: z.string().min(1, 'Title is required'),
     description: z.string().min(1, 'Description is required'),
+    responsibilities: z.array(z.string()).optional(),
     type: z.enum(['one-time', 'recurring', 'contract']),
-    category: z.string().min(1, 'Category is required'),
     tags: z.array(z.string()).optional(),
 
     artistTypes: z.array(z.string()).min(1, 'At least one artist type is required'),
     requiredSkills: z.array(z.string()).optional(),
     experienceLevel: z.enum(['beginner', 'intermediate', 'professional']),
+    minExperienceYears: z.number().min(0).optional(),
 
     ageRange: z.object({
         min: z.number().min(0).optional(),
@@ -25,7 +26,8 @@ export const gigValidationSchema = z.object({
         country: z.string().optional(),
         venueName: z.string().optional(),
         address: z.string().optional(),
-        isRemote: z.boolean().optional()
+        isRemote: z.boolean().optional(),
+        geo: z.object({ lat: z.number(), lng: z.number() }).optional()
     }),
 
     schedule: z.object({

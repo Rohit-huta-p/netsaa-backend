@@ -30,6 +30,12 @@ export const updateOrganizerSchema = z.object({
     customCategoryLabel: z.string().optional(),
     organizationWebsite: z.string().optional(),
     logoUrl: z.string().optional(),
+    // Public showcase fields (Part D, 2026-06) — agency public profile.
+    bio: z.string().max(2000).optional(),
+    services: z.array(z.string()).max(20).optional(),
+    photos: z.array(z.string().url()).max(12).optional(),
+    yearsInBusiness: z.number().int().min(0).max(100).optional(),
+    teamSize: z.number().int().min(1).max(10000).optional(),
     billingDetails: billingDetailsSchema,
 }).strict()
     .superRefine((data, ctx) => {

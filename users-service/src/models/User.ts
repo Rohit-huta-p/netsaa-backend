@@ -94,12 +94,14 @@ export interface IUserContexts {
 
 export interface IUser extends Document {
   displayName?: string;
-  email: string;
+  email?: string; // optional since 2026-06: phone-OTP clients sign up without email
   phoneNumber?: string;
   authProvider: AuthProvider;
   passwordHash?: string; // optional (SSO flows)
   emailVerifiedAt?: Date;
   phoneVerifiedAt?: Date;
+  // Client 18+ self-attestation at OTP signup (no DOB for clients; PRD v4.1 §8.1.1)
+  ageConfirmedAt?: Date;
 
   // Two-context model (PRD v4): replaces fixed 'role' field
   // Every user can be BOTH artist and hirer. Context is page-based.
@@ -179,8 +181,12 @@ export interface IUser extends Document {
   galleryUrls?: string[];  // Up to 5 photo URLs
   videoUrls?: string[];    // Up to 3 video URLs
 
-  // Backwards-compat virtual getters (derived from contexts / kycLevel)
-  readonly role?: 'artist' | 'organizer';
+  // Three-role marketplace model (2026-06): stored field, set at signup, switchable.
+  // client posts gigs for creative_leads; creative_leads post gigs for artists.
+  role: 'client' | 'creative_lead' | 'artist';
+  roleChangedAt?: Date;
+
+  // Backwards-compat virtual getter (derived from kycLevel)
   readonly kycStatus?: 'unverified' | 'phone_verified' | 'id_verified' | 'enhanced';
 }
 
@@ -304,13 +310,15 @@ const GuardianSubSchema = new Schema(
 
 const UserSchema = new Schema<IUser>(
   {
-    email: { type: String, required: true, unique: true, index: true },
-    phoneNumber: { type: String },
+    // unique+sparse: many phone-only clients have no email at all
+    email: { type: String, unique: true, sparse: true, index: true },
+    phoneNumber: { type: String, unique: true, sparse: true, index: true },
     authProvider: { type: String, enum: ['email', 'google', 'apple', 'phone'], default: 'email' },
     passwordHash: { type: String },
 
     emailVerifiedAt: { type: Date },
     phoneVerifiedAt: { type: Date },
+    ageConfirmedAt: { type: Date },
 
     // Two-context model: every user can be both artist and hirer
     contexts: {
@@ -323,6 +331,17 @@ const UserSchema = new Schema<IUser>(
         profileComplete: { type: Boolean, default: false },
       },
     },
+
+    // Three-role marketplace model (2026-06). Reversible switch; roleChangedAt
+    // is stored from day one so a future N-day switch lock is a one-line check.
+    role: {
+      type: String,
+      enum: ['client', 'creative_lead', 'artist'],
+      default: 'artist',
+      index: true,
+    },
+    roleChangedAt: { type: Date },
+
     isAdmin: { type: Boolean, default: false, index: true },
 
     displayName: { type: String },
@@ -550,21 +569,10 @@ UserSchema.index({ trustScore: -1 });
 UserSchema.index({ dateOfBirth: 1 });                    // daily cron: flip isMinor when user turns 18
 UserSchema.index({ guardianStatus: 1, isMinor: 1 });     // ops query: pending-guardian minors
 
-/* ── Backwards-compat virtual getters (PRD v4 migration stopgap) ──
- * The `role` field was removed in favor of `contexts: { artist, hirer }`.
+/* ── Backwards-compat virtual getter (PRD v4 migration stopgap) ──
  * The `kycStatus` field was removed in favor of `kycLevel: number`.
- * Until all call sites migrate, these virtuals preserve the legacy read interface.
+ * (The old `role` virtual was replaced 2026-06 by the stored three-role field.)
  */
-
-UserSchema.virtual('role').get(function(this: IUser) {
-  const c = this.contexts;
-  if (!c) return undefined;
-  // Prefer artist if both enabled — historical default for OTP/profile flows.
-  if (c.artist?.enabled && !c.hirer?.enabled) return 'artist';
-  if (c.hirer?.enabled && !c.artist?.enabled) return 'organizer';
-  if (c.artist?.enabled && c.hirer?.enabled) return 'artist';
-  return undefined;
-});
 
 UserSchema.virtual('kycStatus').get(function(this: IUser) {
   switch (this.kycLevel) {

@@ -51,9 +51,9 @@ function getRoleContent(role: string): {
     ctaLabel: string;
     steps: Array<{ icon: string; title: string; desc: string }>;
 } {
-    if (role === 'organizer') {
+    if (role === 'organizer' || role === 'client' || role === 'creative_lead') {
         return {
-            badge: '🎪 Organizer',
+            badge: role === 'client' ? '🎪 Client' : '🎪 Creative Lead',
             headline: 'Start discovering talent today.',
             body: 'NETSA connects you with verified artists across India. Post your first gig and get applications from top talent in your city.',
             ctaLabel: 'Post Your First Gig',

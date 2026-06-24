@@ -62,6 +62,12 @@ export interface IOrganizer extends Document {
     organizationWebsite?: string;
     organizerTypeCategory: OrganizerTypeCategory;
     logoUrl?: string;
+    // Public showcase fields (Part D, 2026-06) — surfaced on the agency public profile.
+    bio?: string;
+    services?: string[];
+    photos?: string[];
+    yearsInBusiness?: number;
+    teamSize?: number;
     billingDetails?: IBillingDetails;
     organizerStats?: IOrganizerStats;
     verification: IVerification;
@@ -126,6 +132,12 @@ const OrganizerSchema = new Schema<IOrganizer>(
             required: true
         },
         logoUrl: { type: String },
+        // Public showcase fields (Part D, 2026-06) — agency public profile.
+        bio: { type: String },
+        services: { type: [String], default: [] },
+        photos: { type: [String], default: [] },
+        yearsInBusiness: { type: Number },
+        teamSize: { type: Number },
         billingDetails: { type: BillingDetailsSchema, default: {} },
         organizerStats: { type: OrganizerStatsSchema, default: {} },
         verification: { type: VerificationSchema, default: () => ({}) }

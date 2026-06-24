@@ -37,9 +37,19 @@ export interface IEvent extends Document {
     dayBreakdown: Array<{
       date: Date;
       durationMinutes: number;
+      title?: string;
+      subtitle?: string;
       notes?: string;
     }>;
   };
+
+  agenda?: Array<{
+    date: Date;
+    title: string;
+    subtitle?: string;
+    startsAt?: Date;
+    durationMinutes?: number;
+  }>;
 
   location: {
     type: 'physical' | 'online' | 'hybrid';
@@ -64,7 +74,7 @@ export interface IEvent extends Document {
     prizes?: Array<{ position: string; reward: string }>;
   };
 
-  status: 'draft' | 'published' | 'cancelled' | 'completed';
+  status: 'draft' | 'live' | 'cancelled' | 'completed';
   isFeatured: boolean;
 
   publishedAt?: Date;
@@ -126,10 +136,22 @@ const eventSchema = new Schema<IEvent>(
         {
           date: { type: Date, required: true },
           durationMinutes: { type: Number, required: true },
+          title: String,
+          subtitle: String,
           notes: String,
         },
       ],
     },
+
+    agenda: [
+      {
+        date: { type: Date, required: true },
+        title: { type: String, required: true },
+        subtitle: String,
+        startsAt: Date,
+        durationMinutes: Number,
+      },
+    ],
 
     location: {
       type: {
@@ -165,7 +187,7 @@ const eventSchema = new Schema<IEvent>(
 
     status: {
       type: String,
-      enum: ['draft', 'published', 'cancelled', 'completed'],
+      enum: ['draft', 'live', 'cancelled', 'completed'],
       default: 'draft',
     },
     isFeatured: { type: Boolean, default: false },

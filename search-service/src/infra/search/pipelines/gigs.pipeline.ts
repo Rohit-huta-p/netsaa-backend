@@ -78,16 +78,6 @@ export function buildGigsFilterClauses(hardFilters?: GigSearchHardFilters): any[
         });
     }
 
-    // category (terms - array match)
-    if (hardFilters.category && hardFilters.category.length > 0) {
-        filterClauses.push({
-            queryString: {
-                defaultPath: 'category',
-                query: hardFilters.category.map((c) => `"${c}"`).join(' OR '),
-            },
-        });
-    }
-
     // city (text match - single value)
     if (hardFilters.city) {
         filterClauses.push({
@@ -168,10 +158,23 @@ export const buildGigsPipeline = (
     should: any[],
     hardFilters: GigSearchHardFilters | undefined,
     skip: number,
-    limit: number
+    limit: number,
+    viewerRole: 'client' | 'creative_lead' | 'artist' | 'admin' = 'artist'
 ) => {
     const rankingClauses = buildGigsRankingClauses(query);
     const filterClauses = buildGigsFilterClauses(hardFilters);
+
+    // Three-role wall (gigs only). Plain $match after $search — posterRole is
+    // not in the Atlas index (same reason accountStatus was dropped from the
+    // search MUST in 28455eb). Legacy unstamped gigs count as creative_lead posts.
+    const wallStages =
+        viewerRole === 'admin'
+            ? []
+            : viewerRole === 'creative_lead'
+                ? [{ $match: { posterRole: 'client' } }]
+                : viewerRole === 'client'
+                    ? [{ $match: { _id: null } }] // clients browse own posts in gigs-service, not search
+                    : [{ $match: { $or: [{ posterRole: 'creative_lead' }, { posterRole: { $exists: false } }] } }];
 
     const searchStage = {
         $search: {
@@ -190,6 +193,7 @@ export const buildGigsPipeline = (
 
     return [
         searchStage,
+        ...wallStages,
         {
             $lookup: {
                 from: 'users',

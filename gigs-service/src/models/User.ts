@@ -3,7 +3,7 @@ import mongoose, { Schema, Document, Model } from 'mongoose';
 /* ---------- TypeScript interfaces ---------- */
 
 export type AuthProvider = 'email' | 'google' | 'apple' | 'phone';
-export type Role = 'artist' | 'organizer' | 'admin';
+export type Role = 'artist' | 'organizer' | 'admin' | 'client' | 'creative_lead';
 
 export interface IUserCached {
     slug?: string;
@@ -86,7 +86,7 @@ const UserSchema = new Schema<IUser>(
         emailVerifiedAt: { type: Date },
         phoneVerifiedAt: { type: Date },
 
-        role: { type: String, enum: ['artist', 'organizer', 'admin'], required: true, index: true },
+        role: { type: String, enum: ['artist', 'organizer', 'admin', 'client', 'creative_lead'], required: true, index: true },
         displayName: { type: String },
         profileImageUrl: { type: String },
 

@@ -90,6 +90,7 @@ export const registerWithEmail = async (req: Request, res: Response) => {
             phoneNumber: userInput.phoneNumber || null,
             passwordHash,
             role,
+            roleChangedAt: new Date(),
             authProvider: 'email',
             marketingConsent: userInput.marketingConsent
               ? {
@@ -99,7 +100,7 @@ export const registerWithEmail = async (req: Request, res: Response) => {
                 policyVersion: 'v1.0',
               }
               : { accepted: false, acceptedAt: null },
-            ...(role === 'organizer' && organizerProfile?.intent && {
+            ...((role === 'creative_lead' || role === 'client') && organizerProfile?.intent && {
               intent: organizerProfile.intent,
             }),
           },
@@ -108,7 +109,9 @@ export const registerWithEmail = async (req: Request, res: Response) => {
       );
 
       /* -------- 2. Create role-specific record -------- */
-      if (role === 'artist') {
+      // creative_lead is dual-natured: applies to client gigs (artist-like)
+      // AND posts gigs for artists — gets an Artist record now, Organizer below if profile given.
+      if (role === 'artist' || role === 'creative_lead') {
         await Artist.create(
           [
             {
@@ -118,7 +121,8 @@ export const registerWithEmail = async (req: Request, res: Response) => {
           ],
           { session }
         );
-      } else if (role === 'organizer' && organizerProfile) {
+      }
+      if ((role === 'creative_lead' || role === 'client') && organizerProfile) {
         await Organizer.create(
           [
             {
@@ -162,10 +166,11 @@ export const registerWithEmail = async (req: Request, res: Response) => {
     };
 
     const userObj = savedUser.toObject() as any;
-    if (savedUser.role === 'organizer') {
+    if (savedUser.role === 'creative_lead' || savedUser.role === 'client') {
       const organizerDetails = await Organizer.findOne({ userId: savedUser._id });
       if (organizerDetails) userObj.organizerDetails = organizerDetails;
-    } else if (savedUser.role === 'artist') {
+    }
+    if (savedUser.role === 'creative_lead' || savedUser.role === 'artist') {
       const artistDetails = await Artist.findOne({ userId: savedUser._id });
       if (artistDetails) userObj.artistDetails = artistDetails;
     }
@@ -226,10 +231,11 @@ export const loginWithEmail = async (req: Request, res: Response) => {
     };
 
     const userObj = user.toObject() as any;
-    if (user.role === 'organizer') {
+    if (user.role === 'creative_lead' || user.role === 'client') {
       const organizerDetails = await Organizer.findOne({ userId: user._id });
       if (organizerDetails) userObj.organizerDetails = organizerDetails;
-    } else if (user.role === 'artist') {
+    }
+    if (user.role === 'creative_lead' || user.role === 'artist') {
       const artistDetails = await Artist.findOne({ userId: user._id });
       if (artistDetails) userObj.artistDetails = artistDetails;
     }
@@ -266,11 +272,11 @@ export const getMe = async (req: AuthRequest, res: Response) => {
     }
 
     const userObj = user.toObject() as any;
-    if (user.role === 'organizer') {
+    if (user.role === 'creative_lead' || user.role === 'client') {
       const organizerDetails = await Organizer.findOne({ userId: user._id });
       if (organizerDetails) userObj.organizerDetails = organizerDetails;
-
-    } else if (user.role === 'artist') {
+    }
+    if (user.role === 'creative_lead' || user.role === 'artist') {
       const artistDetails = await Artist.findOne({ userId: user._id });
       if (artistDetails) userObj.artistDetails = artistDetails;
     }
@@ -401,10 +407,11 @@ export const forgotPassword = async (req: Request, res: Response) => {
     });
 
     // Enqueue password-reset email
+    // user.email is guaranteed here: this flow is email-based (looked up by email above)
     emailQueue.add('password-reset', {
       userId: String(user._id),
-      email: user.email,
-      displayName: user.displayName ?? user.email,
+      email: user.email as string,
+      displayName: user.displayName ?? (user.email as string),
       code,
     }).catch((err) => console.error('[Auth] Failed to enqueue password-reset email:', err.message));
 

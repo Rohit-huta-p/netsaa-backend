@@ -41,11 +41,6 @@ export function normalizeGigFilters(rawFilters: any): GigSearchFilters {
         hardFilters.gigType = rawFilters.gigType;
     }
 
-    // Category (ignore empty arrays)
-    if (Array.isArray(rawFilters.category) && rawFilters.category.length > 0) {
-        hardFilters.category = rawFilters.category;
-    }
-
     // City (ignore if 'any')
     if (rawFilters.city && rawFilters.city !== 'any') {
         hardFilters.city = rawFilters.city;

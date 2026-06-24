@@ -48,16 +48,24 @@ class MessagesService {
             throw new Error('Invalid conversation: only one participant found.');
         }
 
-        const connection = await Connection.findOne({
-            $or: [
-                { requesterId: senderId, recipientId: otherParticipantId },
-                { requesterId: otherParticipantId, recipientId: senderId },
-            ],
-            status: 'accepted',
-        });
+        // Choose-originated booking threads AND accepted-invite threads are permitted
+        // without a prior connection. A client and the CL/artist they chose are NOT
+        // in the connection graph, but they must be able to speak in the anchored thread.
+        const isContextAnchored = !!(conversation.context?.requirementId || conversation.context?.inviteId);
 
-        if (!connection) {
-            throw new Error('Cannot send message. Connection is not active.');
+        if (!isContextAnchored) {
+            // Plain DM: require an accepted connection between the two parties.
+            const connection = await Connection.findOne({
+                $or: [
+                    { requesterId: senderId, recipientId: otherParticipantId },
+                    { requesterId: otherParticipantId, recipientId: senderId },
+                ],
+                status: 'accepted',
+            });
+
+            if (!connection) {
+                throw new Error('Cannot send message. Connection is not active.');
+            }
         }
 
         // 3b. Enforce recipient's messaging preference

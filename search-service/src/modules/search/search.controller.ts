@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
+import jwt from 'jsonwebtoken';
 import { searchService } from './search.service';
 import { searchPreviewService } from './search.preview.service';
 import { SEARCH_CONFIG } from '../../config';
@@ -13,6 +14,28 @@ import { emitSearchMetric } from '../../analytics/metrics';
  * Backend expects:
  * { minCompensation: 5000, artistTypes: [...] }
  */
+
+type ViewerRole = 'client' | 'creative_lead' | 'artist' | 'admin';
+
+/**
+ * Three-role wall: resolve the viewer's role from an optional Bearer token.
+ * Tokens are VERIFIED (never trust an unverified decode); guests and invalid
+ * tokens get the artist view. Legacy 'organizer' tokens map to creative_lead.
+ */
+function viewerRoleFrom(req: Request): ViewerRole {
+    try {
+        const header = req.headers?.authorization;
+        if (!header || !header.startsWith('Bearer ')) return 'artist';
+        const decoded: any = jwt.verify(header.split(' ')[1], process.env.JWT_SECRET as string);
+        const raw = (decoded.user || decoded)?.role;
+        if (raw === 'organizer') return 'creative_lead';
+        if (raw === 'client' || raw === 'creative_lead' || raw === 'admin') return raw;
+        return 'artist';
+    } catch {
+        return 'artist';
+    }
+}
+
 function flattenGigFilters(nestedFilters: Record<string, any>): Record<string, any> {
     const flat: Record<string, any> = {};
 
@@ -188,7 +211,7 @@ export class SearchController {
             const viewerId = reqAny.user?.id ?? (req.query.viewerId as string | undefined);
 
             const start = Date.now();
-            const results = await searchPreviewService.executePreview(q, { mode, viewerId });
+            const results = await searchPreviewService.executePreview(q, { mode, viewerId, viewerRole: viewerRoleFrom(req) });
             const latencyMs = Date.now() - start;
             emitSearchMetric({
               surface: 'preview',
@@ -240,7 +263,7 @@ export class SearchController {
             const page = parseInt(req.query.page as string || '1', 10);
             const filters = req.query;
 
-            const results = await searchService.searchGigs(q, filters, page);
+            const results = await searchService.searchGigs(q, filters, page, undefined, viewerRoleFrom(req));
             return res.json(results);
         } catch (error) {
             next(error);
@@ -267,7 +290,7 @@ export class SearchController {
             console.log('[searchGigsFiltered] Raw filters:', JSON.stringify(filters));
             console.log('[searchGigsFiltered] Flattened filters:', JSON.stringify(flatFilters));
 
-            const results = await searchService.searchGigs(q, flatFilters, page, pageSize);
+            const results = await searchService.searchGigs(q, flatFilters, page, pageSize, viewerRoleFrom(req));
             return res.json(results);
         } catch (error) {
             next(error);

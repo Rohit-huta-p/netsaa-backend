@@ -13,9 +13,9 @@ export const patchMe = async (req: AuthRequest, res: Response) => {
             return res.status(401).json({ msg: 'Not authorized' });
         }
 
-        // ── Role guard: only organizers can update their organizer profile ──
-        if (req.user.role !== 'organizer') {
-            return res.status(403).json({ msg: 'Only organizers can update organizer profiles' });
+        // ── Role guard: only posting roles can update their organizer profile ──
+        if (req.user.role !== 'creative_lead' && req.user.role !== 'client') {
+            return res.status(403).json({ msg: 'Only clients and creative leads can update organizer profiles' });
         }
 
         // Reject forbidden keys early

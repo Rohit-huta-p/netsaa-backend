@@ -9,6 +9,8 @@ const CONFIDENCE_REORDER_THRESHOLD = 0.60;
 export interface PreviewOptions {
   mode?: 'preview' | 'typeahead';
   viewerId?: string;
+  /** Three-role wall: scopes which gigs appear in the preview rail. */
+  viewerRole?: 'client' | 'creative_lead' | 'artist' | 'admin';
 }
 
 export class SearchPreviewService {
@@ -26,7 +28,7 @@ export class SearchPreviewService {
 
     const [people, gigs, events] = await Promise.all([
       searchService.searchPeople(query, {}, 1, opts.viewerId),
-      searchService.searchGigs(query, {}, 1),
+      searchService.searchGigs(query, {}, 1, undefined, opts.viewerRole ?? 'artist'),
       searchService.searchEvents(query, {}, 1),
     ]);
 

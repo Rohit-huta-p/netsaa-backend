@@ -94,7 +94,7 @@ export const reserveTickets = async (req: Request, res: Response) => {
             // --- FIXED PRICE FLOW ---
 
             // 1. Validate Event Status
-            if (event.status !== 'published') {
+            if (event.status !== 'live') {
                 throw new Error('Event is not published for registration.');
             }
 

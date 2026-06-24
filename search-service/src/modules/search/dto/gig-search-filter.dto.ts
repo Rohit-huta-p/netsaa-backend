@@ -13,7 +13,6 @@ export interface GigSearchHardFilters {
     artistTypes?: string[];
     experienceLevel?: string[];
     gigType?: string[];
-    category?: string[];
     city?: string;
     remoteOnly?: boolean;
     minCompensation?: number;
@@ -46,7 +45,6 @@ export interface GigSearchFilterPayload {
     artistTypes?: string[];
     experienceLevel?: string[];
     gigType?: string[];
-    category?: string[];
     city?: string;
     remoteOnly?: boolean;
     minCompensation?: number;
@@ -74,7 +72,6 @@ export function normalizeGigSearchFilters(
         artistTypes,
         experienceLevel,
         gigType,
-        category,
         city,
         remoteOnly,
         minCompensation,
@@ -93,7 +90,6 @@ export function normalizeGigSearchFilters(
             artistTypes,
             experienceLevel,
             gigType,
-            category,
             city,
             remoteOnly,
             minCompensation,

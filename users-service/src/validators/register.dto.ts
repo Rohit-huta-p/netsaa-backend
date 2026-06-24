@@ -53,20 +53,18 @@ export const registerSchema = z
             email: z.string().email('Invalid email'),
             password: z.string().min(6, 'Password must be at least 6 characters'),
             phoneNumber: z.string().optional(),
-            role: z.enum(['artist', 'organizer']).default('artist'),
+            // Three-role model (2026-06). 'organizer' kept for legacy clients,
+            // mapped forward to creative_lead. organizerProfile is optional for
+            // all roles — mobile stages profile data and PATCHes it post-signup.
+            role: z
+                .enum(['artist', 'organizer', 'client', 'creative_lead'])
+                .default('artist')
+                .transform((r): 'artist' | 'client' | 'creative_lead' =>
+                    r === 'organizer' ? 'creative_lead' : r
+                ),
             marketingConsent: z.boolean().optional().default(false),
         }),
         organizerProfile: organizerProfileSchema.optional(),
-    })
-    .superRefine((data, ctx) => {
-        // Rule: organizer role requires organizerProfile
-        if (data.user.role === 'organizer' && !data.organizerProfile) {
-            ctx.addIssue({
-                code: z.ZodIssueCode.custom,
-                message: 'organizerProfile is required when role is organizer',
-                path: ['organizerProfile'],
-            });
-        }
     });
 
 export type RegisterInput = z.infer<typeof registerSchema>;
