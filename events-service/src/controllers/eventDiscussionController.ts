@@ -25,7 +25,7 @@ export const getEventDiscussion = async (req: Request, res: Response) => {
         }
 
         // Only allow discussion for published events
-        if (event.status !== 'published') {
+        if (event.status !== 'live') {
             return res.status(403).json({ success: false, message: 'Discussion only available for published events' });
         }
 
@@ -60,7 +60,7 @@ export const addEventComment = async (req: Request, res: Response) => {
             return res.status(404).json({ success: false, message: 'Event not found' });
         }
 
-        if (event.status !== 'published') {
+        if (event.status !== 'live') {
             return res.status(403).json({ success: false, message: 'Cannot verify comment on unpublished event' });
         }
         let authorName = user.name || user.displayName || `${user.firstName} ${user.lastName}`;

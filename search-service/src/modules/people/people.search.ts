@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import { SEARCH_CONFIG } from '../../config';
+import { env } from '../../config/env';
 import { buildPeopleFilters } from './people.filters';
 import { mapPersonToSearchResult } from './people.mapper';
 import { atlasClient } from '../../infra/search/atlas.client';
@@ -9,6 +10,8 @@ import { enrichPeopleResults } from '../enrichment/enrich.people';
 import { generateSearchKey } from '../../cache/cache.keys';
 import { cacheService } from '../../cache/cache.service';
 import { assertPeopleSearchPipeline } from '../../config/assert-search-contract';
+import { buildPeoplePipelineV2 } from '../../infra/search/pipelines/people.pipeline';
+import { fetchViewerGraph } from '../../people/viewer-graph';
 
 /**
  * Executes a search against the 'users' collection using Atlas Search.
@@ -51,12 +54,21 @@ export const searchPeopleInDb = async (
     }
 
     // 1. Build Pipeline (ID + Score only)
-    const pipeline = buildPeoplePipeline({
-        query,
-        filters,
-        limit: pageSize,
-        skip,
-    });
+    const useV2 = env.SEARCH_PEOPLE_V2;
+    const pipeline = useV2
+        ? buildPeoplePipelineV2({
+              query,
+              filters,
+              limit: pageSize,
+              skip,
+              viewer: { _id: currentUserId, graph: await fetchViewerGraph(currentUserId) },
+          })
+        : buildPeoplePipeline({
+              query,
+              filters,
+              limit: pageSize,
+              skip,
+          });
 
     assertPeopleSearchPipeline(pipeline);
 

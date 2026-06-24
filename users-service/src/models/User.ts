@@ -3,7 +3,39 @@ import mongoose, { Schema, Document, Model } from 'mongoose';
 /* ---------- TypeScript interfaces ---------- */
 
 export type AuthProvider = 'email' | 'google' | 'apple' | 'phone';
-export type Role = 'artist' | 'organizer' | 'admin';
+export type TrustTier = 'new' | 'rising' | 'trusted' | 'verified';
+export type AccountStatus = 'active' | 'deactivated' | 'scheduled_for_deletion' | 'permanently_deleted';
+export type MarketingConsentSource = 'registration' | 'settings';
+export type GuardianStatus = 'none' | 'pending' | 'confirmed' | 'revoked';
+export type GuardianRelationship = 'parent' | 'legal_guardian' | 'other';
+
+// TODO(cleanup): consider extracting IGuardian + GuardianSubSchema to src/models/sub/Guardian.ts if this file exceeds 500 lines.
+export interface IGuardian {
+  name: string;
+  phone: string;
+  email?: string;
+  confirmedAt?: Date;
+  confirmedFromIp?: string;
+  confirmedFromDeviceId?: string;
+  invitedAt?: Date;
+  /**
+   * SHA-256 hash of the one-time invite token (hex-encoded).
+   * NEVER store the raw token here. Generating code must:
+   *   1. Create a cryptographically random token (e.g. crypto.randomBytes(32).toString('hex')).
+   *   2. Return the raw token to the caller (sent to guardian via SMS/email).
+   *   3. Store only createHash('sha256').update(rawToken).digest('hex') here.
+   * Verification: SHA-256 the supplied token and compare to this field.
+   */
+  inviteTokenHash?: string;
+  relationship?: GuardianRelationship;
+}
+
+export interface IMarketingConsent {
+  accepted: boolean;
+  acceptedAt?: Date | null;
+  source?: MarketingConsentSource;
+  policyVersion?: string;
+}
 
 export interface IUserCached {
   slug?: string;
@@ -50,17 +82,41 @@ export interface IUserSettings {
   account: IAccountSettings;
 }
 
+export interface IUserContext {
+  enabled: boolean;
+  profileComplete: boolean;
+}
+
+export interface IUserContexts {
+  artist: IUserContext;
+  hirer: IUserContext;
+}
+
 export interface IUser extends Document {
   displayName?: string;
-  email: string;
+  email?: string; // optional since 2026-06: phone-OTP clients sign up without email
   phoneNumber?: string;
   authProvider: AuthProvider;
   passwordHash?: string; // optional (SSO flows)
   emailVerifiedAt?: Date;
   phoneVerifiedAt?: Date;
-  role: Role;
+  // Client 18+ self-attestation at OTP signup (no DOB for clients; PRD v4.1 §8.1.1)
+  ageConfirmedAt?: Date;
+
+  // Two-context model (PRD v4): replaces fixed 'role' field
+  // Every user can be BOTH artist and hirer. Context is page-based.
+  contexts: IUserContexts;
+  isAdmin: boolean;
+
   profileImageUrl?: string; // small avatar
-  kycStatus?: 'none' | 'pending' | 'approved' | 'rejected';
+
+  // Trust Engine (PRD v4)
+  trustScore: number;         // 0-100
+  trustTier: TrustTier;       // derived from trustScore
+  profileCompletionScore: number; // 0-100
+
+  // KYC levels (PRD v4): 0=unverified, 1=phone+email, 2=ID verified, 3=enhanced
+  kycLevel: number;
   blocked?: boolean;
   referralCode?: string;
   devices?: Array<{
@@ -71,26 +127,42 @@ export interface IUser extends Document {
   }>;
   cached?: IUserCached; // denormalized quick-read fields
   settings?: IUserSettings; // user-configurable preferences
-  otp?: string; // legacy support / simple phone auth
-  otpExpires?: number | Date; // legacy support
   createdAt: Date;
   updatedAt: Date;
+  accountStatus?: AccountStatus;
   deletedAt?: Date;      // soft-delete timestamp
+  deletionScheduledAt?: Date;
+  originalEmail?: string;
+  mediaPurged?: boolean;
   deleteReason?: string; // optional reason provided by user
+  marketingConsent?: IMarketingConsent;
+
+  // Age-gate fields (PRD v4 §8.1.1 / §8.3.2)
+  dateOfBirth?: Date;
+  isMinor: boolean;
+  ageYears?: number;          // computed integer years from dateOfBirth; see pre-save hook
+  guardian?: IGuardian;
+  guardianStatus?: GuardianStatus;
 
   // Registration personalization
   intent?: ('find_gigs' | 'hire_artists' | 'learn_workshops' | 'host_events')[];
   experienceLevel?: 'beginner' | 'intermediate' | 'professional';
 
   // Profile Fields
+  headline: string;
   bio?: string;
   location?: string;
   skills?: string[];
   experience?: Array<{
-    title: string;
+    title?: string;
     role?: string;
+    projectName?: string;
+    organization?: string;
     venue?: string;
+    location?: string;
+    description?: string;
     date?: string;
+    mediaLink?: string;
   }>;
   artistType?: string[]; // Multi-select
   instagramHandle?: string;
@@ -108,6 +180,14 @@ export interface IUser extends Document {
   hasPhotos?: boolean;
   galleryUrls?: string[];  // Up to 5 photo URLs
   videoUrls?: string[];    // Up to 3 video URLs
+
+  // Three-role marketplace model (2026-06): stored field, set at signup, switchable.
+  // client posts gigs for creative_leads; creative_leads post gigs for artists.
+  role: 'client' | 'creative_lead' | 'artist';
+  roleChangedAt?: Date;
+
+  // Backwards-compat virtual getter (derived from kycLevel)
+  readonly kycStatus?: 'unverified' | 'phone_verified' | 'id_verified' | 'enhanced';
 }
 
 /* ---------- Mongoose Schemas ---------- */
@@ -135,10 +215,15 @@ const UserCachedSchema = new Schema(
 
 const ExperienceSubSchema = new Schema(
   {
-    title: { type: String, required: true },
+    title: { type: String },
     role: { type: String },
+    projectName: { type: String },
+    organization: { type: String },
     venue: { type: String },
-    date: { type: String },
+    location: { type: String },
+    description: { type: String },
+    date: { type: String, required: true },
+    mediaLink: { type: String },
   },
   { _id: false }
 );
@@ -195,24 +280,134 @@ const UserSettingsSchema = new Schema(
   { _id: false }
 );
 
+// Marketing consent – stored at top level for easy querying / compliance exports
+const MarketingConsentSchema = new Schema(
+  {
+    accepted: { type: Boolean, required: true, default: false },
+    acceptedAt: { type: Date, default: null },
+    source: { type: String, enum: ['registration', 'settings'] },
+    policyVersion: { type: String },
+  },
+  { _id: false }
+);
+
+// Guardian sub-schema — only populated when isMinor is true
+const GuardianSubSchema = new Schema(
+  {
+    name:                  { type: String, required: true, maxlength: 100 },
+    phone:                 { type: String, required: true, maxlength: 20 },
+    email:                 { type: String },
+    confirmedAt:           { type: Date },
+    confirmedFromIp:       { type: String, maxlength: 64 },
+    confirmedFromDeviceId: { type: String, maxlength: 256 },
+    invitedAt:             { type: Date },
+    // SHA-256 hex hash of the raw invite token — never store plaintext. See IGuardian.inviteTokenHash.
+    inviteTokenHash:       { type: String, maxlength: 64 },
+    relationship:          { type: String, enum: ['parent', 'legal_guardian', 'other'] },
+  },
+  { _id: false }
+);
+
 const UserSchema = new Schema<IUser>(
   {
-    email: { type: String, required: true, unique: true, index: true },
-    phoneNumber: { type: String },
+    // unique+sparse: many phone-only clients have no email at all
+    email: { type: String, unique: true, sparse: true, index: true },
+    phoneNumber: { type: String, unique: true, sparse: true, index: true },
     authProvider: { type: String, enum: ['email', 'google', 'apple', 'phone'], default: 'email' },
     passwordHash: { type: String },
 
     emailVerifiedAt: { type: Date },
     phoneVerifiedAt: { type: Date },
+    ageConfirmedAt: { type: Date },
 
-    role: { type: String, enum: ['artist', 'organizer', 'admin'], required: true, index: true },
+    // Two-context model: every user can be both artist and hirer
+    contexts: {
+      artist: {
+        enabled: { type: Boolean, default: true },
+        profileComplete: { type: Boolean, default: false },
+      },
+      hirer: {
+        enabled: { type: Boolean, default: true },
+        profileComplete: { type: Boolean, default: false },
+      },
+    },
+
+    // Three-role marketplace model (2026-06). Reversible switch; roleChangedAt
+    // is stored from day one so a future N-day switch lock is a one-line check.
+    role: {
+      type: String,
+      enum: ['client', 'creative_lead', 'artist'],
+      default: 'artist',
+      index: true,
+    },
+    roleChangedAt: { type: Date },
+
+    isAdmin: { type: Boolean, default: false, index: true },
+
     displayName: { type: String },
     profileImageUrl: { type: String },
 
-    kycStatus: { type: String, enum: ['none', 'pending', 'approved', 'rejected'], default: 'none', index: true },
+    // Trust Engine
+    trustScore: { type: Number, default: 0, index: true },
+    trustTier: { type: String, enum: ['new', 'rising', 'trusted', 'verified'], default: 'new', index: true },
+    profileCompletionScore: { type: Number, default: 0 },
+
+    // KYC levels: 0=unverified, 1=phone+email, 2=ID, 3=enhanced
+    kycLevel: { type: Number, default: 0, index: true },
     blocked: { type: Boolean, default: false },
+    accountStatus: {
+      type: String,
+      enum: ['active', 'deactivated', 'scheduled_for_deletion', 'permanently_deleted'],
+      default: 'active'
+    },
     deletedAt: { type: Date, default: null, index: true },
+    deletionScheduledAt: { type: Date },
+    originalEmail: { type: String },
+    mediaPurged: { type: Boolean },
     deleteReason: { type: String },
+    marketingConsent: { type: MarketingConsentSchema, default: () => ({ accepted: false, acceptedAt: null }) },
+
+    // Age-gate fields (PRD v4 §8.1.1 / §8.3.2)
+    /**
+     * User's date of birth. Drives `isMinor`, `ageYears`, and `guardianStatus`
+     * via the pre-save and pre-findOneAndUpdate/updateOne/updateMany hooks.
+     *
+     * **CALLER REQUIREMENT:** When updating DOB via `findOneAndUpdate`,
+     * `updateOne`, or `updateMany`, callers MUST pass `{ runValidators: true }`
+     * to the query options. Otherwise the schema validator below is bypassed
+     * and malformed dates (NaN, future, > 120y past) will land on disk — the
+     * pre-query hook will still recompute `ageYears`/`isMinor` from the raw
+     * value, producing garbage derived fields.
+     *
+     * Example (correct):
+     *   User.findByIdAndUpdate(id, { dateOfBirth }, { runValidators: true, new: true })
+     *
+     * Save paths (`new User({...}).save()`, `user.dateOfBirth = ...; user.save()`)
+     * run the validator automatically — no extra flag needed.
+     */
+    dateOfBirth: {
+      type: Date,
+      validate: {
+        validator: function (v: Date | undefined | null): boolean {
+          if (v == null) return true; // optional field — null/undefined always OK
+          if (!(v instanceof Date) || isNaN(v.getTime())) return false;
+          const now = Date.now();
+          const MS_PER_YEAR = 365.25 * 24 * 60 * 60 * 1000;
+          // Must be in the past and no more than 120 years ago
+          return v.getTime() <= now && v.getTime() >= now - 120 * MS_PER_YEAR;
+        },
+        message: 'dateOfBirth must be a valid past date within the last 120 years',
+      },
+    },
+    isMinor:        { type: Boolean, default: false },
+    ageYears:       { type: Number },
+    guardian:       { type: GuardianSubSchema },
+    guardianStatus: {
+      type:    String,
+      enum:    ['none', 'pending', 'confirmed', 'revoked'],
+      default: 'none',
+    },
+
     referralCode: { type: String, index: true },
 
     devices: { type: [DeviceSubSchema], default: [] },
@@ -220,10 +415,6 @@ const UserSchema = new Schema<IUser>(
     cached: { type: UserCachedSchema, default: {} },
 
     settings: { type: UserSettingsSchema, default: () => ({}) },
-
-    // Legacy / simple phone auth fields
-    otp: { type: String },
-    otpExpires: { type: Date },
 
     // Registration personalization
     intent: {
@@ -234,6 +425,7 @@ const UserSchema = new Schema<IUser>(
     experienceLevel: { type: String, enum: ['beginner', 'intermediate', 'professional'], default: undefined },
 
     // Profile Fields
+    headline: { type: String },
     bio: { type: String },
     location: { type: String },
     skills: { type: [String], default: [] },
@@ -258,10 +450,143 @@ const UserSchema = new Schema<IUser>(
   { timestamps: true }
 );
 
-// Suggested compound indexes for users (fast discovery queries)
-UserSchema.index({ role: 1, 'cached.primaryCity': 1 });
+// ---------------------------------------------------------------------------
+// Shared age-derivation helper — used by both pre('save') and pre-query hooks.
+// ---------------------------------------------------------------------------
+function deriveAgeFields(
+  dateOfBirth: Date | null | undefined,
+  currentGuardianStatus: GuardianStatus | undefined,
+): { ageYears: number | undefined; isMinor: boolean; guardianStatus: GuardianStatus } {
+  if (!dateOfBirth || !(dateOfBirth instanceof Date) || isNaN(dateOfBirth.getTime())) {
+    return {
+      ageYears:      undefined,
+      isMinor:       false,
+      guardianStatus: currentGuardianStatus ?? 'none',
+    };
+  }
+  const MS_PER_YEAR = 365.25 * 24 * 60 * 60 * 1000;
+  const years = Math.floor((Date.now() - dateOfBirth.getTime()) / MS_PER_YEAR);
+  const minor = years < 18;
+  let guardianStatus: GuardianStatus = currentGuardianStatus ?? 'none';
+  // Only advance from 'none' to 'pending' — never override confirmed/revoked.
+  if (minor && guardianStatus === 'none') {
+    guardianStatus = 'pending';
+  }
+  return { ageYears: years, isMinor: minor, guardianStatus };
+}
+
+// Pre-save hook: derive ageYears / isMinor / guardianStatus from dateOfBirth
+UserSchema.pre('save', function (next) {
+  if (this.isNew || this.isModified('dateOfBirth')) {
+    const dob = this.dateOfBirth as Date | undefined;
+    const { ageYears, isMinor, guardianStatus } = deriveAgeFields(dob, this.guardianStatus);
+    this.ageYears      = ageYears;
+    this.isMinor       = isMinor;
+    this.guardianStatus = guardianStatus;
+  }
+  next();
+});
+
+// Pre-query hooks: mirror the same derivation for findOneAndUpdate / updateOne / updateMany.
+// These fire when controllers call User.findByIdAndUpdate(...) (e.g. auth.ts:333).
+// Without these hooks the age-gate fields would silently go stale on PATCH paths.
+UserSchema.pre('findOneAndUpdate', function (this: any, next: (err?: Error) => void) {
+  const update: any = this.getUpdate();
+  if (!update) return next();
+  const target = update.$set ?? update;
+  if (!('dateOfBirth' in target)) return next();
+
+  const raw = target.dateOfBirth;
+  const dob = raw instanceof Date ? raw : (raw ? new Date(raw) : null);
+  const currentGuardianStatus = target.guardianStatus as GuardianStatus | undefined;
+  const { ageYears, isMinor, guardianStatus } = deriveAgeFields(dob, currentGuardianStatus);
+
+  if (update.$set) {
+    update.$set.ageYears      = ageYears;
+    update.$set.isMinor       = isMinor;
+    update.$set.guardianStatus = guardianStatus;
+  } else {
+    update.ageYears      = ageYears;
+    update.isMinor       = isMinor;
+    update.guardianStatus = guardianStatus;
+  }
+  next();
+});
+
+UserSchema.pre('updateOne', function (this: any, next: (err?: Error) => void) {
+  const update: any = this.getUpdate();
+  if (!update) return next();
+  const target = update.$set ?? update;
+  if (!('dateOfBirth' in target)) return next();
+
+  const raw = target.dateOfBirth;
+  const dob = raw instanceof Date ? raw : (raw ? new Date(raw) : null);
+  const currentGuardianStatus = target.guardianStatus as GuardianStatus | undefined;
+  const { ageYears, isMinor, guardianStatus } = deriveAgeFields(dob, currentGuardianStatus);
+
+  if (update.$set) {
+    update.$set.ageYears      = ageYears;
+    update.$set.isMinor       = isMinor;
+    update.$set.guardianStatus = guardianStatus;
+  } else {
+    update.ageYears      = ageYears;
+    update.isMinor       = isMinor;
+    update.guardianStatus = guardianStatus;
+  }
+  next();
+});
+
+UserSchema.pre('updateMany', function (this: any, next: (err?: Error) => void) {
+  const update: any = this.getUpdate();
+  if (!update) return next();
+  const target = update.$set ?? update;
+  if (!('dateOfBirth' in target)) return next();
+
+  const raw = target.dateOfBirth;
+  const dob = raw instanceof Date ? raw : (raw ? new Date(raw) : null);
+  const currentGuardianStatus = target.guardianStatus as GuardianStatus | undefined;
+  const { ageYears, isMinor, guardianStatus } = deriveAgeFields(dob, currentGuardianStatus);
+
+  if (update.$set) {
+    update.$set.ageYears      = ageYears;
+    update.$set.isMinor       = isMinor;
+    update.$set.guardianStatus = guardianStatus;
+  } else {
+    update.ageYears      = ageYears;
+    update.isMinor       = isMinor;
+    update.guardianStatus = guardianStatus;
+  }
+  next();
+});
+
+// Compound indexes for discovery queries (PRD v4 two-context model)
+UserSchema.index({ trustTier: 1, 'cached.primaryCity': 1 });
 UserSchema.index({ 'cached.featured': 1, 'cached.averageRating': -1 });
 UserSchema.index({ referralCode: 1 });
+UserSchema.index({ trustScore: -1 });
+
+// Age-gate indexes (PRD v4 §8.3.2)
+UserSchema.index({ dateOfBirth: 1 });                    // daily cron: flip isMinor when user turns 18
+UserSchema.index({ guardianStatus: 1, isMinor: 1 });     // ops query: pending-guardian minors
+
+/* ── Backwards-compat virtual getter (PRD v4 migration stopgap) ──
+ * The `kycStatus` field was removed in favor of `kycLevel: number`.
+ * (The old `role` virtual was replaced 2026-06 by the stored three-role field.)
+ */
+
+UserSchema.virtual('kycStatus').get(function(this: IUser) {
+  switch (this.kycLevel) {
+    case 0: return 'unverified';
+    case 1: return 'phone_verified';
+    case 2: return 'id_verified';
+    case 3: return 'enhanced';
+    default: return 'unverified';
+  }
+});
+
+// Ensure virtuals appear in toJSON / toObject output (so res.json(user) includes them).
+UserSchema.set('toJSON',   { virtuals: true });
+UserSchema.set('toObject', { virtuals: true });
 
 const User: Model<IUser> = mongoose.model<IUser>('User', UserSchema);
 

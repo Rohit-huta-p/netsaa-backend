@@ -1,0 +1,25 @@
+[
+  { "q": "kathak pune",              "expect": "people" },
+  { "q": "Priya Sharma",             "expect": "people" },
+  { "q": "guitar mumbai",            "expect": "people" },
+  { "q": "folk singer rajasthan",    "expect": "people" },
+  { "q": "tabla",                    "expect": "people" },
+
+  { "q": "sangeet march pune",       "expect": "gigs" },
+  { "q": "wedding corporate",        "expect": "gigs" },
+  { "q": "recording session bangalore", "expect": "gigs" },
+  { "q": "anchoring delhi april",    "expect": "gigs" },
+  { "q": "playback mumbai",          "expect": "gigs" },
+
+  { "q": "kathak workshop",          "expect": "events" },
+  { "q": "guitar masterclass pune",  "expect": "events" },
+  { "q": "showcase delhi",           "expect": "events" },
+  { "q": "audition mumbai may",      "expect": "events" },
+  { "q": "jam festival jaipur",      "expect": "events" },
+
+  { "q": "dance",                    "expect": "people" },
+  { "q": "pune",                     "expect": "people" },
+  { "q": "theatre",                  "expect": "people" },
+  { "q": "",                         "expect": "people" },
+  { "q": "music",                    "expect": "people" }
+]

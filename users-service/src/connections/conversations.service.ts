@@ -6,7 +6,7 @@ class ConversationsService {
             participants: userId,
         })
             .sort({ lastMessageAt: -1 })
-            .populate('participants', 'username email firstName lastName profilePicture');
+            .populate('participants', 'username email firstName lastName displayName profilePicture profileImageUrl');
 
         return conversations;
     }
@@ -26,7 +26,7 @@ class ConversationsService {
         // Check if exists
         const existing = await Conversation.findOne({
             participants: { $all: [userId, recipientId] }
-        }).populate('participants', 'username email firstName lastName profilePicture');
+        }).populate('participants', 'username email firstName lastName displayName profilePicture profileImageUrl');
 
         if (existing) return existing;
 
@@ -35,12 +35,12 @@ class ConversationsService {
             lastMessageAt: new Date()
         });
 
-        return conversation.populate('participants', 'username email firstName lastName profilePicture');
+        return conversation.populate('participants', 'username email firstName lastName displayName profilePicture profileImageUrl');
     }
 
     async getConversationById(id: string) {
         return Conversation.findById(id)
-            .populate('participants', 'username email firstName lastName profilePicture');
+            .populate('participants', 'username email firstName lastName displayName profilePicture profileImageUrl');
     }
 }
 

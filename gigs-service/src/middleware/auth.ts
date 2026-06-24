@@ -1,8 +1,9 @@
 import { Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { AuthRequest } from '../controllers/gigController';
+import { normalizeRole } from '../utils/roleVisibility';
 
-export type UserRole = 'artist' | 'organizer' | 'admin';
+export type UserRole = 'artist' | 'creative_lead' | 'client' | 'admin';
 
 export const protect = async (req: AuthRequest, res: Response, next: NextFunction) => {
     let token;
@@ -26,10 +27,8 @@ export const protect = async (req: AuthRequest, res: Response, next: NextFunctio
             // We flatten it so req.user.id works as expected.
             const userPayload = decoded.user || decoded;
 
-            // Ensure role is present, default to 'artist' if missing (backward compatibility)
-            if (!userPayload.role) {
-                userPayload.role = 'artist';
-            }
+            // Normalize: legacy 'organizer' -> 'creative_lead'; missing/unknown -> 'artist'
+            userPayload.role = normalizeRole(userPayload.role);
 
             req.user = userPayload;
 
@@ -52,12 +51,14 @@ export const protect = async (req: AuthRequest, res: Response, next: NextFunctio
 };
 
 export const requireOrganizer = (req: AuthRequest, res: Response, next: NextFunction) => {
-    if (req.user && (req.user.role === 'organizer' || req.user.role === 'admin')) {
+    // Posting roles: client and creative_lead (artists apply, they don't post).
+    // protect has already normalized legacy 'organizer' -> 'creative_lead'.
+    if (req.user && (req.user.role === 'creative_lead' || req.user.role === 'client' || req.user.role === 'admin')) {
         next();
     } else {
         res.status(403).json({
-            meta: { status: 403, message: 'Forbidden: Organizer access required' },
-            errors: [{ message: 'User is not an organizer' }]
+            meta: { status: 403, message: 'Forbidden: posting requires a Client or Creative Lead account' },
+            errors: [{ message: 'Artists cannot post gigs' }]
         });
     }
 };
@@ -73,6 +74,7 @@ export const optionalAuth = async (req: AuthRequest, res: Response, next: NextFu
             token = req.headers.authorization.split(' ')[1];
             const decoded = jwt.verify(token, process.env.JWT_SECRET as string) as any;
             req.user = decoded.user || decoded;
+            req.user.role = normalizeRole(req.user.role);
         } catch (error) {
             console.error("Optional Auth Token Error:", error);
             // Don't fail, just continue as guest

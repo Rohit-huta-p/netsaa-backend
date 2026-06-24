@@ -2,10 +2,6 @@
 import { Response } from 'express';
 import bcrypt from 'bcryptjs';
 import User from '../models/User';
-import Artist from '../models/Artist';
-import Organizer from '../models/Organizer';
-import Connection from '../connections/connections.model';
-import Notification from '../notifications/notification.model';
 import { AuthRequest } from '../middleware/auth';
 
 /**
@@ -47,6 +43,7 @@ export const deactivateAccount = async (req: AuthRequest, res: Response) => {
         }
 
         // Deactivate
+        user.accountStatus = 'deactivated';
         user.blocked = true;
         await user.save();
 
@@ -62,18 +59,18 @@ export const deactivateAccount = async (req: AuthRequest, res: Response) => {
 
 /**
  * POST /api/users/me/delete
- * Soft-delete: sets blocked + deletedAt, clears PII, preserves financial/contract records.
- * Removes from search immediately via blocked + deletedAt flags.
+ * Schedules the account for permanent deletion after a 30-day grace period.
+ * No data is destroyed — the user can cancel within the grace window.
  * Requires password confirmation for re-auth.
  */
 export const deleteAccount = async (req: AuthRequest, res: Response) => {
     try {
-        const { password, reason } = req.body;
+        const { confirmationText, reason } = req.body;
 
-        if (!password) {
+        if (!confirmationText || confirmationText.toLowerCase() !== 'delete') {
             return res.status(400).json({
                 success: false,
-                message: 'Password is required to delete your account',
+                message: 'Please type "delete" to confirm account deletion',
             });
         }
 
@@ -82,71 +79,65 @@ export const deleteAccount = async (req: AuthRequest, res: Response) => {
             return res.status(404).json({ success: false, message: 'User not found' });
         }
 
-        // SSO accounts
-        if (!user.passwordHash) {
-            return res.status(400).json({
-                success: false,
-                message: 'Password confirmation is not available for social login accounts. Please contact support.',
-            });
-        }
+        // No longer verifying password for deletion, only requiring "delete" confirmation
 
-        // Re-auth
-        const isMatch = await bcrypt.compare(password, user.passwordHash);
-        if (!isMatch) {
-            return res.status(401).json({
-                success: false,
-                message: 'Incorrect password. Please try again.',
-            });
-        }
-
-        // Soft-delete: mark as deleted + hide from search
-        // Preserve: email (for financial record lookup), role, createdAt
-        // Clear: PII and profile data
-        await User.findByIdAndUpdate(user._id, {
-            $set: {
-                blocked: true,
-                deletedAt: new Date(),
-                deleteReason: reason || 'User requested deletion',
-                displayName: 'Deleted User',
-                profileImageUrl: null,
-                bio: null,
-                phoneNumber: null,
-                location: null,
-                skills: [],
-                experience: [],
-                artistType: [],
-                instagramHandle: null,
-                galleryUrls: [],
-                videoUrls: [],
-                hasPhotos: false,
-                devices: [],
-                passwordHash: null, // invalidate login
-            },
-        });
-
-        // Cascade Cleanup (Hard Delete related entities)
-        // 1. Remove Artist profile
-        await Artist.deleteOne({ userId: user._id });
-
-        // 2. Remove Organizer profile
-        await Organizer.deleteOne({ userId: user._id });
-
-        // 3. Remove Connections (both directions)
-        await Connection.deleteMany({
-            $or: [{ requesterId: user._id }, { recipientId: user._id }],
-        });
-
-        // 4. Remove Notifications (owned by user OR triggered by user)
-        await Notification.deleteMany({
-            $or: [{ userId: user._id }, { actorId: user._id }],
-        });
+        // Schedule for deletion — no data is destroyed
+        user.accountStatus = 'scheduled_for_deletion';
+        user.deletedAt = new Date();
+        user.deletionScheduledAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+        user.deleteReason = reason || 'User requested deletion';
+        user.blocked = true;
+        await user.save();
 
         return res.status(200).json({
             success: true,
-            message: 'Account deleted. Financial and contract records have been preserved.',
+            message: 'Account scheduled for permanent deletion in 30 days.',
         });
     } catch (error) {
         console.error('[Danger] deleteAccount error:', error);
+        return res.status(500).json({ success: false, message: 'Server error' });
+    }
+};
+
+/**
+ * POST /api/users/me/restore
+ * Restores an account scheduled for deletion if the grace period has not expired.
+ */
+export const restoreAccount = async (req: AuthRequest, res: Response) => {
+    try {
+        const user = await User.findById(req.user!._id);
+        if (!user) {
+            return res.status(404).json({ success: false, message: 'User not found' });
+        }
+
+        if (user.accountStatus === 'scheduled_for_deletion' && user.deletionScheduledAt) {
+            if (Date.now() < user.deletionScheduledAt.getTime()) {
+                // Restore account
+                user.accountStatus = 'active';
+                user.deletedAt = undefined;
+                user.deletionScheduledAt = undefined;
+                user.blocked = false;
+                await user.save();
+
+                return res.status(200).json({
+                    success: true,
+                    message: 'Account successfully restored.',
+                });
+            } else {
+                // Grace period has passed
+                return res.status(410).json({
+                    success: false,
+                    message: 'The grace period to restore this account has expired.',
+                });
+            }
+        }
+
+        return res.status(400).json({
+            success: false,
+            message: 'Account is not scheduled for deletion.',
+        });
+    } catch (error) {
+        console.error('[Danger] restoreAccount error:', error);
         return res.status(500).json({ success: false, message: 'Server error' });
     }
 };

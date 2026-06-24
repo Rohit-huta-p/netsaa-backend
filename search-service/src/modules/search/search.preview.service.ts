@@ -1,30 +1,51 @@
 import { searchService } from './search.service';
-import { SEARCH_CONFIG } from '../../config';
+import { classifyIntent } from '../../intent/classifier';
+import type { IntentResult, Vertical } from '../../types/search.types';
+
+const TYPEAHEAD_LIMITS: Record<Vertical, number> = { people: 3, gigs: 2, events: 1 };
+const PREVIEW_LIMITS: Record<Vertical, number>   = { people: 5, gigs: 5, events: 5 };
+const CONFIDENCE_REORDER_THRESHOLD = 0.60;
+
+export interface PreviewOptions {
+  mode?: 'preview' | 'typeahead';
+  viewerId?: string;
+  /** Three-role wall: scopes which gigs appear in the preview rail. */
+  viewerRole?: 'client' | 'creative_lead' | 'artist' | 'admin';
+}
 
 export class SearchPreviewService {
-    /**
-     * Executes a preview search across all verticals concurrently.
-     * This is used for the "As-you-type" experience.
-     */
-    async executePreview(query: string) {
-        // In preview, we typically fetch a smaller subset (e.g., top 3-5) from each vertical.
-        // For now, we reuse the main search methods but we might want to pass a 'preview' flag or smaller page size limit later.
+  /**
+   * Executes a preview search across all verticals concurrently.
+   * Supports 'preview' mode (top 5 per vertical) and 'typeahead' mode (3/2/1).
+   * Reorders rails by intent dominance when confidence >= 0.60.
+   * Passes viewerId to searchPeople for graph-aware ranking.
+   */
+  async executePreview(query: string, opts: PreviewOptions = {}) {
+    const mode = opts.mode ?? 'preview';
+    const limits = mode === 'typeahead' ? TYPEAHEAD_LIMITS : PREVIEW_LIMITS;
 
-        // Concurrently fetch results from all verticals
-        const [people, gigs, events] = await Promise.all([
-            searchService.searchPeople(query, {}, 1),
-            searchService.searchGigs(query, {}, 1),
-            searchService.searchEvents(query, {}, 1),
-        ]);
+    const intent: IntentResult = classifyIntent(query);
 
-        // TODO: Implement intent classification to re-order or filter these sections if needed (Phase 2)
+    const [people, gigs, events] = await Promise.all([
+      searchService.searchPeople(query, {}, 1, opts.viewerId),
+      searchService.searchGigs(query, {}, 1, undefined, opts.viewerRole ?? 'artist'),
+      searchService.searchEvents(query, {}, 1),
+    ]);
 
-        return {
-            people: people.results.slice(0, 5), // Limit to top 5 for preview
-            gigs: gigs.results.slice(0, 5),
-            events: events.results.slice(0, 5),
-        };
+    const order: Vertical[] = ['people', 'gigs', 'events'];
+    if (intent.confidence >= CONFIDENCE_REORDER_THRESHOLD) {
+      order.sort((a, b) => intent.scores[b] - intent.scores[a]);
     }
+
+    return {
+      people: people.results.slice(0, limits.people),
+      gigs:   gigs.results.slice(0, limits.gigs),
+      events: events.results.slice(0, limits.events),
+      intent,
+      order,
+      mode,
+    };
+  }
 }
 
 export const searchPreviewService = new SearchPreviewService();

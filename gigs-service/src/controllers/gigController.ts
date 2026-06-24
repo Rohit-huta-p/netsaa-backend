@@ -5,6 +5,8 @@ import GigStats from '../models/GigStats';
 import GigApplication from '../models/GigApplication';
 import SavedGig from '../models/SavedGig';
 import { notificationEvents } from '../notifications/event.emitter';
+import { geocodeLocation } from '../utils/geocode';
+import { normalizeRole, visiblePosterRolesFor, canApply, posterRoleFor } from '../utils/roleVisibility';
 
 // Helper for standard response
 const sendResponse = (res: Response, status: number, data: any = null, message: string = 'OK', errors: any[] = []) => {
@@ -28,6 +30,23 @@ export const getGigs = async (req: Request, res: Response, next: NextFunction) =
 
         const query: any = {};
 
+        // Three-role wall: feed is scoped by viewer role (guests get the artist view).
+        // Route uses optionalAuth, so req.user may be absent.
+        const viewerRole = normalizeRole((req as any).user?.role);
+        const visible = visiblePosterRolesFor(viewerRole);
+        if (visible === null) {
+            // admin: unrestricted
+        } else if (visible.length === 0) {
+            // client: own posts only
+            query.organizerId = (req as any).user?.id;
+        } else if (visible.includes('creative_lead')) {
+            // artist/guest: creative_lead posts; legacy unstamped gigs count as creative_lead
+            query.$and = [{ $or: [{ posterRole: 'creative_lead' }, { posterRole: { $exists: false } }] }];
+        } else {
+            // creative_lead: client posts only
+            query.posterRole = 'client';
+        }
+
         // Search query - search across multiple fields
         if (q && typeof q === 'string') {
             const searchRegex = { $regex: q.trim(), $options: 'i' };
@@ -38,8 +57,7 @@ export const getGigs = async (req: Request, res: Response, next: NextFunction) =
                 { requiredSkills: searchRegex },
                 { 'organizerSnapshot.displayName': searchRegex },
                 { 'organizerSnapshot.organizationName': searchRegex },
-                { artistTypes: searchRegex },
-                { category: searchRegex }
+                { artistTypes: searchRegex }
             ];
         }
 
@@ -116,6 +134,60 @@ export const getOrganizerGigs = async (req: AuthRequest, res: Response, next: Ne
     }
 };
 
+// @desc    Get applicants across ALL of the organizer's gigs (dashboard inbox / action queue)
+// @route   GET /v1/organizers/me/applicants?status=&gigId=&limit=
+// @access  Private (Organizer) — organizer resolved from the auth token, NOT a query param
+export const getOrganizerApplicants = async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+        const organizerId = req.user?.id || req.user?._id;
+        if (!organizerId) {
+            return sendResponse(res, 401, null, 'Not authenticated');
+        }
+
+        const { status, gigId, limit } = req.query;
+
+        // Resolve the organizer's gigs (optionally scoped to a single gig).
+        const gigQuery: any = { organizerId };
+        if (gigId) gigQuery._id = gigId;
+        const gigs = await Gig.find(gigQuery).select('_id title');
+
+        if (gigs.length === 0) {
+            return sendResponse(res, 200, { applicants: [], total: 0 });
+        }
+
+        const titleById = new Map(gigs.map((g) => [String(g._id), (g as any).title]));
+
+        const appQuery: any = { gigId: { $in: gigs.map((g) => g._id) } };
+        if (status && typeof status === 'string') {
+            appQuery.status = status;
+        }
+
+        const max = Math.min(Number(limit) || 20, 100);
+        const applications = await GigApplication.find(appQuery)
+            .sort({ appliedAt: -1, createdAt: -1 })
+            .limit(max);
+
+        const applicants = applications.map((app) => {
+            const a = app.toObject() as any;
+            return {
+                _id: a._id,
+                gigId: a.gigId,
+                gigTitle: titleById.get(String(a.gigId)) ?? null,
+                artistId: a.artistId,
+                artistSnapshot: a.artistSnapshot,
+                status: a.status,
+                coverNote: a.coverNote,
+                appliedAt: a.appliedAt,
+            };
+        });
+
+        sendResponse(res, 200, { applicants, total: applicants.length });
+    } catch (err: any) {
+        console.error(err);
+        sendResponse(res, 500, null, 'Server Error', [{ message: err.message }]);
+    }
+};
+
 // @desc    Get single gig
 // @route   GET /v1/gigs/:id
 // @access  Public
@@ -128,7 +200,7 @@ export const getGigById = async (req: Request, res: Response, next: NextFunction
 
         // Populate organizer details from User collection if possible
         // We cast to any because we want to check if population worked
-        await gig.populate('organizerId', 'displayName profileImageUrl cached kycStatus');
+        await gig.populate('organizerId', 'displayName profileImageUrl cached kycStatus testimonials');
 
         const organizer = gig.organizerId as any;
 
@@ -141,6 +213,7 @@ export const getGigById = async (req: Request, res: Response, next: NextFunction
                 organizationName: organizerSnapshot.organizationName, // Keep original or fetch if stored in User
                 profileImageUrl: organizer.profileImageUrl || organizerSnapshot.profileImageUrl,
                 rating: organizer.cached?.averageRating || organizerSnapshot.rating,
+                testimonials: organizer.testimonials || organizerSnapshot.testimonials || [],
                 // Add verification status
                 // @ts-ignore - Adding dynamic property not in original schema interface for response
                 isVerified: organizer.kycStatus === 'approved'
@@ -151,19 +224,23 @@ export const getGigById = async (req: Request, res: Response, next: NextFunction
             organizerSnapshot.isVerified = false;
         }
 
-        // Increment views (fire and forget / async)
-        GigStats.findOneAndUpdate(
-            { gigId: gig._id },
-            { $inc: { views: 1 }, $set: { lastViewedAt: new Date() } }
-        ).exec();
+        // Check req.user which is populated by optionalAuth
+        const user = (req as AuthRequest).user;
+        const isOwner = user && organizer && organizer._id && user.id === organizer._id.toString();
+
+        // Increment views (fire and forget / async) if the viewer is not the owner
+        if (!isOwner) {
+            GigStats.findOneAndUpdate(
+                { gigId: gig._id },
+                { $inc: { views: 1 }, $set: { lastViewedAt: new Date() } }
+            ).exec();
+        }
 
         // Fetch Stats
         const stats = await GigStats.findOne({ gigId: gig._id });
 
         let viewerContext = null;
         // Check for viewer context (if artist)
-        // Check req.user which is populated by optionalAuth
-        const user = (req as AuthRequest).user;
         console.log('[getGigById] optionalAuth user:', user ? { id: user.id, role: user.role } : 'NO USER (token missing or invalid)');
         console.log('[getGigById] Authorization header present:', !!req.headers.authorization);
         if (user) {
@@ -194,20 +271,31 @@ export const createGig = async (req: AuthRequest, res: Response, next: NextFunct
     try {
         // Basic validation could be done here or middleware (Zod)
         // For now assuming body matches schema roughly
-        const { title, description, type, category, location, schedule, compensation, applicationDeadline } = req.body;
+        const { title, description, type, location, schedule, compensation, applicationDeadline } = req.body;
 
         // TODO: Use Organizer snapshot from Auth User Profile
         const organizerId = req.user.id;
+        // Three-role wall: stamp the poster's tier — decides who sees/applies to this gig.
+        const posterRole = posterRoleFor(normalizeRole(req.user.role));
         const organizerSnapshot = {
             displayName: req.user.displayName || req.user.name || 'Organizer',
             organizationName: req.user.organizationName || 'TBD',
             profileImageUrl: req.user.profileImageUrl || '',
-            rating: 0 // Default or fetch
+            rating: 0, // Default or fetch
+            testimonials: (req.user as any)?.testimonials || []
         };
+
+        // Best-effort geocode the venue → location.geo (Nominatim, keyless).
+        // Never blocks a post — resolves null on any failure, gig saves anyway.
+        if (req.body.location && (req.body.location.address || req.body.location.city)) {
+            const geo = await geocodeLocation(req.body.location);
+            if (geo) req.body.location.geo = geo;
+        }
 
         const newGig = await Gig.create({
             ...req.body,
             organizerId,
+            posterRole,
             organizerSnapshot,
             createdAt: new Date(),
             updatedAt: new Date()
@@ -248,6 +336,14 @@ export const applyToGig = async (req: AuthRequest, res: Response, next: NextFunc
             await session.abortTransaction();
             session.endSession();
             return sendResponse(res, 400, null, 'Gig is not accepting applications');
+        }
+
+        // Three-role wall: artist -> creative_lead posts; creative_lead -> client posts.
+        // Server-side enforcement — hiding posts in the feed is not a guard.
+        if (!canApply(normalizeRole(req.user.role), gig.posterRole)) {
+            await session.abortTransaction();
+            session.endSession();
+            return sendResponse(res, 403, null, 'Your role cannot apply to this gig');
         }
 
         // Check Deadline
@@ -546,6 +642,12 @@ export const updateGig = async (req: AuthRequest, res: Response, next: NextFunct
         // Ideally we should sanitize req.body, but for now we trust the schema validation (if any) or just spread
         // The service usually handles partial updates via PATCH
 
+        // Re-geocode when the location is part of this update (best-effort).
+        if (req.body.location && (req.body.location.address || req.body.location.city)) {
+            const geo = await geocodeLocation(req.body.location);
+            if (geo) req.body.location.geo = geo;
+        }
+
         const updatedGig = await Gig.findByIdAndUpdate(gigId, req.body, {
             new: true,
             runValidators: true
@@ -633,7 +735,7 @@ export const getSavedGigs = async (req: AuthRequest, res: Response, next: NextFu
         const userId = req.user.id;
 
         const savedGigs = await SavedGig.find({ userId })
-            .populate('gigId', 'title type category location schedule compensation applicationDeadline status organizerSnapshot')
+            .populate('gigId', 'title type location schedule compensation applicationDeadline status organizerSnapshot')
             .sort({ savedAt: -1 })
             .lean();
 

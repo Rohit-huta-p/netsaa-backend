@@ -24,8 +24,14 @@ export class SearchService {
     /**
      * Orchestrates the search for Gigs.
      */
-    async searchGigs(query: string, filters: any, page: number = 1, pageSize: number = SEARCH_CONFIG.DEFAULT_PAGE_SIZE) {
-        const { results, total } = await searchGigsInDb(query, filters, page, pageSize);
+    async searchGigs(
+        query: string,
+        filters: any,
+        page: number = 1,
+        pageSize: number = SEARCH_CONFIG.DEFAULT_PAGE_SIZE,
+        viewerRole: 'client' | 'creative_lead' | 'artist' | 'admin' = 'artist'
+    ) {
+        const { results, total } = await searchGigsInDb(query, filters, page, pageSize, viewerRole);
 
         return {
             results,

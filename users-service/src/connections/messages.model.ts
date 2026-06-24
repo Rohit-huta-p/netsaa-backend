@@ -13,6 +13,7 @@ export interface IMessage extends Document {
     attachments?: IAttachment[];
     seenBy: mongoose.Types.ObjectId[];
     clientMessageId?: string;
+    system?: boolean;
     createdAt: Date;
     updatedAt: Date;
 }
@@ -49,6 +50,10 @@ const MessageSchema: Schema = new Schema(
         clientMessageId: {
             type: String,
             required: false,
+        },
+        system: {
+            type: Boolean,
+            default: false,
         },
     },
     {

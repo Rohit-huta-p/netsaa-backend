@@ -6,6 +6,7 @@ import {
     applyToGig,
     saveGig,
     getOrganizerGigs,
+    getOrganizerApplicants,
     updateGig,
     deleteGig,
     getGigApplications,
@@ -21,9 +22,10 @@ const router = express.Router();
 
 
 // Public routes and refactored protected routes
-router.route('/gigs').get(getGigs).post(protect, requireOrganizer, createGig);
-router.route('/organizers/me/gigs').get(protect, getOrganizerGigs); // Access as /v1/organizers/me/gigs
+router.route('/gigs').get(optionalAuth, getGigs).post(protect, requireOrganizer, createGig);
 router.route('/gigs/:id').get(optionalAuth, getGigById);
+router.route('/organizers/me/gigs').get(protect, getOrganizerGigs); // Access as /v1/organizers/me/gigs
+router.route('/organizers/me/applicants').get(protect, getOrganizerApplicants); // Aggregate applicants across all the organizer's gigs
 router.route('/gigs/:id/apply').post(protect, applyToGig);
 router.route('/gigs/:id/save').post(protect, saveGig);
 router.route('/organizers/me/gigs/:gigId/applications').get(protect, getGigApplications);

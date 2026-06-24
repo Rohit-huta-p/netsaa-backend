@@ -1,0 +1,36 @@
+{
+  "name": "people_search_index",
+  "mappings": {
+    "dynamic": false,
+    "fields": {
+      "displayName": {
+        "type": "autocomplete",
+        "tokenization": "edgeGram",
+        "minGrams": 2,
+        "maxGrams": 15,
+        "foldDiacritics": true
+      },
+      "artistType":  { "type": "string", "analyzer": "lucene.standard" },
+      "role":        { "type": "string", "analyzer": "lucene.keyword" },
+      "blocked":     { "type": "boolean" },
+      "skills":      { "type": "string", "analyzer": "lucene.standard" },
+      "languages":   { "type": "string", "analyzer": "lucene.keyword" },
+      "bio":         { "type": "string", "analyzer": "lucene.standard" },
+      "lastActiveAt":{ "type": "date" },
+      "cached": {
+        "type": "document",
+        "fields": {
+          "primaryCity":     { "type": "string", "analyzer": "lucene.keyword" },
+          "averageRating":   { "type": "number" },
+          "featured":        { "type": "boolean" },
+          "connectionStats": {
+            "type": "document",
+            "fields": {
+              "degree1Count": { "type": "number" }
+            }
+          }
+        }
+      }
+    }
+  }
+}

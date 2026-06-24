@@ -1,6 +1,10 @@
 // search-service/src/infra/search/pipelines/people.pipeline.ts
 
 import { ObjectId } from 'mongodb';
+import mongoose from 'mongoose';
+import { buildPeopleRankingClausesV2 } from '../../../ranking/people.rank.v2';
+import type { ViewerGraph } from '../../../people/viewer-graph';
+import { buildPeopleFilters } from '../../../modules/people/people.filters';
 
 interface BuildPeoplePipelineArgs {
     query: string;
@@ -35,8 +39,10 @@ export function buildPeoplePipeline({
     });
 
     // Role filter (default = artist search)
-    // Role filter (default = artist search)
     // Use 'text' instead of 'equals' because dynamic mapping indexes strings as text, not tokens.
+    // (accountStatus filter removed — field is not in the Atlas Search index, so the clause
+    //  always returned 0 matches. `blocked=false` covers deactivated/deleted accounts via
+    //  the existing soft-delete + block flow.)
     mustClauses.push({
         text: {
             path: 'role',
@@ -135,5 +141,51 @@ export function buildPeoplePipeline({
                 passwordHash: 0
             }
         }
+    ];
+}
+
+export interface BuildPipelineV2Args {
+    query: string;
+    filters: Record<string, any>;
+    limit: number;
+    skip: number;
+    viewer: { _id?: string; graph: ViewerGraph };
+}
+
+export function buildPeoplePipelineV2(args: BuildPipelineV2Args) {
+    const { query, filters, limit, skip, viewer } = args;
+    const { must, filter, mustNot } = buildPeopleFilters(filters);
+
+    const should = buildPeopleRankingClausesV2(query, viewer.graph);
+
+    const finalMustNot = [...(mustNot || [])];
+    if (viewer._id) {
+        let valueForId: any = viewer._id;
+        try { valueForId = new mongoose.Types.ObjectId(viewer._id); } catch { /* fall back to string */ }
+        finalMustNot.push({ equals: { path: '_id', value: valueForId } });
+    }
+
+    return [
+        {
+            $search: {
+                index: 'people_search_index',
+                compound: {
+                    must: [
+                        { equals: { path: 'blocked', value: false } },
+                        { text: { path: 'role', query: filters?.role ?? 'artist' } },
+                        ...must,
+                    ],
+                    should,
+                    filter,
+                    mustNot: finalMustNot,
+                    minimumShouldMatch: should.length > 0 ? 1 : 0,
+                },
+            },
+        },
+        { $addFields: { _score: { $meta: 'searchScore' } } },
+        { $sort: { _score: -1, 'cached.averageRating': -1 } },
+        { $skip: skip },
+        { $limit: limit },
+        { $project: { email: 0, phoneNumber: 0, passwordHash: 0, otp: 0, devices: 0 } },
     ];
 }
