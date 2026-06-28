@@ -222,7 +222,18 @@ export const getMyRegistration = async (req: Request, res: Response) => {
         const [ticketCode, backupCode] = ((ticket as any)?.qrCode || '|').split('|');
         return res.status(200).json({
             meta: { status: 200, message: 'OK' },
-            data: { ...registration, ticketCode, backupCode },
+            data: {
+                ...registration,
+                ticketCode,
+                backupCode,
+                // Frontend reads attendeeCount + flat payment fields; the doc stores quantity + nested paymentRecord.
+                attendeeCount: registration.quantity,
+                razorpayPaymentId: registration.paymentRecord?.razorpayPaymentId,
+                paymentCapturedAt: registration.paymentRecord?.capturedAt,
+                ticketAmount: registration.paymentRecord ? (registration.paymentRecord.amountPaise - registration.paymentRecord.serviceFeePaise) / 100 : undefined,
+                serviceFeeAmount: registration.paymentRecord ? registration.paymentRecord.serviceFeePaise / 100 : undefined,
+                paidAmount: registration.paymentRecord ? registration.paymentRecord.amountPaise / 100 : undefined,
+            },
             errors: [],
         });
     } catch (err) {

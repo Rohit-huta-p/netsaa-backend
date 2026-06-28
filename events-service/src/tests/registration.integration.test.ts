@@ -254,3 +254,21 @@ describe('GET /v1/organizers/me/events (derives organizer from auth)', () => {
     expect(res.body.data[0].title).toBe('My Hosted Event');
   });
 });
+
+describe('response-shape overlays (FE↔BE parity)', () => {
+  it('GET event overlays pricing.amount from ticketPrice', async () => {
+    const event = await makeFreeEvent();
+    const res = await request(app).get(`/v1/events/${event._id}`);
+    expect(res.body.data.pricing.amount).toBe(0); // free fixture
+    expect(res.body.data.pricing.currency).toBe('INR');
+  });
+
+  it('getMyRegistration aliases attendeeCount from quantity', async () => {
+    const event = await makeFreeEvent();
+    await request(app).post(`/v1/events/${event._id}/register`)
+      .set('Authorization', `Bearer ${token}`).set('Idempotency-Key', 'shape-1')
+      .send({ quantity: 2, attendees: [{ fullName: 'Aditi', phone: '+919876543210' }] });
+    const res = await request(app).get(`/v1/events/${event._id}/registrations/me`).set('Authorization', `Bearer ${token}`);
+    expect(res.body.data.attendeeCount).toBe(2);
+  });
+});

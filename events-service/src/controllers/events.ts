@@ -132,6 +132,14 @@ function withLiveCapacity(eventObj: any, registeredCount: number): any {
     total: eventObj.capacity?.total ?? eventObj.maxParticipants ?? 0,
     registeredCount,
   };
+  // Frontend reads event.pricing.{amount,refundPolicy}; the model stores ticketPrice (scalar)
+  // + cancellationPolicy. Overlay so paid events don't render ₹0.
+  eventObj.pricing = {
+    amount: eventObj.ticketPrice ?? 0,
+    currency: 'INR',
+    refundPolicy: eventObj.cancellationPolicy ? 'custom' : 'flex_24h',
+    refundCustomNote: eventObj.cancellationPolicy?.notes,
+  };
   return eventObj;
 }
 
