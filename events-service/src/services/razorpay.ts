@@ -67,3 +67,12 @@ export async function createOrderWithTransfer(input: {
   });
   return { orderId: order.id };
 }
+
+/** Issue a refund against a captured payment. Amount in paise. */
+export async function createRefund(paymentId: string, amountPaise: number): Promise<{ refundId: string }> {
+  const refund = await (razorpayClient() as any).payments.refund(paymentId, {
+    amount: amountPaise,
+    speed: 'normal',
+  });
+  return { refundId: refund.id };
+}
