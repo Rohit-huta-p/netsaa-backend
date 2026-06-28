@@ -10,7 +10,7 @@ import {
     saveEvent,
     getSavedEvents,
 } from '../controllers/events';
-import { createTicketType, getTicketTypesByEvent, checkinTicket } from '../controllers/tickets';
+import { createTicketType, getTicketTypesByEvent, checkinTicket, getRegistrationTicket } from '../controllers/tickets';
 import {
     registerForEvent, // Keep backward compatibility if needed, or deprecate
     getEventRegistrations,
@@ -38,6 +38,9 @@ router.route('/events/:id/ticket-types').get(getTicketTypesByEvent);
 
 // Ticket Check-in Route
 router.route('/tickets/checkin').post(protect, requireOrganizer, checkinTicket);
+
+// Registration Ticket (owner-gated)
+router.route('/registrations/:id/ticket').get(protect, getRegistrationTicket);
 
 // Registration Routes
 router.route('/events/:id/register').post(protect, registerForEvent);

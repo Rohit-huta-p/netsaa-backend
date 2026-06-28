@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import mongoose from 'mongoose';
 import EventTicketType from '../models/EventTicketType';
 import EventTicket from '../models/EventTicket';
+import EventRegistration from '../models/EventRegistration';
 import Event from '../models/Event';
 import { AuthRequest } from '../middleware/auth';
 
@@ -146,5 +147,39 @@ export const getTicketTypesByEvent = async (req: Request, res: Response, next: N
             data: null,
             errors: [{ message: (err as Error).message }],
         });
+    }
+};
+
+// @desc    Get the ticket bundle (QR + codes) for a registration
+// @route   GET /v1/registrations/:id/ticket
+// @access  Private (owner only)
+export const getRegistrationTicket = async (req: AuthRequest, res: Response) => {
+    try {
+        const userId = req.user?.id || req.user?._id;
+        const registration = await EventRegistration.findById(req.params.id);
+        if (!registration) {
+            return res.status(404).json({ meta: { status: 404, message: 'Registration not found' }, data: null, errors: [] });
+        }
+        if (registration.userId.toString() !== String(userId)) {
+            return res.status(403).json({ meta: { status: 403, message: 'Not your ticket' }, data: null, errors: [] });
+        }
+        const tickets = await EventTicket.find({ registrationId: registration._id });
+        const primary = tickets[0];
+        const [ticketCode, backupCode] = (primary?.qrCode || '|').split('|');
+
+        return res.status(200).json({
+            meta: { status: 200, message: 'OK' },
+            data: {
+                registrationId: registration._id,
+                ticketCode,
+                backupCode,
+                qrPayload: primary?.qrCode || '',
+                attendeeCount: registration.quantity,
+                status: registration.status,
+            },
+            errors: [],
+        });
+    } catch (err) {
+        return res.status(500).json({ meta: { status: 500, message: 'Server Error' }, data: null, errors: [{ message: (err as Error).message }] });
     }
 };

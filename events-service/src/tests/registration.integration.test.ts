@@ -71,3 +71,35 @@ describe('POST /v1/events/:id/register (free RSVP)', () => {
     expect(res.body.meta.message).toMatch(/closed/i);
   });
 });
+
+describe('GET /v1/registrations/:id/ticket', () => {
+  it('returns ticketCode, backupCode, qrPayload for the owner', async () => {
+    const event = await makeFreeEvent();
+    const reg = await request(app).post(`/v1/events/${event._id}/register`)
+      .set('Authorization', `Bearer ${token}`).set('Idempotency-Key', 'idem-tkt')
+      .send({ quantity: 1, attendees: [{ fullName: 'Aditi', phone: '+919876543210' }] });
+
+    const res = await request(app)
+      .get(`/v1/registrations/${reg.body.data._id}/ticket`)
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.ticketCode).toMatch(/^KF-/);
+    expect(res.body.data.backupCode).toMatch(/^\d{6}$/);
+    expect(res.body.data.qrPayload).toContain('|');
+  });
+
+  it('403s for a non-owner', async () => {
+    const event = await makeFreeEvent();
+    const reg = await request(app).post(`/v1/events/${event._id}/register`)
+      .set('Authorization', `Bearer ${token}`).set('Idempotency-Key', 'idem-tkt2')
+      .send({ quantity: 1, attendees: [{ fullName: 'Aditi', phone: '+919876543210' }] });
+
+    const otherToken = jwt.sign({ id: new mongoose.Types.ObjectId().toString(), role: 'artist' }, process.env.JWT_SECRET!);
+    const res = await request(app)
+      .get(`/v1/registrations/${reg.body.data._id}/ticket`)
+      .set('Authorization', `Bearer ${otherToken}`);
+
+    expect(res.status).toBe(403);
+  });
+});
