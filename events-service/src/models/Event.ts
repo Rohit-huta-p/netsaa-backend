@@ -6,6 +6,7 @@ export interface IEvent extends Document {
   thumbnailUrl?: string;
   tagline?: string;
   whatToExpect?: string;
+  about?: string;
 
   eventType: 'workshop' | 'competition' | 'meetup' | 'showcase';
   category: string;
@@ -117,6 +118,7 @@ const eventSchema = new Schema<IEvent>(
     thumbnailUrl: { type: String },
     tagline: { type: String },
     whatToExpect: { type: String },
+    about: { type: String },
 
     eventType: {
       type: String,

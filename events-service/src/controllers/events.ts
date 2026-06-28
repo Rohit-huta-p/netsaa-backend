@@ -231,6 +231,7 @@ export const createEvent = async (req: Request, res: Response, next: NextFunctio
     const event = await Event.create({
       title: b.title,
       description: b.about,
+      about: b.about,
       tagline: b.tagline,
       whatToExpect: b.whatToExpect,
       eventType: b.eventType || 'workshop',
