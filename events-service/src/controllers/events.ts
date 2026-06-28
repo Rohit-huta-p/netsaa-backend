@@ -154,83 +154,126 @@ export const getEventById = async (req: Request, res: Response, next: NextFuncti
 };
 
 // @desc    Create new event
-// @route   POST /api/grow/events
-// @access  Private (Organizer)
-// @desc    Create new event
-// @route   POST /api/grow/events
-// @access  Private (Organizer)
+// @route   POST /v1/events
+// @access  Private (any authenticated user)
 
+const DURATION_MIN: Record<string, number> = {
+  m30: 30, h1: 60, h2: 120, h3: 180, half: 240, full: 480, multi: 480,
+};
 
-// @desc    Create new event
-// @route   POST /api/grow/events
-// @access  Private (Organizer)
 export const createEvent = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    // TODO: Add organizer ID from authenticated user (req.user)
-    // For now assuming existing body structure from API contract
-    const { ticketTypes, ...eventData } = req.body;
-
-    // Validate pricing intent is present or default to 'fixed' logic
-    const pricingMode = eventData.pricingMode || 'fixed';
-
-    let event: any; // Using any to bypass strict type checking during creation for now or strictly type it if IEvent is importable
-
-    if (pricingMode === 'fixed') {
-      // MODE: FIXED PRICE
-      // 1. Create Event ONLY
-      // 2. Ignore ticketTypes array
-      // 3. Ensure ticketPrice and maxParticipants are set on Event
-
-      event = await Event.create({
-        ...eventData,
-        pricingMode: 'fixed',
-        // Ensure ticketPrice 0 if not provided
-        ticketPrice: eventData.ticketPrice || 0
-      });
-
-      // Explicitly DO NOT create any EventTicketType documents.
-      // The single-price logic is handled directly via Event model fields.
-
-    } else if (pricingMode === 'ticketed') {
-      // MODE: TICKETED
-      // 1. Create Event
-      // 2. Validate & Create Ticket Types
-
-      if (!ticketTypes || !Array.isArray(ticketTypes) || ticketTypes.length === 0) {
-        throw new Error('Ticketed events must have at least one ticket type.');
-      }
-
-      event = await Event.create({
-        ...eventData,
-        pricingMode: 'ticketed',
-        // Zero out event-level price/capacity fields to avoid confusion, 
-        // though logic should ignore them.
-        ticketPrice: 0,
-        maxParticipants: 0 // logic depends on sum of tickets, or separate field? 
-        // Actually, maxParticipants might still be a global cap or ignored. 
-        // Let's keep it as is from request, or 0. Guide says "Ignore Event.maxParticipants"
-        // But for safety, we allow it if it acts as a total cap, otherwise 0.
-      });
-
-      const ticketsToCreate = ticketTypes.map((t: any) => ({
-        ...t,
-        eventId: event._id,
-        salesStartAt: t.salesStartAt || new Date(), // Fallbacks if missed validation
-        salesEndAt: t.salesEndAt || event.registrationDeadline || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
-      }));
-
-      await EventTicketType.insertMany(ticketsToCreate);
-    } else {
-      throw new Error('Invalid pricingMode. Must be "fixed" or "ticketed".');
+    const b = req.body || {};
+    const user = (req as AuthRequest).user;
+    const userId = user?.id || user?._id;
+    if (!userId) {
+      return res.status(401).json({ meta: { status: 401, message: 'Not authorized' }, data: null, errors: [] });
     }
 
-    res.status(201).json({
-      meta: { status: 201, message: 'Event created' },
-      data: event,
-      errors: [],
+    // Detect shape: new composer payload has `about`, `capacity`, `startsAt`, or `registrationMode`.
+    // Legacy payload has `description` + `schedule` directly.
+    const isNew =
+      b.about !== undefined ||
+      b.capacity !== undefined ||
+      b.startsAt !== undefined ||
+      b.registrationMode !== undefined;
+
+    if (!isNew) {
+      // ── LEGACY passthrough — keep old behavior for existing tests/callers ──
+      const { ticketTypes, ...eventData } = b;
+      const pricingMode = eventData.pricingMode || 'fixed';
+
+      let event: any;
+
+      if (pricingMode === 'fixed') {
+        event = await Event.create({
+          ...eventData,
+          organizerId: eventData.organizerId || userId,
+          pricingMode: 'fixed',
+          ticketPrice: eventData.ticketPrice || 0,
+        });
+      } else if (pricingMode === 'ticketed') {
+        if (!ticketTypes || !Array.isArray(ticketTypes) || ticketTypes.length === 0) {
+          throw new Error('Ticketed events must have at least one ticket type.');
+        }
+        event = await Event.create({
+          ...eventData,
+          organizerId: eventData.organizerId || userId,
+          pricingMode: 'ticketed',
+          ticketPrice: 0,
+          maxParticipants: 0,
+        });
+        const ticketsToCreate = ticketTypes.map((t: any) => ({
+          ...t,
+          eventId: event._id,
+          salesStartAt: t.salesStartAt || new Date(),
+          salesEndAt: t.salesEndAt || event.registrationDeadline || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        }));
+        await EventTicketType.insertMany(ticketsToCreate);
+      } else {
+        throw new Error('Invalid pricingMode. Must be "fixed" or "ticketed".');
+      }
+
+      return res.status(201).json({ meta: { status: 201, message: 'Event created' }, data: event, errors: [] });
+    }
+
+    // ── NEW composer shape → map to model ──
+    if (!b.startsAt) {
+      return res.status(400).json({ meta: { status: 400, message: 'Start time required' }, data: null, errors: [] });
+    }
+
+    const startDate = new Date(b.startsAt);
+    const totalDurationMinutes = DURATION_MIN[b.durationKind] ?? 120;
+    const endDate = new Date(startDate.getTime() + totalDurationMinutes * 60000);
+    const locType = b.location?.kind === 'online' ? 'online' : 'physical';
+    const isPaid = b.registrationMode === 'paid_ticket';
+
+    const event = await Event.create({
+      title: b.title,
+      description: b.about,
+      tagline: b.tagline,
+      whatToExpect: b.whatToExpect,
+      eventType: b.eventType || 'workshop',
+      category: b.category || b.topicTags?.[0] || b.skills?.[0] || 'general',
+      tags: b.topicTags || [],
+      skills: b.skills || [],
+      topicTags: b.topicTags || [],
+      media: b.media || [],
+      organizerId: userId,
+      organizerSnapshot: {
+        name: user?.name || user?.displayName || 'Host',
+        organizationName: user?.organizationName || '',
+      },
+      pricingMode: 'fixed',
+      registrationMode: b.registrationMode || 'free_rsvp',
+      ticketPrice: isPaid ? (b.pricing?.amount || 0) : 0,
+      capacity: { total: b.capacity?.total ?? 0, registeredCount: 0 },
+      maxParticipants: b.capacity?.total ?? 0,
+      startsAt: startDate,
+      durationKind: b.durationKind,
+      schedule: { startDate, endDate, totalDurationMinutes, dayBreakdown: [] },
+      location: {
+        type: locType,
+        kind: b.location?.kind,
+        venueName: b.location?.venueName,
+        address: b.location?.address,
+        meetingLink: b.location?.meetingLink,
+      },
+      registrationDeadline: b.registrationDeadline ? new Date(b.registrationDeadline) : undefined,
+      maxGuestsPerRegistration: b.maxGuestsPerRegistration ?? 5,
+      requiredAttendeeFields: b.requiredAttendeeFields || ['phone'],
+      allowWaitlist: !!b.allowWaitlist,
+      waitlistAutoPromote: !!b.waitlistAutoPromote,
+      walkupsAllowed: !!b.walkupsAllowed,
+      visibility: b.visibility || 'public',
+      language: b.language || 'en',
+      discussionVisibility: b.discussionVisibility || 'public',
+      status: b.status || 'draft',
     });
+
+    return res.status(201).json({ meta: { status: 201, message: 'Event created' }, data: event, errors: [] });
   } catch (err) {
-    res.status(400).json({
+    return res.status(400).json({
       meta: { status: 400, message: 'Validation Error' },
       data: null,
       errors: [{ message: (err as Error).message }],

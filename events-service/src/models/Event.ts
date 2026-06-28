@@ -4,15 +4,25 @@ export interface IEvent extends Document {
   title: string;
   description: string;
   thumbnailUrl?: string;
+  tagline?: string;
+  whatToExpect?: string;
 
   eventType: 'workshop' | 'competition' | 'meetup' | 'showcase';
   category: string;
   tags: string[];
+  skills?: string[];
+  topicTags?: string[];
+  media?: Array<{ kind: string; url: string; width?: number; height?: number; isHero?: boolean; sortOrder?: number }>;
+
+  registrationMode?: 'free_rsvp' | 'paid_ticket';
+  startsAt?: Date;
+  durationKind?: string;
+  capacity?: { total?: number; registeredCount?: number };
 
   organizerId: mongoose.Types.ObjectId;
   organizerSnapshot: {
-    name: string;
-    organizationName: string;
+    name?: string;
+    organizationName?: string;
     profileImageUrl?: string;
     rating?: number;
   };
@@ -53,11 +63,12 @@ export interface IEvent extends Document {
 
   location: {
     type: 'physical' | 'online' | 'hybrid';
+    kind?: 'in_person' | 'online';
     venueName?: string;
     address?: string;
-    city: string;
-    state: string;
-    country: string;
+    city?: string;
+    state?: string;
+    country?: string;
     meetingLink?: string;                                   // online/hybrid · join link · encrypted at rest
     meetingLinkRevealAt?: 'on_register' | 'T-24h' | 'T-1h'; // when attendees see the link (D7 reversed 2026-06-26)
   };
@@ -104,19 +115,47 @@ const eventSchema = new Schema<IEvent>(
     title: { type: String, required: true },
     description: { type: String, required: true },
     thumbnailUrl: { type: String },
+    tagline: { type: String },
+    whatToExpect: { type: String },
 
     eventType: {
       type: String,
       enum: ['workshop', 'competition', 'meetup', 'showcase'],
-      required: true,
+      default: 'workshop',
     },
-    category: { type: String, required: true },
+    category: { type: String },
     tags: [{ type: String }],
+    skills: [{ type: String }],
+    topicTags: [{ type: String }],
+    media: {
+      type: [{
+        kind: String,
+        url: String,
+        width: Number,
+        height: Number,
+        isHero: Boolean,
+        sortOrder: Number,
+      }],
+      default: [],
+      _id: false,
+    },
+
+    registrationMode: {
+      type: String,
+      enum: ['free_rsvp', 'paid_ticket'],
+      default: 'free_rsvp',
+    },
+    startsAt: { type: Date },
+    durationKind: { type: String },
+    capacity: {
+      total: { type: Number },
+      registeredCount: { type: Number, default: 0 },
+    },
 
     organizerId: { type: Schema.Types.ObjectId, ref: 'Organizer', required: true },
     organizerSnapshot: {
-      name: { type: String, required: true },
-      organizationName: { type: String, required: true },
+      name: { type: String },
+      organizationName: { type: String },
       profileImageUrl: String,
       rating: Number,
     },
@@ -174,19 +213,19 @@ const eventSchema = new Schema<IEvent>(
       type: {
         type: String,
         enum: ['physical', 'online', 'hybrid'],
-        required: true,
       },
+      kind: { type: String, enum: ['in_person', 'online'] },
       venueName: String,
       address: String,
-      city: { type: String, required: true },
-      state: { type: String, required: true },
-      country: { type: String, required: true },
+      city: { type: String },
+      state: { type: String },
+      country: { type: String },
       meetingLink: String,
       meetingLinkRevealAt: { type: String, enum: ['on_register', 'T-24h', 'T-1h'], default: 'T-24h' },
     },
 
     registrationDeadline: { type: Date },
-    maxParticipants: { type: Number, required: true },
+    maxParticipants: { type: Number, default: 0 },
     allowWaitlist: { type: Boolean, default: false },
     waitlistAutoPromote: { type: Boolean, default: false },
 
