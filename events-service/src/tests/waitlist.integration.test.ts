@@ -73,3 +73,45 @@ describe('DELETE /v1/events/:id/waitlist', () => {
     expect(entry?.status).toBe('declined');
   });
 });
+
+// (tokenFor, fullEvent, app, jwt, mongoose, EventRegistration, WaitlistEntry are all
+//  already in scope from the top of this same test file — do not re-import.)
+
+describe('auto-promote on cancel → confirm', () => {
+  it('cancelling the lone registration auto-promotes the top waitlister', async () => {
+    const event = await fullEvent({ waitlistAutoPromote: true });
+    // the seat-filling registration owner:
+    const holder = await EventRegistration.findOne({ eventId: event._id });
+    // a waitlister:
+    const waitUserId = new mongoose.Types.ObjectId().toString();
+    await request(app).post(`/v1/events/${event._id}/waitlist/join`).set('Authorization', `Bearer ${tokenFor(waitUserId)}`)
+      .send({ quantity: 1, attendeeSnapshot: { fullName: 'Wendy', phone: '+919999999999' } });
+
+    // holder cancels → frees the seat → auto-promote fires
+    const holderToken = jwt.sign({ id: holder!.userId.toString(), role: 'artist' }, process.env.JWT_SECRET!);
+    await request(app).post(`/v1/registrations/${holder!._id}/cancel`).set('Authorization', `Bearer ${holderToken}`).send({ reason: 'x' });
+
+    const entry = await WaitlistEntry.findOne({ eventId: event._id, userId: waitUserId });
+    expect(entry?.status).toBe('promoted');
+    expect(entry?.promotionExpiresAt).toBeTruthy();
+  });
+
+  it('confirming a promotion creates a free registration and marks the entry confirmed', async () => {
+    const event = await fullEvent({ waitlistAutoPromote: true, pricingMode: 'fixed', ticketPrice: 0 });
+    const holder = await EventRegistration.findOne({ eventId: event._id });
+    const waitUserId = new mongoose.Types.ObjectId().toString();
+    const join = await request(app).post(`/v1/events/${event._id}/waitlist/join`).set('Authorization', `Bearer ${tokenFor(waitUserId)}`)
+      .send({ quantity: 1, attendeeSnapshot: { fullName: 'Wendy', phone: '+919999999999' } });
+    const holderToken = jwt.sign({ id: holder!.userId.toString(), role: 'artist' }, process.env.JWT_SECRET!);
+    await request(app).post(`/v1/registrations/${holder!._id}/cancel`).set('Authorization', `Bearer ${holderToken}`).send({ reason: 'x' });
+
+    const res = await request(app).post(`/v1/waitlist/${join.body.data.entryId}/confirm`)
+      .set('Authorization', `Bearer ${tokenFor(waitUserId)}`).set('Idempotency-Key', 'wl-confirm-1').send({});
+
+    expect(res.status).toBe(201);
+    const entry = await WaitlistEntry.findById(join.body.data.entryId);
+    expect(entry?.status).toBe('confirmed');
+    expect(entry?.registrationId).toBeTruthy();
+    expect(await EventRegistration.countDocuments({ eventId: event._id, status: 'registered' })).toBe(1);
+  });
+});

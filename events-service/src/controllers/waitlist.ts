@@ -2,7 +2,10 @@ import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth';
 import Event from '../models/Event';
 import WaitlistEntry from '../models/WaitlistEntry';
-import { slotsLeftForEvent, nextPosition } from '../services/waitlistService';
+import EventRegistration from '../models/EventRegistration';
+import { slotsLeftForEvent, nextPosition, promoteEntry, promoteFromWaitlist } from '../services/waitlistService';
+import { generateTicketCode, generateBackupCode } from '../utils/ticketCode';
+import EventTicket from '../models/EventTicket';
 
 // @route POST /v1/events/:id/waitlist/join
 export const joinWaitlist = async (req: AuthRequest, res: Response) => {
@@ -44,4 +47,54 @@ export const leaveWaitlist = async (req: AuthRequest, res: Response) => {
   entry.status = 'declined';
   await entry.save();
   return res.status(200).json({ meta: { status: 200, message: 'Left the waitlist' }, data: { status: 'declined' }, errors: [] });
+};
+
+// @route POST /v1/events/:id/waitlist/promote  (organizer manual approve — promotes top waiting entry)
+export const promoteWaitlist = async (req: AuthRequest, res: Response) => {
+  const event = await Event.findById(req.params.id);
+  if (!event) return res.status(404).json({ meta: { status: 404, message: 'Event not found' }, data: null, errors: [] });
+  if (event.organizerId.toString() !== String(req.user?.id || req.user?._id)) {
+    return res.status(403).json({ meta: { status: 403, message: 'Not your event' }, data: null, errors: [] });
+  }
+  if ((await slotsLeftForEvent(event._id)) <= 0) return res.status(409).json({ meta: { status: 409, message: 'No free seat' }, data: null, errors: [] });
+  const top = await WaitlistEntry.findOne({ eventId: event._id, status: 'waiting' }).sort({ position: 1 });
+  if (!top) return res.status(404).json({ meta: { status: 404, message: 'Waitlist empty' }, data: null, errors: [] });
+  await promoteEntry(top);
+  return res.status(200).json({ meta: { status: 200, message: 'Promoted' }, data: { entryId: top._id }, errors: [] });
+};
+
+// @route POST /v1/waitlist/:id/confirm  (promoted user accepts — FREE path; paid reuses /reserve)
+export const confirmPromotion = async (req: AuthRequest, res: Response) => {
+  const userId = req.user?.id || req.user?._id;
+  const entry = await WaitlistEntry.findById(req.params.id);
+  if (!entry) return res.status(404).json({ meta: { status: 404, message: 'Entry not found' }, data: null, errors: [] });
+  if (entry.userId.toString() !== String(userId)) return res.status(403).json({ meta: { status: 403, message: 'Not your entry' }, data: null, errors: [] });
+  if (entry.status !== 'promoted') return res.status(409).json({ meta: { status: 409, message: 'Not promoted' }, data: null, errors: [] });
+  if (entry.promotionExpiresAt && Date.now() > new Date(entry.promotionExpiresAt).getTime()) {
+    return res.status(410).json({ meta: { status: 410, message: 'Promotion window expired' }, data: null, errors: [] });
+  }
+
+  const event = await Event.findById(entry.eventId);
+  // Paid events: caller must go through /reserve → Razorpay; this endpoint handles the free path.
+  if (event && event.ticketPrice > 0) {
+    return res.status(409).json({ meta: { status: 409, message: 'Paid event — reserve to confirm' }, data: { reserveRequired: true }, errors: [] });
+  }
+
+  const idempotencyKey = (req.header('Idempotency-Key') || `wl-${entry._id}`).trim();
+  const registration = await EventRegistration.create({
+    eventId: entry.eventId, userId, quantity: entry.quantity, status: 'registered',
+    idempotencyKey, source: 'standard', visibility: 'public',
+    attendees: [{ fullName: entry.attendeeSnapshot.fullName, phone: entry.attendeeSnapshot.phone, email: entry.attendeeSnapshot.email }],
+  });
+  await EventTicket.insertMany(Array.from({ length: entry.quantity }).map((_, i) => ({
+    ticketId: `${registration._id}-${i}`, eventId: entry.eventId, registrationId: registration._id, userId,
+    attendeeName: entry.attendeeSnapshot.fullName, qrCode: `${generateTicketCode(event?.title || 'NETSA')}|${generateBackupCode()}`, status: 'issued',
+  })));
+
+  entry.status = 'confirmed';
+  entry.confirmedAt = new Date();
+  entry.registrationId = registration._id;
+  await entry.save();
+
+  return res.status(201).json({ meta: { status: 201, message: 'Confirmed' }, data: { registrationId: registration._id }, errors: [] });
 };

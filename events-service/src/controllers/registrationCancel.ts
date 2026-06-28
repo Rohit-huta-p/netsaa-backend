@@ -4,6 +4,7 @@ import EventRegistration from '../models/EventRegistration';
 import Event from '../models/Event';
 import Refund from '../models/Refund';
 import { computeRefundPaise } from '../utils/refundPolicy';
+import { promoteFromWaitlist } from '../services/waitlistService';
 
 // @route POST /v1/registrations/:id/cancel
 // @access Private (owner)
@@ -23,6 +24,11 @@ export const cancelMyRegistration = async (req: AuthRequest, res: Response) => {
     registration.cancelledBy = 'attendee';
     registration.cancellationReason = (req.body.reason || '').slice(0, 200);
     await registration.save();
+
+    // Freed a seat — attempt auto-promotion (no-op for manual-mode events).
+    try {
+      await promoteFromWaitlist(registration.eventId);
+    } catch (_) { /* non-fatal */ }
 
     // Paid registration inside a refund window → create a pending Refund
     let refund = null;
