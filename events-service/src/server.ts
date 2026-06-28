@@ -9,9 +9,11 @@ import './models/User';
 
 dotenv.config();
 
-connectDB();
-
 const app: Application = express();
+
+if (process.env.NODE_ENV !== 'test') {
+    connectDB();
+}
 
 app.use(cors({ origin: ['http://localhost:8081', 'https://netsaa.onrender.com', 'https://netsaa.com'], credentials: true, allowedHeaders: ['Content-Type', 'Authorization'], exposedHeaders: ['Content-Type', 'Authorization'], methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'], optionsSuccessStatus: 200 }));
 app.use(express.json());
@@ -22,7 +24,11 @@ app.use('/v1/search', searchRoutes);
 
 const PORT = process.env.PORT || 5003;
 
-app.listen(PORT, () => {
-    console.log(`Events service running on port ${PORT}`);
-    startReservationExpiryWorker();
-});
+if (process.env.NODE_ENV !== 'test') {
+    app.listen(PORT, () => {
+        console.log(`Events service running on port ${PORT}`);
+        startReservationExpiryWorker();
+    });
+}
+
+export default app;

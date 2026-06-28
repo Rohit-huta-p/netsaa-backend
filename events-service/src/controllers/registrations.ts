@@ -3,37 +3,63 @@ import EventRegistration from '../models/EventRegistration';
 import EventTicket from '../models/EventTicket';
 import Event from '../models/Event';
 import { AuthRequest } from '../middleware/auth';
+import { findOrCreateRegistration } from '../utils/idempotency';
+import { generateTicketCode, generateBackupCode } from '../utils/ticketCode';
 
-// @desc    Register for an event
-// @route   POST /api/grow/events/:id/register
+// @desc    Register for an event (free RSVP path; paid path is Sprint 2)
+// @route   POST /v1/events/:id/register
 // @access  Private
 export const registerForEvent = async (req: Request, res: Response, next: NextFunction) => {
     try {
-        // TODO: Verify ticket availability and process payment (mock for now)
-        const { ticketTypeId, quantity, attendeeInfo } = req.body; // Using quantity is tricky if we need individual records
-        // Assume quantity=1 for simple registration or loop
-        // But schema `event_registrations` is one document per user per event.
-        // So likely just creating one registration.
+        const user = (req as AuthRequest).user;
+        const userId = user?.id || user?._id;
+        if (!userId) {
+            return res.status(401).json({ meta: { status: 401, message: 'Not authorized' }, data: null, errors: [{ message: 'Login required' }] });
+        }
 
-        const registration = await EventRegistration.create({
-            eventId: req.params.id,
-            userId: req.body.userId, // Should come from auth middleware
-            ticketTypeId: `ticketTypeId`,
-            status: 'registered',
-            ...(attendeeInfo && { attendees: attendeeInfo }),
+        const idempotencyKey = (req.header('Idempotency-Key') || '').trim();
+        if (!idempotencyKey) {
+            return res.status(400).json({ meta: { status: 400, message: 'Idempotency-Key header required' }, data: null, errors: [{ message: 'Missing Idempotency-Key' }] });
+        }
+
+        const event = await Event.findById(req.params.id);
+        if (!event) {
+            return res.status(404).json({ meta: { status: 404, message: 'Event not found' }, data: null, errors: [{ message: 'Event not found' }] });
+        }
+        if (event.status !== 'live') {
+            return res.status(409).json({ meta: { status: 409, message: 'Event is not open for registration' }, data: null, errors: [{ message: 'Not live' }] });
+        }
+        if (event.registrationDeadline && Date.now() > new Date(event.registrationDeadline).getTime()) {
+            return res.status(409).json({ meta: { status: 409, message: 'Registration is closed' }, data: null, errors: [{ message: 'Deadline passed' }] });
+        }
+
+        const { quantity = 1, attendees = [] } = req.body;
+
+        const { registration, created } = await findOrCreateRegistration(idempotencyKey, {
+            eventId: event._id,
+            userId,
+            quantity,
+            attendees,
+            source: 'standard',
+            visibility: 'public',
         });
 
-        res.status(201).json({
-            meta: { status: 201, message: 'Registered successfully' },
-            data: registration,
-            errors: [],
-        });
+        if (created) {
+            const ticketDocs = Array.from({ length: quantity }).map((_, i) => ({
+                ticketId: `${registration._id}-${i}`,
+                eventId: event._id,
+                registrationId: registration._id,
+                userId,
+                attendeeName: attendees[i]?.fullName || attendees[0]?.fullName || 'Guest',
+                qrCode: `${generateTicketCode(event.title)}|${generateBackupCode()}`,
+                status: 'issued',
+            }));
+            await EventTicket.insertMany(ticketDocs);
+        }
+
+        return res.status(201).json({ meta: { status: 201, message: 'Registered successfully' }, data: registration, errors: [] });
     } catch (err) {
-        res.status(400).json({
-            meta: { status: 400, message: 'Validation Error' },
-            data: null,
-            errors: [{ message: (err as Error).message }],
-        });
+        return res.status(400).json({ meta: { status: 400, message: 'Validation Error' }, data: null, errors: [{ message: (err as Error).message }] });
     }
 };
 

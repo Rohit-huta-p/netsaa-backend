@@ -1,0 +1,73 @@
+import request from 'supertest';
+import jwt from 'jsonwebtoken';
+import mongoose from 'mongoose';
+import app from '../server';
+import Event from '../models/Event';
+import EventRegistration from '../models/EventRegistration';
+import EventTicket from '../models/EventTicket';
+
+process.env.JWT_SECRET = 'test-secret';
+
+const userId = new mongoose.Types.ObjectId().toString();
+const token = jwt.sign({ id: userId, role: 'artist' }, process.env.JWT_SECRET);
+
+async function makeFreeEvent() {
+  return Event.create({
+    title: 'Kathak Foundations',
+    description: 'A week of Kathak',
+    eventType: 'workshop',
+    category: 'dance',
+    organizerId: new mongoose.Types.ObjectId(),
+    organizerSnapshot: { name: 'Saswati', organizationName: 'Sawai' },
+    pricingMode: 'fixed',
+    ticketPrice: 0,
+    schedule: { startDate: new Date(Date.now() + 7 * 86400000), endDate: new Date(Date.now() + 8 * 86400000), totalDurationMinutes: 120, dayBreakdown: [] },
+    location: { type: 'physical', city: 'Pune', state: 'MH', country: 'IN' },
+    maxParticipants: 24,
+    status: 'live',
+  });
+}
+
+describe('POST /v1/events/:id/register (free RSVP)', () => {
+  it('creates a registration + one ticket per attendee', async () => {
+    const event = await makeFreeEvent();
+    const res = await request(app)
+      .post(`/v1/events/${event._id}/register`)
+      .set('Authorization', `Bearer ${token}`)
+      .set('Idempotency-Key', 'idem-aaa')
+      .send({ quantity: 1, attendees: [{ fullName: 'Aditi', phone: '+919876543210' }] });
+
+    expect(res.status).toBe(201);
+    expect(res.body.data.status).toBe('registered');
+
+    const tickets = await EventTicket.find({ registrationId: res.body.data._id });
+    expect(tickets).toHaveLength(1);
+    expect(tickets[0].qrCode).toBeTruthy();
+  });
+
+  it('is idempotent: same Idempotency-Key returns the same registration', async () => {
+    const event = await makeFreeEvent();
+    const payload = { quantity: 1, attendees: [{ fullName: 'Aditi', phone: '+919876543210' }] };
+
+    const first = await request(app).post(`/v1/events/${event._id}/register`)
+      .set('Authorization', `Bearer ${token}`).set('Idempotency-Key', 'idem-bbb').send(payload);
+    const replay = await request(app).post(`/v1/events/${event._id}/register`)
+      .set('Authorization', `Bearer ${token}`).set('Idempotency-Key', 'idem-bbb').send(payload);
+
+    expect(replay.body.data._id).toBe(first.body.data._id);
+    expect(await EventRegistration.countDocuments({ eventId: event._id })).toBe(1);
+  });
+
+  it('rejects when registration deadline has passed', async () => {
+    const event = await makeFreeEvent();
+    event.registrationDeadline = new Date(Date.now() - 3600000);
+    await event.save();
+
+    const res = await request(app).post(`/v1/events/${event._id}/register`)
+      .set('Authorization', `Bearer ${token}`).set('Idempotency-Key', 'idem-ccc')
+      .send({ quantity: 1, attendees: [{ fullName: 'Aditi', phone: '+919876543210' }] });
+
+    expect(res.status).toBe(409);
+    expect(res.body.meta.message).toMatch(/closed/i);
+  });
+});
