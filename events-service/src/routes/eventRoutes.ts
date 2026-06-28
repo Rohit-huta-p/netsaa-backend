@@ -20,6 +20,7 @@ import {
 import { reserveTickets, cancelReservation } from '../controllers/eventReservationController';
 import { createPaymentIntent, finalizeRegistration } from '../controllers/eventRegistrationController';
 import { getEventDiscussion, addEventComment } from '../controllers/eventDiscussionController';
+import { submitPayoutAccount, getMyPayoutAccount, updatePayoutAccount } from '../controllers/payouts';
 import { protect, optionalAuth, requireOrganizer } from '../middleware/auth';
 
 const router = express.Router();
@@ -57,6 +58,10 @@ router.route('/events/:id/reserve').post(protect, reserveTickets);
 router.route('/reservations/:id/cancel').post(protect, cancelReservation);
 router.route('/events/:id/checkout').post(protect, createPaymentIntent);
 router.route('/events/:id/finalize').post(protect, finalizeRegistration);
+
+// Payout account routes
+router.route('/payouts/account').post(protect, submitPayoutAccount);
+router.route('/payouts/account/me').get(protect, getMyPayoutAccount).patch(protect, updatePayoutAccount);
 
 // Discussion Routes
 router.route('/events/:eventId/discussion')
