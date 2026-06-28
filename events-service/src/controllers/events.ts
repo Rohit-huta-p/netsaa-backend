@@ -269,7 +269,12 @@ export const createEvent = async (req: Request, res: Response, next: NextFunctio
       visibility: b.visibility || 'public',
       language: b.language || 'en',
       discussionVisibility: b.discussionVisibility || 'public',
-      status: b.status || 'draft',
+      // Posting via the composer publishes immediately — the Step7Review screen
+      // expects 'live'|'pending_review', not a draft. The public /events feed only
+      // lists status:'live', so a 'draft' default would silently hide the event.
+      // (No moderation gate yet → 'live'; flip to 'pending_review' when moderation lands.)
+      status: b.status || 'live',
+      publishedAt: (b.status || 'live') === 'live' ? new Date() : undefined,
     });
 
     return res.status(201).json({ meta: { status: 201, message: 'Event created' }, data: event, errors: [] });

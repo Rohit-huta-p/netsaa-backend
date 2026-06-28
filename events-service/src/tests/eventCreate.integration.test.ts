@@ -99,4 +99,14 @@ describe('POST /v1/events — new composer (EventDoc) payload shape', () => {
     expect(doc.ticketPrice).toBe(0);
     expect(doc.pricingMode).toBe('fixed');
   });
+
+  it('publishes the event so it appears in the public /events feed (status live)', async () => {
+    const create = await request(app).post('/v1/events')
+      .set('Authorization', `Bearer ${artistToken}`).send(composerBody());
+    expect(create.body.data.status).toBe('live');
+
+    const list = await request(app).get('/v1/events');
+    const ids = (list.body.data || []).map((e: any) => String(e._id));
+    expect(ids).toContain(String(create.body.data._id));
+  });
 });
