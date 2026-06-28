@@ -36,3 +36,12 @@ export function startReservationExpiryWorker(): ScheduledTask {
 
     return task;
 }
+
+/** Release all reserved-but-expired holds. Returns count released. */
+export async function sweepExpiredReservations(): Promise<number> {
+  const result = await EventReservation.updateMany(
+    { status: 'reserved', expiresAt: { $lt: new Date() } },
+    { status: 'released' },
+  );
+  return result.modifiedCount ?? 0;
+}
