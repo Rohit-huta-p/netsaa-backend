@@ -115,3 +115,20 @@ describe('auto-promote on cancel → confirm', () => {
     expect(await EventRegistration.countDocuments({ eventId: event._id, status: 'registered' })).toBe(1);
   });
 });
+
+describe('GET /v1/events/:id/waitlist/me', () => {
+  it('returns the active entry (position + status) for a member, 404 otherwise', async () => {
+    const event = await fullEvent();
+    const userId = new mongoose.Types.ObjectId().toString();
+    await request(app).post(`/v1/events/${event._id}/waitlist/join`).set('Authorization', `Bearer ${tokenFor(userId)}`)
+      .send({ quantity: 1, attendeeSnapshot: { fullName: 'Aditi', phone: '+919876543210' } });
+
+    const mine = await request(app).get(`/v1/events/${event._id}/waitlist/me`).set('Authorization', `Bearer ${tokenFor(userId)}`);
+    expect(mine.status).toBe(200);
+    expect(mine.body.data.position).toBe(1);
+    expect(mine.body.data.status).toBe('waiting');
+
+    const other = await request(app).get(`/v1/events/${event._id}/waitlist/me`).set('Authorization', `Bearer ${tokenFor(new mongoose.Types.ObjectId().toString())}`);
+    expect(other.status).toBe(404);
+  });
+});

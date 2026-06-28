@@ -98,3 +98,15 @@ export const confirmPromotion = async (req: AuthRequest, res: Response) => {
 
   return res.status(201).json({ meta: { status: 201, message: 'Confirmed' }, data: { registrationId: registration._id }, errors: [] });
 };
+
+// @route GET /v1/events/:id/waitlist/me — the caller's active entry (waiting/promoted), powers the CTA + promoted banner
+export const getMyWaitlistEntry = async (req: AuthRequest, res: Response) => {
+  const userId = req.user?.id || req.user?._id;
+  const entry = await WaitlistEntry.findOne({
+    eventId: req.params.id,
+    userId,
+    status: { $in: ['waiting', 'promoted'] },
+  }).lean();
+  if (!entry) return res.status(404).json({ meta: { status: 404, message: 'Not on waitlist' }, data: null, errors: [] });
+  return res.status(200).json({ meta: { status: 200, message: 'OK' }, data: entry, errors: [] });
+};

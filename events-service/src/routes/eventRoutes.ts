@@ -25,7 +25,7 @@ import { getEventDiscussion, addEventComment } from '../controllers/eventDiscuss
 import { submitPayoutAccount, getMyPayoutAccount, updatePayoutAccount } from '../controllers/payouts';
 import { cancelMyRegistration } from '../controllers/registrationCancel';
 import { cancelEvent } from '../controllers/eventCancel';
-import { joinWaitlist, leaveWaitlist, promoteWaitlist, confirmPromotion } from '../controllers/waitlist';
+import { joinWaitlist, leaveWaitlist, promoteWaitlist, confirmPromotion, getMyWaitlistEntry } from '../controllers/waitlist';
 import { protect, optionalAuth, requireOrganizer } from '../middleware/auth';
 
 const router = express.Router();
@@ -76,6 +76,7 @@ router.route('/events/:id/cancel').post(protect, cancelEvent);
 
 // Waitlist routes
 router.route('/events/:id/waitlist/join').post(protect, joinWaitlist);
+router.route('/events/:id/waitlist/me').get(protect, getMyWaitlistEntry);
 router.route('/events/:id/waitlist').delete(protect, leaveWaitlist);
 router.route('/events/:id/waitlist/promote').post(protect, promoteWaitlist);
 router.route('/waitlist/:id/confirm').post(protect, confirmPromotion);
