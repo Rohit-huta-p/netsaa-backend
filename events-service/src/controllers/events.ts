@@ -49,6 +49,9 @@ export const getEvents = async (req: Request, res: Response, next: NextFunction)
 
     const total = await Event.countDocuments(query);
 
+    const seatsMap = await seatsByEvent(events.map((e) => e._id));
+    const data = events.map((e) => withLiveCapacity(e.toObject(), seatsMap[String(e._id)] ?? 0));
+
     res.status(200).json({
       meta: {
         status: 200,
@@ -57,7 +60,7 @@ export const getEvents = async (req: Request, res: Response, next: NextFunction)
         page: Number(page),
         pages: Math.ceil(total / Number(limit)),
       },
-      data: events,
+      data,
       errors: [],
     });
   } catch (err) {
@@ -106,6 +109,31 @@ export const getOrganizerEvents = async (req: Request, res: Response, next: Next
 // @desc    Get single event
 // @route   GET /api/grow/events/:id
 // @access  Public
+/**
+ * Live seat count (sum of quantity) for non-cancelled registrations, keyed by eventId.
+ * capacity.registeredCount is derived on read — never trusted from the stored doc —
+ * so availability stays correct regardless of how registrations are created/cancelled.
+ */
+async function seatsByEvent(eventIds: any[]): Promise<Record<string, number>> {
+  if (!eventIds.length) return {};
+  const agg = await EventRegistration.aggregate([
+    { $match: { eventId: { $in: eventIds }, status: { $in: ['registered', 'attended'] } } },
+    { $group: { _id: '$eventId', seats: { $sum: { $ifNull: ['$quantity', 1] } } } },
+  ]);
+  const map: Record<string, number> = {};
+  for (const r of agg) map[String(r._id)] = r.seats;
+  return map;
+}
+
+/** Overlay the live registeredCount (+ backfill total from maxParticipants for legacy docs). */
+function withLiveCapacity(eventObj: any, registeredCount: number): any {
+  eventObj.capacity = {
+    total: eventObj.capacity?.total ?? eventObj.maxParticipants ?? 0,
+    registeredCount,
+  };
+  return eventObj;
+}
+
 export const getEventById = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const event = await Event.findById(req.params.id);
@@ -136,10 +164,13 @@ export const getEventById = async (req: Request, res: Response, next: NextFuncti
       };
     }
 
+    const seatsMap = await seatsByEvent([event._id]);
+    const eventObj = withLiveCapacity(event.toObject(), seatsMap[String(event._id)] ?? 0);
+
     res.status(200).json({
       meta: { status: 200, message: 'OK' },
       data: {
-        ...event.toObject(),
+        ...eventObj,
         viewerContext
       },
       errors: [],

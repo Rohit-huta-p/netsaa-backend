@@ -194,3 +194,28 @@ describe('GET /v1/events/:id/registrations/me', () => {
     expect(res.status).toBe(404);
   });
 });
+
+describe('GET /v1/events/:id — live capacity.registeredCount', () => {
+  it('reflects registered seats (sum of quantity), not the stored 0', async () => {
+    const event = await makeFreeEvent();
+    await request(app).post(`/v1/events/${event._id}/register`)
+      .set('Authorization', `Bearer ${token}`).set('Idempotency-Key', 'cap-1')
+      .send({ quantity: 2, attendees: [{ fullName: 'Aditi', phone: '+919876543210' }] });
+
+    const res = await request(app).get(`/v1/events/${event._id}`);
+    expect(res.status).toBe(200);
+    expect(res.body.data.capacity.registeredCount).toBe(2);
+  });
+
+  it('drops back to 0 after the registration is cancelled (slot returns)', async () => {
+    const event = await makeFreeEvent();
+    const reg = await request(app).post(`/v1/events/${event._id}/register`)
+      .set('Authorization', `Bearer ${token}`).set('Idempotency-Key', 'cap-2')
+      .send({ quantity: 2, attendees: [{ fullName: 'Aditi', phone: '+919876543210' }] });
+    await request(app).post(`/v1/registrations/${reg.body.data._id}/cancel`)
+      .set('Authorization', `Bearer ${token}`).send({ reason: 'x' });
+
+    const res = await request(app).get(`/v1/events/${event._id}`);
+    expect(res.body.data.capacity.registeredCount).toBe(0);
+  });
+});
