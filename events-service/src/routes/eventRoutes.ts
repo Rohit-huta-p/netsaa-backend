@@ -21,6 +21,7 @@ import { reserveTickets, cancelReservation } from '../controllers/eventReservati
 import { createPaymentIntent, finalizeRegistration } from '../controllers/eventRegistrationController';
 import { getEventDiscussion, addEventComment } from '../controllers/eventDiscussionController';
 import { submitPayoutAccount, getMyPayoutAccount, updatePayoutAccount } from '../controllers/payouts';
+import { cancelMyRegistration } from '../controllers/registrationCancel';
 import { protect, optionalAuth, requireOrganizer } from '../middleware/auth';
 
 const router = express.Router();
@@ -60,6 +61,9 @@ router.route('/events/:id/reserve').post(protect, reserveTickets);
 router.route('/reservations/:id/cancel').post(protect, cancelReservation);
 router.route('/events/:id/checkout').post(protect, createPaymentIntent);
 router.route('/events/:id/finalize').post(protect, finalizeRegistration);
+
+// Attendee cancel registration
+router.route('/registrations/:id/cancel').post(protect, cancelMyRegistration);
 
 // Payout account routes
 router.route('/payouts/account').post(protect, submitPayoutAccount);
