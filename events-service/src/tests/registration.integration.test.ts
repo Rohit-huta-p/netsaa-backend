@@ -5,6 +5,7 @@ import app from '../server';
 import Event from '../models/Event';
 import EventRegistration from '../models/EventRegistration';
 import EventTicket from '../models/EventTicket';
+import User from '../models/User';
 
 process.env.JWT_SECRET = 'test-secret';
 
@@ -270,5 +271,39 @@ describe('response-shape overlays (FE↔BE parity)', () => {
       .send({ quantity: 2, attendees: [{ fullName: 'Aditi', phone: '+919876543210' }] });
     const res = await request(app).get(`/v1/events/${event._id}/registrations/me`).set('Authorization', `Bearer ${token}`);
     expect(res.body.data.attendeeCount).toBe(2);
+  });
+});
+
+describe('GET /v1/events — viewerContext in list', () => {
+  it('flags hasRegistered per event for the signed-in user', async () => {
+    const event = await makeFreeEvent();
+    await request(app).post(`/v1/events/${event._id}/register`)
+      .set('Authorization', `Bearer ${token}`).set('Idempotency-Key', 'vc-1')
+      .send({ quantity: 1, attendees: [{ fullName: 'Aditi', phone: '+919876543210' }] });
+
+    const res = await request(app).get('/v1/events').set('Authorization', `Bearer ${token}`);
+    const mine = (res.body.data || []).find((e: any) => String(e._id) === String(event._id));
+    expect(mine.viewerContext.hasRegistered).toBe(true);
+    expect(mine.viewerContext.registrationStatus).toBe('registered');
+  });
+});
+
+describe('GET /v1/events/:id — organizer enrich', () => {
+  it('overlays organizerSnapshot from the organizer profile (name/avatar/verified)', async () => {
+    const organizer = await User.create({
+      displayName: 'Saswati Sen', email: `org${Date.now()}@x.com`, authProvider: 'phone',
+      role: 'organizer', profileImageUrl: 'https://cdn/x.jpg', kycStatus: 'approved',
+    } as any);
+    const event = await Event.create({
+      title: 'Org Enrich', description: 'x', eventType: 'workshop', category: 'dance',
+      organizerId: organizer._id, organizerSnapshot: { name: 'stale', organizationName: '' },
+      pricingMode: 'fixed', ticketPrice: 0,
+      schedule: { startDate: new Date(Date.now() + 7 * 86400000), endDate: new Date(Date.now() + 8 * 86400000), totalDurationMinutes: 120, dayBreakdown: [] },
+      location: { type: 'physical', city: 'Pune', state: 'MH', country: 'IN' }, maxParticipants: 10, status: 'live',
+    });
+    const res = await request(app).get(`/v1/events/${event._id}`);
+    expect(res.body.data.organizerSnapshot.name).toBe('Saswati Sen');
+    expect(res.body.data.organizerSnapshot.verified).toBe(true);
+    expect(res.body.data.organizerSnapshot.avatar).toBe('https://cdn/x.jpg');
   });
 });

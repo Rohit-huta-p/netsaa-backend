@@ -33,7 +33,7 @@ const router = express.Router();
 router.route('/organizers/me/events').get(protect, getOrganizerEvents);
 // Events are open to all (three-role model: client | creative_lead | artist).
 // Any authenticated user can host one — no organizer-role gate. `protect` only.
-router.route('/events').get(getEvents)
+router.route('/events').get(optionalAuth, getEvents)
     .post(protect, createEvent);
 router.route('/events/:id').get(optionalAuth, getEventById).patch(protect, updateEvent).delete(protect, deleteEvent);
 router.route('/events/:id/publish').post(protect, publishEvent);

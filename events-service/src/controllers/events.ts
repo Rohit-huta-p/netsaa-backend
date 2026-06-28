@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import Event from '../models/Event';
 import SavedEvent from '../models/SavedEvent';
 import EventRegistration from '../models/EventRegistration';
+import User from '../models/User';
 import { AuthRequest } from '../middleware/auth';
 import EventTicketType from '../models/EventTicketType';
 import EventReservation from '../models/EventReservation';
@@ -50,7 +51,19 @@ export const getEvents = async (req: Request, res: Response, next: NextFunction)
     const total = await Event.countDocuments(query);
 
     const seatsMap = await seatsByEvent(events.map((e) => e._id));
-    const data = events.map((e) => withLiveCapacity(e.toObject(), seatsMap[String(e._id)] ?? 0));
+    // viewerContext for the signed-in user (route uses optionalAuth) — lets list cards show "you're going".
+    const viewerId = (req as AuthRequest).user?.id || (req as AuthRequest).user?._id;
+    const regByEvent: Record<string, string> = {};
+    if (viewerId) {
+      const myRegs = await EventRegistration.find({ userId: viewerId, eventId: { $in: events.map((e) => e._id) }, status: { $ne: 'cancelled' } }).select('eventId status').lean();
+      for (const r of myRegs as any[]) regByEvent[String(r.eventId)] = r.status;
+    }
+    const data = events.map((e) => {
+      const o = withLiveCapacity(e.toObject(), seatsMap[String(e._id)] ?? 0);
+      const regStatus = regByEvent[String(e._id)];
+      o.viewerContext = { hasRegistered: !!regStatus, registrationStatus: regStatus ?? null };
+      return o;
+    });
 
     res.status(200).json({
       meta: {
@@ -175,6 +188,19 @@ export const getEventById = async (req: Request, res: Response, next: NextFuncti
 
     const seatsMap = await seatsByEvent([event._id]);
     const eventObj = withLiveCapacity(event.toObject(), seatsMap[String(event._id)] ?? 0);
+
+    // Enrich organizerSnapshot from the organizer's live profile (avatar / verified / role).
+    const organizer: any = await User.findById(event.organizerId).select('displayName profileImageUrl role kycStatus averageRating').lean();
+    if (organizer) {
+      eventObj.organizerSnapshot = {
+        ...(eventObj.organizerSnapshot || {}),
+        name: organizer.displayName || eventObj.organizerSnapshot?.name,
+        avatar: organizer.profileImageUrl,
+        verified: organizer.kycStatus === 'approved',
+        role: organizer.role,
+        rating: organizer.averageRating ?? eventObj.organizerSnapshot?.rating,
+      };
+    }
 
     res.status(200).json({
       meta: { status: 200, message: 'OK' },
