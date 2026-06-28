@@ -17,6 +17,7 @@ import {
     getUserRegistrations,
     updateRegistrationStatus,
     getMyRegistration,
+    getEventRoster,
 } from '../controllers/registrations';
 import { reserveTickets, cancelReservation } from '../controllers/eventReservationController';
 import { createPaymentIntent, finalizeRegistration } from '../controllers/eventRegistrationController';
@@ -55,6 +56,7 @@ router.route('/events/:id/check-in').post(protect, checkInByCode);
 router.route('/events/:id/register').post(protect, registerForEvent);
 router.route('/events/:id/registrations/me').get(protect, getMyRegistration);
 router.route('/events/:id/registrations').get(protect, getEventRegistrations);
+router.route('/events/:id/roster').get(protect, getEventRoster);
 router.route('/registrations/:registrationId/status').patch(protect, updateRegistrationStatus);
 router.route('/users/me/event-registrations').get(protect, getUserRegistrations);
 router.route('/users/me/saved-events').get(protect, getSavedEvents);

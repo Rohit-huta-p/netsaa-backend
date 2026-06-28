@@ -79,7 +79,8 @@ export const getEvents = async (req: Request, res: Response, next: NextFunction)
 // @access  Private (Organizer)
 export const getOrganizerEvents = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { organizerId } = req.query; // In real auth, this comes from req.user._id
+    // "me" endpoint → derive from the authenticated user; keep query as a fallback for legacy callers.
+    const organizerId = (req as AuthRequest).user?.id || (req as AuthRequest).user?._id || req.query.organizerId;
 
     if (!organizerId) {
       return res.status(400).json({

@@ -219,3 +219,38 @@ describe('GET /v1/events/:id — live capacity.registeredCount', () => {
     expect(res.body.data.capacity.registeredCount).toBe(0);
   });
 });
+
+describe('GET /v1/events/:id/roster (organizer attendee list)', () => {
+  it('lists non-cancelled attendees with names; excludes cancelled', async () => {
+    const event = await makeFreeEvent();
+    const reg = await request(app).post(`/v1/events/${event._id}/register`)
+      .set('Authorization', `Bearer ${token}`).set('Idempotency-Key', 'ros-1')
+      .send({ quantity: 1, attendees: [{ fullName: 'Aditi Rao', phone: '+919876543210' }] });
+
+    let res = await request(app).get(`/v1/events/${event._id}/roster`).set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    expect(res.body.data.total).toBe(1);
+    expect(res.body.data.rows[0].name).toBe('Aditi Rao');
+
+    await request(app).post(`/v1/registrations/${reg.body.data._id}/cancel`)
+      .set('Authorization', `Bearer ${token}`).send({ reason: 'x' });
+    res = await request(app).get(`/v1/events/${event._id}/roster`).set('Authorization', `Bearer ${token}`);
+    expect(res.body.data.total).toBe(0);
+  });
+});
+
+describe('GET /v1/organizers/me/events (derives organizer from auth)', () => {
+  it('returns the caller\'s events without a query param', async () => {
+    await Event.create({
+      title: 'My Hosted Event', description: 'x', eventType: 'workshop', category: 'dance',
+      organizerId: userId, organizerSnapshot: { name: 'Me', organizationName: '' },
+      pricingMode: 'fixed', ticketPrice: 0,
+      schedule: { startDate: new Date(Date.now() + 7 * 86400000), endDate: new Date(Date.now() + 8 * 86400000), totalDurationMinutes: 120, dayBreakdown: [] },
+      location: { type: 'physical', city: 'Pune', state: 'MH', country: 'IN' }, maxParticipants: 10, status: 'live',
+    });
+    const res = await request(app).get('/v1/organizers/me/events').set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    expect(res.body.data.length).toBe(1);
+    expect(res.body.data[0].title).toBe('My Hosted Event');
+  });
+});

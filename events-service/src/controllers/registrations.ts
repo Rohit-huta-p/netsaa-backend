@@ -279,3 +279,27 @@ export const updateRegistrationStatus = async (req: AuthRequest, res: Response, 
         });
     }
 };
+
+// @desc    Organizer roster — non-cancelled attendees for an event (name + status)
+// @route   GET /v1/events/:id/roster
+// @access  Private
+export const getEventRoster = async (req: Request, res: Response) => {
+    try {
+        const regs = await EventRegistration.find({ eventId: req.params.id, status: { $ne: 'cancelled' } })
+            .populate('userId', 'displayName')
+            .sort({ registeredAt: -1 })
+            .lean();
+        const rows = regs.map((r: any) => ({
+            _id: String(r._id),
+            userId: String(r.userId?._id || r.userId || ''),
+            name: r.attendees?.[0]?.fullName || r.userId?.displayName || 'Guest',
+            city: r.attendees?.[0]?.city,
+            registeredAt: r.registeredAt,
+            status: r.status,
+            visibility: r.visibility,
+        }));
+        return res.status(200).json({ meta: { status: 200, message: 'OK' }, data: { rows, total: rows.length }, errors: [] });
+    } catch (err) {
+        return res.status(500).json({ meta: { status: 500, message: 'Server Error' }, data: null, errors: [{ message: (err as Error).message }] });
+    }
+};
