@@ -5,6 +5,7 @@ import Event from '../models/Event';
 import { AuthRequest } from '../middleware/auth';
 import { findOrCreateRegistration } from '../utils/idempotency';
 import { generateTicketCode, generateBackupCode } from '../utils/ticketCode';
+import { slotsLeftForEvent } from '../services/waitlistService';
 
 // @desc    Register for an event (free RSVP path; paid path is Sprint 2)
 // @route   POST /v1/events/:id/register
@@ -36,14 +37,20 @@ export const registerForEvent = async (req: Request, res: Response, next: NextFu
         const { quantity = 1, attendees = [] } = req.body;
 
         // Idempotent per user: the unique (eventId, userId) index allows only ONE registration
-        // per event. If the user already has one, a re-submit must NOT 11000→400. Return the
-        // existing one (active) or reactivate it (if they'd cancelled) — re-RSVP is a no-op/rejoin,
-        // not an error. (Was surfacing as "Couldn't register. Event may be full.")
+        // per event. A non-cancelled prior is a no-op (return it). A cancelled prior, or no prior,
+        // ADDS a seat → enforce capacity first (full → 409, the client routes to the waitlist).
         const prior = await EventRegistration.findOne({ eventId: event._id, userId });
+        if (prior && prior.status !== 'cancelled') {
+            return res.status(200).json({ meta: { status: 200, message: 'Already registered' }, data: prior, errors: [] });
+        }
+
+        const slotsLeft = await slotsLeftForEvent(event._id);
+        if (slotsLeft < quantity) {
+            return res.status(409).json({ meta: { status: 409, message: 'Event is full' }, data: { full: true, waitlistAvailable: !!event.allowWaitlist }, errors: [{ message: 'No seats left' }] });
+        }
+
         if (prior) {
-            if (prior.status !== 'cancelled') {
-                return res.status(200).json({ meta: { status: 200, message: 'Already registered' }, data: prior, errors: [] });
-            }
+            // cancelled → reactivate (re-RSVP after leaving)
             prior.status = 'registered';
             prior.cancelledAt = undefined;
             prior.cancelledBy = undefined;

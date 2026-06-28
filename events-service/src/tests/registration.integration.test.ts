@@ -6,6 +6,7 @@ import Event from '../models/Event';
 import EventRegistration from '../models/EventRegistration';
 import EventTicket from '../models/EventTicket';
 import User from '../models/User';
+import WaitlistEntry from '../models/WaitlistEntry';
 
 process.env.JWT_SECRET = 'test-secret';
 
@@ -305,5 +306,41 @@ describe('GET /v1/events/:id — organizer enrich', () => {
     expect(res.body.data.organizerSnapshot.name).toBe('Saswati Sen');
     expect(res.body.data.organizerSnapshot.verified).toBe(true);
     expect(res.body.data.organizerSnapshot.avatar).toBe('https://cdn/x.jpg');
+  });
+});
+
+describe('POST /v1/events/:id/register — capacity enforcement', () => {
+  it('409s with waitlistAvailable when the event is full', async () => {
+    const event = await Event.create({
+      title: 'Tiny', description: 'x', eventType: 'workshop', category: 'dance',
+      organizerId: new mongoose.Types.ObjectId(), organizerSnapshot: { name: 'S', organizationName: '' },
+      pricingMode: 'fixed', ticketPrice: 0,
+      schedule: { startDate: new Date(Date.now() + 7 * 86400000), endDate: new Date(Date.now() + 8 * 86400000), totalDurationMinutes: 120, dayBreakdown: [] },
+      location: { type: 'physical', city: 'Pune', state: 'MH', country: 'IN' }, maxParticipants: 1, status: 'live', allowWaitlist: true,
+    });
+    const a = jwt.sign({ id: new mongoose.Types.ObjectId().toString(), role: 'artist' }, process.env.JWT_SECRET!);
+    const b = jwt.sign({ id: new mongoose.Types.ObjectId().toString(), role: 'artist' }, process.env.JWT_SECRET!);
+    const r1 = await request(app).post(`/v1/events/${event._id}/register`)
+      .set('Authorization', `Bearer ${a}`).set('Idempotency-Key', 'cap-a')
+      .send({ quantity: 1, attendees: [{ fullName: 'A', phone: '+910000000000' }] });
+    expect(r1.status).toBe(201);
+
+    const r2 = await request(app).post(`/v1/events/${event._id}/register`)
+      .set('Authorization', `Bearer ${b}`).set('Idempotency-Key', 'cap-b')
+      .send({ quantity: 1, attendees: [{ fullName: 'B', phone: '+910000000001' }] });
+    expect(r2.status).toBe(409);
+    expect(r2.body.data.waitlistAvailable).toBe(true);
+  });
+});
+
+describe('GET /v1/events/:id — waitlistCount overlay', () => {
+  it('counts waiting entries (for the manage Waitlist tile)', async () => {
+    const event = await makeFreeEvent();
+    await WaitlistEntry.create({
+      eventId: event._id, userId: new mongoose.Types.ObjectId(), position: 1, quantity: 1,
+      status: 'waiting', attendeeSnapshot: { fullName: 'W', phone: '+910000000002' },
+    });
+    const res = await request(app).get(`/v1/events/${event._id}`);
+    expect(res.body.data.waitlistCount).toBe(1);
   });
 });

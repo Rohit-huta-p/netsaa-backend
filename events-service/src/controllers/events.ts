@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import Event from '../models/Event';
 import SavedEvent from '../models/SavedEvent';
 import EventRegistration from '../models/EventRegistration';
+import WaitlistEntry from '../models/WaitlistEntry';
 import User from '../models/User';
 import { AuthRequest } from '../middleware/auth';
 import EventTicketType from '../models/EventTicketType';
@@ -201,6 +202,9 @@ export const getEventById = async (req: Request, res: Response, next: NextFuncti
         rating: organizer.averageRating ?? eventObj.organizerSnapshot?.rating,
       };
     }
+
+    // Waitlist count (waiting entries) — powers the O4 manage Waitlist tile.
+    eventObj.waitlistCount = await WaitlistEntry.countDocuments({ eventId: event._id, status: 'waiting' });
 
     res.status(200).json({
       meta: { status: 200, message: 'OK' },

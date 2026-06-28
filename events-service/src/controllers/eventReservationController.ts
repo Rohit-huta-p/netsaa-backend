@@ -5,6 +5,7 @@ import EventReservation from '../models/EventReservation';
 import UserPayoutAccount from '../models/UserPayoutAccount';
 import { createOrderWithTransfer } from '../services/razorpay';
 import { computeFeesPaise } from '../utils/eventFees';
+import { slotsLeftForEvent } from '../services/waitlistService';
 
 const RESERVATION_TTL_MS = 10 * 60 * 1000;
 
@@ -27,6 +28,13 @@ export const reserveTickets = async (req: AuthRequest, res: Response) => {
     if (event.registrationDeadline && Date.now() > new Date(event.registrationDeadline).getTime()) return res.status(409).json({ meta: { status: 409, message: 'Registration closed' }, data: null, errors: [] });
 
     const quantity = Math.max(1, Math.min(event.maxGuestsPerRegistration || 5, req.body.quantity || 1));
+
+    // Capacity gate (counts active registrations; held reservations are a Sprint 8 hardening note).
+    const slotsLeft = await slotsLeftForEvent(event._id);
+    if (slotsLeft < quantity) {
+      return res.status(409).json({ meta: { status: 409, message: 'Event is full' }, data: { full: true, waitlistAvailable: !!event.allowWaitlist }, errors: [] });
+    }
+
     const fees = computeFeesPaise(event.ticketPrice * 100, quantity);
 
     // Organizer must be verified to receive Route transfers
