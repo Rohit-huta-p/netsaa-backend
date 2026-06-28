@@ -103,3 +103,40 @@ describe('GET /v1/registrations/:id/ticket', () => {
     expect(res.status).toBe(403);
   });
 });
+
+describe('POST /v1/events/:id/check-in', () => {
+  it('marks the ticket checked_in and registration attended', async () => {
+    const event = await makeFreeEvent();
+    const reg = await request(app).post(`/v1/events/${event._id}/register`)
+      .set('Authorization', `Bearer ${token}`).set('Idempotency-Key', 'idem-ci')
+      .send({ quantity: 1, attendees: [{ fullName: 'Aditi', phone: '+919876543210' }] });
+
+    const ticket = await request(app).get(`/v1/registrations/${reg.body.data._id}/ticket`)
+      .set('Authorization', `Bearer ${token}`);
+
+    const res = await request(app)
+      .post(`/v1/events/${event._id}/check-in`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ code: ticket.body.data.ticketCode, method: 'qr' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.status).toBe('checked_in');
+  });
+
+  it('rejects a second check-in of the same ticket', async () => {
+    const event = await makeFreeEvent();
+    const reg = await request(app).post(`/v1/events/${event._id}/register`)
+      .set('Authorization', `Bearer ${token}`).set('Idempotency-Key', 'idem-ci2')
+      .send({ quantity: 1, attendees: [{ fullName: 'Aditi', phone: '+919876543210' }] });
+    const ticket = await request(app).get(`/v1/registrations/${reg.body.data._id}/ticket`)
+      .set('Authorization', `Bearer ${token}`);
+
+    await request(app).post(`/v1/events/${event._id}/check-in`).set('Authorization', `Bearer ${token}`)
+      .send({ code: ticket.body.data.ticketCode, method: 'qr' });
+    const second = await request(app).post(`/v1/events/${event._id}/check-in`).set('Authorization', `Bearer ${token}`)
+      .send({ code: ticket.body.data.ticketCode, method: 'qr' });
+
+    expect(second.status).toBe(409);
+    expect(second.body.meta.message).toMatch(/already/i);
+  });
+});

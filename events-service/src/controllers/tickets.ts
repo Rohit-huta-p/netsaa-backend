@@ -150,6 +150,47 @@ export const getTicketTypesByEvent = async (req: Request, res: Response, next: N
     }
 };
 
+// @desc    Check in an attendee by ticket code or 6-digit backup code
+// @route   POST /v1/events/:id/check-in
+// @access  Private (organizer-side; auth checked at route)
+export const checkInByCode = async (req: AuthRequest, res: Response) => {
+    try {
+        const { code, method = 'qr' } = req.body;
+        if (!code) {
+            return res.status(400).json({ meta: { status: 400, message: 'Code required' }, data: null, errors: [] });
+        }
+
+        // Escape regex metacharacters in user-supplied code before interpolating
+        const escapedCode = String(code).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+        // qrCode is stored as 'TICKETCODE|BACKUPCODE' — match either part
+        const ticket = await EventTicket.findOne({
+            eventId: req.params.id,
+            qrCode: { $regex: new RegExp(`(^|\\|)${escapedCode}(\\||$)`) },
+        });
+        if (!ticket) {
+            return res.status(404).json({ meta: { status: 404, message: 'Ticket not found for this event' }, data: null, errors: [] });
+        }
+        if (ticket.status === 'checked_in') {
+            return res.status(409).json({ meta: { status: 409, message: `Already checked in at ${ticket.checkedInAt?.toISOString()}` }, data: null, errors: [] });
+        }
+
+        ticket.status = 'checked_in';
+        ticket.checkedInAt = new Date();
+        await ticket.save();
+
+        await EventRegistration.findByIdAndUpdate(ticket.registrationId, { status: 'attended' });
+
+        return res.status(200).json({
+            meta: { status: 200, message: 'Checked in' },
+            data: { ticketId: ticket.ticketId, attendeeName: ticket.attendeeName, status: 'checked_in', method, checkedInAt: ticket.checkedInAt },
+            errors: [],
+        });
+    } catch (err) {
+        return res.status(500).json({ meta: { status: 500, message: 'Server Error' }, data: null, errors: [{ message: (err as Error).message }] });
+    }
+};
+
 // @desc    Get the ticket bundle (QR + codes) for a registration
 // @route   GET /v1/registrations/:id/ticket
 // @access  Private (owner only)
