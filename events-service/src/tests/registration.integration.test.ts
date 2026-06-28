@@ -174,3 +174,23 @@ describe('POST /v1/events/:id/register — idempotent per user (re-RSVP)', () =>
     expect(await EventRegistration.countDocuments({ eventId: event._id })).toBe(1);
   });
 });
+
+describe('GET /v1/events/:id/registrations/me', () => {
+  it('returns the user\'s active registration after they register', async () => {
+    const event = await makeFreeEvent();
+    const reg = await request(app).post(`/v1/events/${event._id}/register`)
+      .set('Authorization', `Bearer ${token}`).set('Idempotency-Key', 'me-1')
+      .send({ quantity: 1, attendees: [{ fullName: 'Aditi', phone: '+919876543210' }] });
+    const res = await request(app).get(`/v1/events/${event._id}/registrations/me`)
+      .set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    expect(String(res.body.data._id)).toBe(String(reg.body.data._id));
+    expect(res.body.data.ticketCode).toBeTruthy();
+  });
+  it('404s when the user is not registered', async () => {
+    const event = await makeFreeEvent();
+    const res = await request(app).get(`/v1/events/${event._id}/registrations/me`)
+      .set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(404);
+  });
+});

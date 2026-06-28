@@ -203,6 +203,33 @@ export const getUserRegistrations = async (req: Request, res: Response, next: Ne
     }
 };
 
+// @desc Current user's active registration for an event (probe for CTA/receipt/ticket)
+// @route GET /v1/events/:id/registrations/me
+// @access Private
+export const getMyRegistration = async (req: Request, res: Response) => {
+    try {
+        const user = (req as AuthRequest).user;
+        const userId = user?.id || user?._id;
+        const registration = await EventRegistration.findOne({
+            eventId: req.params.id,
+            userId,
+            status: { $ne: 'cancelled' },
+        }).lean();
+        if (!registration) {
+            return res.status(404).json({ meta: { status: 404, message: 'Not registered' }, data: null, errors: [] });
+        }
+        const ticket = await EventTicket.findOne({ registrationId: registration._id }).select('qrCode status').lean();
+        const [ticketCode, backupCode] = ((ticket as any)?.qrCode || '|').split('|');
+        return res.status(200).json({
+            meta: { status: 200, message: 'OK' },
+            data: { ...registration, ticketCode, backupCode },
+            errors: [],
+        });
+    } catch (err) {
+        return res.status(500).json({ meta: { status: 500, message: 'Server Error' }, data: null, errors: [{ message: (err as Error).message }] });
+    }
+};
+
 // @desc    Update registration status (Approve/Reject)
 // @route   PATCH /api/grow/registrations/:registrationId/status
 // @access  Private (Organizer)
