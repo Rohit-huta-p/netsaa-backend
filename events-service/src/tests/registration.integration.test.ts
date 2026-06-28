@@ -140,3 +140,37 @@ describe('POST /v1/events/:id/check-in', () => {
     expect(second.body.meta.message).toMatch(/already/i);
   });
 });
+
+describe('POST /v1/events/:id/register — idempotent per user (re-RSVP)', () => {
+  it('returns the existing registration (200, not 400) when re-submitting with a new key', async () => {
+    const event = await makeFreeEvent();
+    const first = await request(app).post(`/v1/events/${event._id}/register`)
+      .set('Authorization', `Bearer ${token}`).set('Idempotency-Key', 'rsvp-k1')
+      .send({ quantity: 1, attendees: [{ fullName: 'Aditi', phone: '+919876543210' }] });
+    expect(first.status).toBe(201);
+
+    const again = await request(app).post(`/v1/events/${event._id}/register`)
+      .set('Authorization', `Bearer ${token}`).set('Idempotency-Key', 'rsvp-k2-different')
+      .send({ quantity: 1, attendees: [{ fullName: 'Aditi', phone: '+919876543210' }] });
+
+    expect(again.status).toBe(200);
+    expect(String(again.body.data._id)).toBe(String(first.body.data._id));
+    expect(await EventRegistration.countDocuments({ eventId: event._id })).toBe(1);
+  });
+
+  it('reactivates a cancelled registration on re-RSVP (status back to registered, no 400)', async () => {
+    const event = await makeFreeEvent();
+    const first = await request(app).post(`/v1/events/${event._id}/register`)
+      .set('Authorization', `Bearer ${token}`).set('Idempotency-Key', 'rsvp-c1')
+      .send({ quantity: 1, attendees: [{ fullName: 'Aditi', phone: '+919876543210' }] });
+    await EventRegistration.findByIdAndUpdate(first.body.data._id, { status: 'cancelled' });
+
+    const rejoin = await request(app).post(`/v1/events/${event._id}/register`)
+      .set('Authorization', `Bearer ${token}`).set('Idempotency-Key', 'rsvp-c2')
+      .send({ quantity: 1, attendees: [{ fullName: 'Aditi', phone: '+919876543210' }] });
+
+    expect(rejoin.status).toBe(200);
+    expect(rejoin.body.data.status).toBe('registered');
+    expect(await EventRegistration.countDocuments({ eventId: event._id })).toBe(1);
+  });
+});

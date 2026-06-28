@@ -35,6 +35,37 @@ export const registerForEvent = async (req: Request, res: Response, next: NextFu
 
         const { quantity = 1, attendees = [] } = req.body;
 
+        // Idempotent per user: the unique (eventId, userId) index allows only ONE registration
+        // per event. If the user already has one, a re-submit must NOT 11000→400. Return the
+        // existing one (active) or reactivate it (if they'd cancelled) — re-RSVP is a no-op/rejoin,
+        // not an error. (Was surfacing as "Couldn't register. Event may be full.")
+        const prior = await EventRegistration.findOne({ eventId: event._id, userId });
+        if (prior) {
+            if (prior.status !== 'cancelled') {
+                return res.status(200).json({ meta: { status: 200, message: 'Already registered' }, data: prior, errors: [] });
+            }
+            prior.status = 'registered';
+            prior.cancelledAt = undefined;
+            prior.cancelledBy = undefined;
+            prior.cancellationReason = undefined;
+            if (quantity) prior.quantity = quantity;
+            await prior.save();
+            const existingTickets = await EventTicket.countDocuments({ registrationId: prior._id });
+            if (existingTickets === 0) {
+                const reissued = Array.from({ length: prior.quantity || 1 }).map((_, i) => ({
+                    ticketId: `${prior._id}-${i}`,
+                    eventId: event._id,
+                    registrationId: prior._id,
+                    userId,
+                    attendeeName: attendees[i]?.fullName || attendees[0]?.fullName || 'Guest',
+                    qrCode: `${generateTicketCode(event.title)}|${generateBackupCode()}`,
+                    status: 'issued',
+                }));
+                await EventTicket.insertMany(reissued);
+            }
+            return res.status(200).json({ meta: { status: 200, message: 'Re-registered' }, data: prior, errors: [] });
+        }
+
         const { registration, created } = await findOrCreateRegistration(idempotencyKey, {
             eventId: event._id,
             userId,
