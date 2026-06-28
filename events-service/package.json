@@ -23,6 +23,7 @@
     "mongoose": "^7.0.3",
     "node-cron": "^4.2.1",
     "qrcode": "^1.5.4",
+    "razorpay": "^2.9.6",
     "uuid": "^13.0.0"
   },
   "devDependencies": {
