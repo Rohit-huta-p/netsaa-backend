@@ -1,175 +1,58 @@
 import { Request, Response } from 'express';
-import mongoose from 'mongoose';
-import EventReservation from '../models/EventReservation';
-import EventTicketType from '../models/EventTicketType';
-import EventRegistration from '../models/EventRegistration';
+import { AuthRequest } from '../middleware/auth';
 import Event from '../models/Event';
+import EventReservation from '../models/EventReservation';
+import UserPayoutAccount from '../models/UserPayoutAccount';
+import { createOrderWithTransfer } from '../services/razorpay';
+import { computeFeesPaise } from '../utils/eventFees';
 
-// Configuration
-const RESERVATION_TTL_MINUTES = 10;
+const RESERVATION_TTL_MS = 10 * 60 * 1000;
 
-/**
- * Reserve tickets for an event.
- * Checks availability by counting:
- * 1. Confirmed registrations
- * 2. Active reservations (status='reserved' AND expiresAt > now)
- */
-// @desc    Reserve tickets for an event
-// @route   POST /api/grow/events/:id/reserve
+// @desc    Reserve tickets for an event (Razorpay order + Route transfer)
+// @route   POST /v1/events/:id/reserve
 // @access  Private
-export const reserveTickets = async (req: Request, res: Response) => {
-    const session = await mongoose.startSession();
-    session.startTransaction();
+export const reserveTickets = async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.id || req.user?._id;
+    const idempotencyKey = (req.header('Idempotency-Key') || '').trim();
+    if (!idempotencyKey) return res.status(400).json({ meta: { status: 400, message: 'Idempotency-Key header required' }, data: null, errors: [] });
 
-    try {
-        const { id: eventId } = req.params;
-        const { ticketTypeId, quantity } = req.body;
-        const userId = (req as any).user.id;
-
-        if (!quantity || quantity <= 0) {
-            throw new Error('Invalid quantity');
-        }
-
-        const now = new Date();
-        let price = 0;
-        let limit = 0;
-
-        // Fetch Event first to check basic status
-        const event = await Event.findById(eventId).session(session);
-        if (!event) {
-            throw new Error('Event not found');
-        }
-
-        // Logic Branch: Ticket Type vs. Event Level
-        // If ticketTypeId is provided, use Ticketed Flow; otherwise Fixed Price Flow.
-
-        if (ticketTypeId) {
-            // --- TICKETED FLOW ---
-
-            // 1. Fetch Ticket Type
-            const ticketType = await EventTicketType.findOne({ _id: ticketTypeId, eventId }).session(session);
-            if (!ticketType) {
-                throw new Error('Ticket type not found');
-            }
-
-            // 2. Validate Sales Window
-            if (now < ticketType.salesStartAt || now > ticketType.salesEndAt) {
-                throw new Error('Ticket sales are not active (within sales window)');
-            }
-
-            price = ticketType.price;
-            limit = ticketType.capacity;
-
-            // 3. Count Confirmed Registrations for this Ticket Type
-            const confirmedCount = await EventRegistration.countDocuments({
-                ticketTypeId,
-                status: 'registered'
-            }).session(session);
-
-            // 4. Count Active Reservations for this Ticket Type
-            // Active = status 'reserved' AND expiration time > now
-            const activeReservations = await EventReservation.aggregate([
-                {
-                    $match: {
-                        ticketTypeId: new mongoose.Types.ObjectId(ticketTypeId),
-                        status: 'reserved',
-                        expiresAt: { $gt: now }
-                    }
-                },
-                {
-                    $group: {
-                        _id: null,
-                        totalReserved: { $sum: '$quantity' }
-                    }
-                }
-            ]).session(session);
-
-            const reservedCount = activeReservations[0]?.totalReserved || 0;
-
-            if (confirmedCount + reservedCount + quantity > limit) {
-                throw new Error(`Not enough tickets available. Remaining: ${Math.max(0, limit - (confirmedCount + reservedCount))}`);
-            }
-
-        } else {
-            // --- FIXED PRICE FLOW ---
-
-            // 1. Validate Event Status
-            if (event.status !== 'live') {
-                throw new Error('Event is not published for registration.');
-            }
-
-            // 2. Check Registration Deadline (if exists)
-            if (event.registrationDeadline && now > event.registrationDeadline) {
-                throw new Error('Registration deadline has passed');
-            }
-
-            // 3. Use Event Price & Capacity
-            price = event.ticketPrice;
-            limit = event.maxParticipants;
-
-            // 4. Count ALL Confirmed Registrations for this Event
-            const confirmedCount = await EventRegistration.countDocuments({
-                eventId,
-                status: 'registered'
-            }).session(session);
-
-            // 5. Count ALL Active Reservations for this Event
-            const activeReservations = await EventReservation.aggregate([
-                {
-                    $match: {
-                        eventId: new mongoose.Types.ObjectId(eventId),
-                        status: 'reserved',
-                        expiresAt: { $gt: now }
-                    }
-                },
-                {
-                    $group: {
-                        _id: null,
-                        totalReserved: { $sum: '$quantity' }
-                    }
-                }
-            ]).session(session);
-
-            const reservedCount = activeReservations[0]?.totalReserved || 0;
-
-            if (confirmedCount + reservedCount + quantity > limit) {
-                throw new Error('Event is fully booked');
-            }
-        }
-
-        // 6. Create Reservation
-        // Set Expiry: 10 minutes from now
-        const expiresAt = new Date(now.getTime() + RESERVATION_TTL_MINUTES * 60000);
-        const totalAmount = price * quantity;
-
-        const [reservation] = await EventReservation.create(
-            [
-                {
-                    eventId,
-                    ticketTypeId: ticketTypeId || undefined, // undefined if fixed price
-                    userId,
-                    quantity,
-                    totalAmount,
-                    status: 'reserved',
-                    expiresAt,
-                },
-            ],
-            { session }
-        );
-
-        await session.commitTransaction();
-
-        res.status(201).json({
-            success: true,
-            data: reservation,
-            message: 'Tickets reserved successfully',
-        });
-    } catch (error: any) {
-        await session.abortTransaction();
-        res.status(400).json({ success: false, message: error.message });
-    } finally {
-        session.endSession();
+    const existing = await EventReservation.findOne({ idempotencyKey });
+    if (existing) {
+      return res.status(201).json({ meta: { status: 201, message: 'Reservation (replay)' }, data: { reservationId: existing._id, razorpayOrderId: existing.razorpayOrderId, amountPaise: Math.round(existing.totalAmount * 100) }, errors: [] });
     }
+
+    const event = await Event.findById(req.params.id);
+    if (!event || event.status !== 'live') return res.status(409).json({ meta: { status: 409, message: 'Event not open' }, data: null, errors: [] });
+    if (event.registrationDeadline && Date.now() > new Date(event.registrationDeadline).getTime()) return res.status(409).json({ meta: { status: 409, message: 'Registration closed' }, data: null, errors: [] });
+
+    const quantity = Math.max(1, Math.min(event.maxGuestsPerRegistration || 5, req.body.quantity || 1));
+    const fees = computeFeesPaise(event.ticketPrice * 100, quantity);
+
+    // Organizer must be verified to receive Route transfers
+    const payout = await UserPayoutAccount.findOne({ userId: event.organizerId, status: 'verified' });
+    if (!payout?.linkedAccountId) return res.status(409).json({ meta: { status: 409, message: 'Organizer payout not set up' }, data: null, errors: [] });
+
+    const { orderId } = await createOrderWithTransfer({
+      amountPaise: fees.customerPaysPaise,
+      receipt: `evt_${event._id}_${idempotencyKey}`,
+      linkedAccountId: payout.linkedAccountId,
+      organizerNetPaise: fees.organizerNetPaise,
+    });
+
+    const reservation = await EventReservation.create({
+      eventId: event._id, userId, quantity,
+      totalAmount: fees.customerPaysPaise / 100,
+      status: 'reserved',
+      expiresAt: new Date(Date.now() + RESERVATION_TTL_MS),
+      razorpayOrderId: orderId,
+      idempotencyKey,
+    });
+
+    return res.status(201).json({ meta: { status: 201, message: 'Reserved' }, data: { reservationId: reservation._id, razorpayOrderId: orderId, amountPaise: fees.customerPaysPaise }, errors: [] });
+  } catch (err) {
+    return res.status(400).json({ meta: { status: 400, message: 'Reservation failed' }, data: null, errors: [{ message: (err as Error).message }] });
+  }
 };
 
 /**
