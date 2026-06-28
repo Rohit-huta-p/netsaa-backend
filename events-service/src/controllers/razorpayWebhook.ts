@@ -3,6 +3,7 @@ import EventReservation from '../models/EventReservation';
 import EventRegistration from '../models/EventRegistration';
 import EventTicket from '../models/EventTicket';
 import Event from '../models/Event';
+import Refund from '../models/Refund';
 import { verifyWebhookSignature } from '../services/razorpay';
 import { computeFeesPaise } from '../utils/eventFees';
 import { generateTicketCode, generateBackupCode } from '../utils/ticketCode';
@@ -67,10 +68,24 @@ export const handleWebhook = async (req: Request, res: Response) => {
         return res.status(200).json({ meta: { status: 200, message: 'Acknowledged — hold kept for retry' }, data: null, errors: [] });
       }
 
-      case 'refund.processed':
-      case 'refund.failed':
+      case 'refund.processed': {
+        const refundEntity = evt.payload.refund.entity;
+        await Refund.findOneAndUpdate(
+          { razorpayRefundId: refundEntity.id },
+          { status: 'processed', processedAt: new Date() },
+        );
+        return res.status(200).json({ meta: { status: 200, message: 'Refund processed' }, data: null, errors: [] });
+      }
+      case 'refund.failed': {
+        const refundEntity = evt.payload.refund.entity;
+        await Refund.findOneAndUpdate(
+          { razorpayRefundId: refundEntity.id },
+          { status: 'failed', failedAt: new Date(), $inc: { retryCount: 1 } },
+        );
+        return res.status(200).json({ meta: { status: 200, message: 'Refund failed — will retry' }, data: null, errors: [] });
+      }
       case 'order.paid':
-        // Handled in Sprint 3 (refunds). Acknowledge so Razorpay stops retrying.
+        // Acknowledge so Razorpay stops retrying.
         return res.status(200).json({ meta: { status: 200, message: 'Acknowledged' }, data: null, errors: [] });
 
       default:
