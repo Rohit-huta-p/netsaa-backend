@@ -3,6 +3,7 @@ import Event from '../models/Event';
 import SavedEvent from '../models/SavedEvent';
 import EventRegistration from '../models/EventRegistration';
 import WaitlistEntry from '../models/WaitlistEntry';
+import EventComment from '../models/EventComment';
 import User from '../models/User';
 import { AuthRequest } from '../middleware/auth';
 import EventTicketType from '../models/EventTicketType';
@@ -207,6 +208,9 @@ export const getEventById = async (req: Request, res: Response, next: NextFuncti
 
     // Waitlist count (waiting entries) — powers the O4 manage Waitlist tile.
     eventObj.waitlistCount = await WaitlistEntry.countDocuments({ eventId: event._id, status: 'waiting' });
+
+    // Discussion comment count — powers the O4 manage Discussion tile.
+    eventObj.discussionCount = await EventComment.countDocuments({ topicId: String(event._id), collectionType: 'event' });
 
     // ── Meeting-link reveal gate (D7) ──────────────────────────────────────────
     // Determine whether this viewer's registration qualifies them to see the link.

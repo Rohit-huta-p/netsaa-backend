@@ -7,6 +7,7 @@ import EventRegistration from '../models/EventRegistration';
 import EventTicket from '../models/EventTicket';
 import User from '../models/User';
 import WaitlistEntry from '../models/WaitlistEntry';
+import EventComment from '../models/EventComment';
 
 process.env.JWT_SECRET = 'test-secret';
 
@@ -342,5 +343,17 @@ describe('GET /v1/events/:id — waitlistCount overlay', () => {
     });
     const res = await request(app).get(`/v1/events/${event._id}`);
     expect(res.body.data.waitlistCount).toBe(1);
+  });
+});
+
+describe('GET /v1/events/:id — discussionCount overlay', () => {
+  it('counts event comments (for the manage Discussion tile)', async () => {
+    const event = await makeFreeEvent();
+    await EventComment.create({
+      collectionType: 'event', topicId: String(event._id),
+      text: 'Looking forward to this!', authorId: new mongoose.Types.ObjectId().toString(), authorName: 'Asha',
+    });
+    const res = await request(app).get(`/v1/events/${event._id}`);
+    expect(res.body.data.discussionCount).toBe(1);
   });
 });
