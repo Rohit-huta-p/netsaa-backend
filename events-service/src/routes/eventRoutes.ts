@@ -26,6 +26,7 @@ import { submitPayoutAccount, getMyPayoutAccount, updatePayoutAccount } from '..
 import { cancelMyRegistration } from '../controllers/registrationCancel';
 import { cancelEvent } from '../controllers/eventCancel';
 import { joinWaitlist, leaveWaitlist, promoteWaitlist, confirmPromotion, getMyWaitlistEntry } from '../controllers/waitlist';
+import { getPreferences, updatePreferences } from '../controllers/notifications';
 import { protect, optionalAuth, requireOrganizer } from '../middleware/auth';
 
 const router = express.Router();
@@ -89,5 +90,8 @@ router.route('/payouts/account/me').get(protect, getMyPayoutAccount).patch(prote
 router.route('/events/:eventId/discussion')
     .get(protect, getEventDiscussion)
     .post(protect, addEventComment);
+
+// Notification preference routes
+router.route('/users/me/notifications/preferences').get(protect, getPreferences).patch(protect, updatePreferences);
 
 export default router;
