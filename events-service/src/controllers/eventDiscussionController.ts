@@ -5,6 +5,7 @@ import Redis from 'ioredis';
 import Event from '../models/Event';
 import EventComment from '../models/EventComment';
 import User from '../models/User';
+import EventRegistration from '../models/EventRegistration';
 
 // Setup Redis Emitter
 const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
@@ -27,6 +28,14 @@ export const getEventDiscussion = async (req: Request, res: Response) => {
         // Only allow discussion for published events
         if (event.status !== 'live') {
             return res.status(403).json({ success: false, message: 'Discussion only available for published events' });
+        }
+
+        if (event.discussionVisibility === 'attendees_only') {
+          const userId = (req as any).user?.id || (req as any).user?._id;
+          const isRegistered = await EventRegistration.exists({ eventId: event._id, userId, status: { $in: ['registered', 'attended'] } });
+          if (!isRegistered) {
+            return res.status(403).json({ meta: { status: 403, message: 'Register to view this discussion' }, data: null, errors: [] });
+          }
         }
 
         const comments = await EventComment.find({
@@ -63,6 +72,15 @@ export const addEventComment = async (req: Request, res: Response) => {
         if (event.status !== 'live') {
             return res.status(403).json({ success: false, message: 'Cannot verify comment on unpublished event' });
         }
+
+        if (event.discussionVisibility === 'attendees_only') {
+          const userId = user?.id || user?._id;
+          const isRegistered = await EventRegistration.exists({ eventId: event._id, userId, status: { $in: ['registered', 'attended'] } });
+          if (!isRegistered) {
+            return res.status(403).json({ meta: { status: 403, message: 'Register to comment in this discussion' }, data: null, errors: [] });
+          }
+        }
+
         let authorName = user.name || user.displayName || `${user.firstName} ${user.lastName}`;
         let authorImageUrl = user.profileImageUrl || user.imageUrl || user.avatarUrl;
 

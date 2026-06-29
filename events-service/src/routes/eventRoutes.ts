@@ -27,6 +27,7 @@ import { cancelMyRegistration } from '../controllers/registrationCancel';
 import { cancelEvent } from '../controllers/eventCancel';
 import { joinWaitlist, leaveWaitlist, promoteWaitlist, confirmPromotion, getMyWaitlistEntry } from '../controllers/waitlist';
 import { getPreferences, updatePreferences, createAnnouncement } from '../controllers/notifications';
+import { getPublicRoster } from '../controllers/rosterPublic';
 import { protect, optionalAuth, requireOrganizer } from '../middleware/auth';
 
 const router = express.Router();
@@ -96,5 +97,8 @@ router.route('/users/me/notifications/preferences').get(protect, getPreferences)
 
 // Organizer announcement broadcast
 router.route('/events/:id/notifications').post(protect, createAnnouncement);
+
+// Public roster (no PII — names only, no phone)
+router.route('/events/:id/roster/public').get(getPublicRoster);
 
 export default router;
