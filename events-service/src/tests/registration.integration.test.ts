@@ -272,6 +272,26 @@ describe('GET /v1/organizers/me/events (derives organizer from auth)', () => {
     expect(res.body.data.length).toBe(1);
     expect(res.body.data[0].title).toBe('My Hosted Event');
   });
+
+  it('overlays the live registeredCount (matches getEventById; not the stale stored 0)', async () => {
+    const ev = await Event.create({
+      title: 'Counted Event', description: 'x', eventType: 'workshop', category: 'dance',
+      organizerId: userId, organizerSnapshot: { name: 'Me', organizationName: '' },
+      pricingMode: 'fixed', ticketPrice: 0,
+      schedule: { startDate: new Date(Date.now() + 7 * 86400000), endDate: new Date(Date.now() + 8 * 86400000), totalDurationMinutes: 120, dayBreakdown: [] },
+      location: { type: 'physical', city: 'Pune', state: 'MH', country: 'IN' }, maxParticipants: 20, status: 'live',
+    });
+    await request(app).post(`/v1/events/${ev._id}/register`)
+      .set('Authorization', `Bearer ${token}`).set('Idempotency-Key', 'org-count-1')
+      .send({ quantity: 1, attendees: [{ fullName: 'Aditi Rao', phone: '+919876543210' }] });
+
+    const list = await request(app).get('/v1/organizers/me/events').set('Authorization', `Bearer ${token}`);
+    const row = list.body.data.find((e: any) => e.title === 'Counted Event');
+    expect(row.capacity.registeredCount).toBe(1);
+
+    const detail = await request(app).get(`/v1/events/${ev._id}`);
+    expect(detail.body.data.capacity.registeredCount).toBe(row.capacity.registeredCount);
+  });
 });
 
 describe('response-shape overlays (FE↔BE parity)', () => {

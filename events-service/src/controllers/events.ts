@@ -110,9 +110,14 @@ export const getOrganizerEvents = async (req: Request, res: Response, next: Next
     // Fetch ALL events (drafts, published, etc.) sorted by newest
     const events = await Event.find({ organizerId }).sort({ createdAt: -1 });
 
+    // Overlay the live seat count (same as getEvents/getEventById) so /posts and
+    // the manage console agree — capacity.registeredCount is derived on read.
+    const seatsMap = await seatsByEvent(events.map((e) => e._id));
+    const data = events.map((e) => withLiveCapacity(e.toObject(), seatsMap[String(e._id)] ?? 0));
+
     res.status(200).json({
       meta: { status: 200, message: 'OK', total: events.length },
-      data: events,
+      data,
       errors: [],
     });
   } catch (err) {
