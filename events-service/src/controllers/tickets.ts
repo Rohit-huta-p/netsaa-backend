@@ -5,6 +5,7 @@ import EventTicket from '../models/EventTicket';
 import EventRegistration from '../models/EventRegistration';
 import Event from '../models/Event';
 import { AuthRequest } from '../middleware/auth';
+import { shouldRevealMeetingLink } from '../utils/meetingLinkReveal';
 
 // ─── Check In Ticket ───
 // @desc    Check in an event ticket by scanning its ticketId
@@ -208,6 +209,14 @@ export const getRegistrationTicket = async (req: AuthRequest, res: Response) => 
         const primary = tickets[0];
         const [ticketCode, backupCode] = (primary?.qrCode || '|').split('|');
 
+        // ── Meeting-link reveal gate (D7) ──────────────────────────────────────
+        // The ticket owner is a confirmed registrant — pass isRegistered=true.
+        const event = await Event.findById(registration.eventId).lean();
+        const meetingLinkRevealed = event ? shouldRevealMeetingLink(event, new Date(), true) : false;
+        const meetingLink = meetingLinkRevealed ? (event?.location as any)?.meetingLink ?? null : null;
+        const meetingLinkRevealAt = (event?.location as any)?.meetingLinkRevealAt ?? null;
+        // ──────────────────────────────────────────────────────────────────────
+
         return res.status(200).json({
             meta: { status: 200, message: 'OK' },
             data: {
@@ -217,6 +226,9 @@ export const getRegistrationTicket = async (req: AuthRequest, res: Response) => 
                 qrPayload: primary?.qrCode || '',
                 attendeeCount: registration.quantity,
                 status: registration.status,
+                meetingLink,
+                meetingLinkRevealed,
+                meetingLinkRevealAt,
             },
             errors: [],
         });

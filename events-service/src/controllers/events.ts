@@ -8,6 +8,7 @@ import { AuthRequest } from '../middleware/auth';
 import EventTicketType from '../models/EventTicketType';
 import EventReservation from '../models/EventReservation';
 import EventStats from '../models/EventStats';
+import { shouldRevealMeetingLink } from '../utils/meetingLinkReveal';
 
 // @desc    Get all events with filters
 // @route   GET /api/grow/events
@@ -205,6 +206,19 @@ export const getEventById = async (req: Request, res: Response, next: NextFuncti
 
     // Waitlist count (waiting entries) — powers the O4 manage Waitlist tile.
     eventObj.waitlistCount = await WaitlistEntry.countDocuments({ eventId: event._id, status: 'waiting' });
+
+    // ── Meeting-link reveal gate (D7) ──────────────────────────────────────────
+    // Determine whether this viewer's registration qualifies them to see the link.
+    const viewerRegistered = !!((req as AuthRequest).user) &&
+      !!viewerContext &&
+      ['registered', 'attended'].includes(viewerContext.registrationStatus ?? '');
+    const revealed = shouldRevealMeetingLink(event, new Date(), viewerRegistered);
+    eventObj.meetingLinkRevealed = revealed;
+    if (!revealed && eventObj.location) {
+      delete (eventObj.location as any).meetingLink;
+    }
+    // keepmeetingLinkRevealAt so the UI can render the countdown timer
+    // ──────────────────────────────────────────────────────────────────────────
 
     res.status(200).json({
       meta: { status: 200, message: 'OK' },
