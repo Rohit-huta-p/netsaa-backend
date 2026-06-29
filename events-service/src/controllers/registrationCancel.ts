@@ -5,6 +5,7 @@ import Event from '../models/Event';
 import Refund from '../models/Refund';
 import { computeRefundPaise } from '../utils/refundPolicy';
 import { promoteFromWaitlist } from '../services/waitlistService';
+import EventNotification from '../models/EventNotification';
 
 // @route POST /v1/registrations/:id/cancel
 // @access Private (owner)
@@ -24,6 +25,12 @@ export const cancelMyRegistration = async (req: AuthRequest, res: Response) => {
     registration.cancelledBy = 'attendee';
     registration.cancellationReason = (req.body.reason || '').slice(0, 200);
     await registration.save();
+
+    // Enqueue cancellation notification (best-effort)
+    try {
+      const eventTitle = event?.title || String(registration.eventId);
+      await EventNotification.create({ eventId: registration.eventId, kind: 'cancellation', channels: ['push', 'email'], audience: 'custom', customAudienceUserIds: [userId], body: `Your registration for ${eventTitle} was cancelled.`, scheduledAt: new Date(), status: 'queued' });
+    } catch { /* non-fatal */ }
 
     // Freed a seat — attempt auto-promotion (no-op for manual-mode events).
     try {

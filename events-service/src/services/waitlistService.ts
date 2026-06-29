@@ -1,6 +1,7 @@
 import Event from '../models/Event';
 import EventRegistration from '../models/EventRegistration';
 import WaitlistEntry from '../models/WaitlistEntry';
+import EventNotification from '../models/EventNotification';
 
 export const PROMOTION_WINDOW_MS = 30 * 60 * 1000;
 
@@ -27,6 +28,9 @@ export async function promoteEntry(entry: any): Promise<any> {
   entry.promotedAt = new Date();
   entry.promotionExpiresAt = new Date(Date.now() + PROMOTION_WINDOW_MS);
   await entry.save();
+  try {
+    await EventNotification.create({ eventId: entry.eventId, kind: 'waitlist_promoted', channels: ['push', 'email'], audience: 'custom', customAudienceUserIds: [entry.userId], body: 'A seat opened for your waitlisted event — confirm within 30 minutes.', scheduledAt: new Date(), status: 'queued' });
+  } catch { /* non-fatal */ }
   return entry;
 }
 

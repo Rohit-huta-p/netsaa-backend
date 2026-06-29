@@ -6,6 +6,7 @@ import { AuthRequest } from '../middleware/auth';
 import { findOrCreateRegistration } from '../utils/idempotency';
 import { generateTicketCode, generateBackupCode } from '../utils/ticketCode';
 import { slotsLeftForEvent } from '../services/waitlistService';
+import EventNotification from '../models/EventNotification';
 
 // @desc    Register for an event (free RSVP path; paid path is Sprint 2)
 // @route   POST /v1/events/:id/register
@@ -70,6 +71,9 @@ export const registerForEvent = async (req: Request, res: Response, next: NextFu
                 }));
                 await EventTicket.insertMany(reissued);
             }
+            try {
+              await EventNotification.create({ eventId: event._id, kind: 'confirmation', channels: ['push', 'email'], audience: 'custom', customAudienceUserIds: [userId], body: `You're registered for ${event.title}.`, scheduledAt: new Date(), status: 'queued' });
+            } catch { /* non-fatal */ }
             return res.status(200).json({ meta: { status: 200, message: 'Re-registered' }, data: prior, errors: [] });
         }
 
@@ -93,6 +97,9 @@ export const registerForEvent = async (req: Request, res: Response, next: NextFu
                 status: 'issued',
             }));
             await EventTicket.insertMany(ticketDocs);
+            try {
+              await EventNotification.create({ eventId: event._id, kind: 'confirmation', channels: ['push', 'email'], audience: 'custom', customAudienceUserIds: [userId], body: `You're registered for ${event.title}.`, scheduledAt: new Date(), status: 'queued' });
+            } catch { /* non-fatal */ }
         }
 
         return res.status(201).json({ meta: { status: 201, message: 'Registered successfully' }, data: registration, errors: [] });

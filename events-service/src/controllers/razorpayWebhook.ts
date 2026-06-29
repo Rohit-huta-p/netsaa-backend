@@ -7,6 +7,7 @@ import Refund from '../models/Refund';
 import { verifyWebhookSignature } from '../services/razorpay';
 import { computeFeesPaise } from '../utils/eventFees';
 import { generateTicketCode, generateBackupCode } from '../utils/ticketCode';
+import EventNotification from '../models/EventNotification';
 
 // Requires express.raw() on this route — see server.ts
 export const handleWebhook = async (req: Request, res: Response) => {
@@ -70,10 +71,16 @@ export const handleWebhook = async (req: Request, res: Response) => {
 
       case 'refund.processed': {
         const refundEntity = evt.payload.refund.entity;
-        await Refund.findOneAndUpdate(
+        const refund = await Refund.findOneAndUpdate(
           { razorpayRefundId: refundEntity.id },
           { status: 'processed', processedAt: new Date() },
+          { new: true },
         );
+        if (refund) {
+          try {
+            await EventNotification.create({ eventId: refund.eventId, kind: 'refund_processed', channels: ['push', 'email'], audience: 'custom', customAudienceUserIds: [refund.userId], body: `Your refund for ${refund.eventId} has been processed.`, scheduledAt: new Date(), status: 'queued' });
+          } catch { /* non-fatal */ }
+        }
         return res.status(200).json({ meta: { status: 200, message: 'Refund processed' }, data: null, errors: [] });
       }
       case 'refund.failed': {
