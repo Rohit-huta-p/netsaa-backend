@@ -9,6 +9,7 @@ import EventTicketType from '../models/EventTicketType';
 import EventReservation from '../models/EventReservation';
 import EventStats from '../models/EventStats';
 import { shouldRevealMeetingLink } from '../utils/meetingLinkReveal';
+import { scheduleEventReminders } from '../services/reminderScheduler';
 
 // @desc    Get all events with filters
 // @route   GET /api/grow/events
@@ -361,6 +362,11 @@ export const createEvent = async (req: Request, res: Response, next: NextFunctio
       publishedAt: (b.status || 'live') === 'live' ? new Date() : undefined,
     });
 
+    // Composer publishes immediately as 'live' — schedule reminders right away.
+    if (event.status === 'live') {
+      await scheduleEventReminders(event._id);
+    }
+
     return res.status(201).json({ meta: { status: 201, message: 'Event created' }, data: event, errors: [] });
   } catch (err) {
     return res.status(400).json({
@@ -463,6 +469,9 @@ export const publishEvent = async (req: Request, res: Response, next: NextFuncti
     event.status = 'live';
     event.publishedAt = new Date();
     await event.save();
+
+    // Enqueue reminder notifications for this newly-published event (idempotent).
+    await scheduleEventReminders(event._id);
 
     res.status(200).json({
       meta: { status: 200, message: 'Event published' },
