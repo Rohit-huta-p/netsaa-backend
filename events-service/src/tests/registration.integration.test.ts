@@ -240,6 +240,22 @@ describe('GET /v1/events/:id/roster (organizer attendee list)', () => {
     res = await request(app).get(`/v1/events/${event._id}/roster`).set('Authorization', `Bearer ${token}`);
     expect(res.body.data.total).toBe(0);
   });
+
+  it('groups by status (confirmed/waitlist/cancelled) with phone + seats', async () => {
+    const event = await makeFreeEvent();
+    await request(app).post(`/v1/events/${event._id}/register`)
+      .set('Authorization', `Bearer ${token}`).set('Idempotency-Key', 'ros-tab-1')
+      .send({ quantity: 2, attendees: [{ fullName: 'Aditi Rao', phone: '+919876500000' }] });
+    await WaitlistEntry.create({
+      eventId: event._id, userId: new mongoose.Types.ObjectId(), position: 1, quantity: 1,
+      status: 'waiting', attendeeSnapshot: { fullName: 'Rohan Mehta', phone: '+919876511111' },
+    });
+
+    const res = await request(app).get(`/v1/events/${event._id}/roster`).set('Authorization', `Bearer ${token}`);
+    expect(res.body.data.counts).toEqual({ confirmed: 1, waitlist: 1, cancelled: 0 });
+    expect(res.body.data.confirmed[0]).toMatchObject({ name: 'Aditi Rao', phone: '+919876500000', seats: 2 });
+    expect(res.body.data.waitlist[0]).toMatchObject({ name: 'Rohan Mehta', position: 1 });
+  });
 });
 
 describe('GET /v1/organizers/me/events (derives organizer from auth)', () => {

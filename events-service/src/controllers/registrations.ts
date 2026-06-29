@@ -7,6 +7,7 @@ import { findOrCreateRegistration } from '../utils/idempotency';
 import { generateTicketCode, generateBackupCode } from '../utils/ticketCode';
 import { slotsLeftForEvent } from '../services/waitlistService';
 import EventNotification from '../models/EventNotification';
+import WaitlistEntry from '../models/WaitlistEntry';
 
 // @desc    Register for an event (free RSVP path; paid path is Sprint 2)
 // @route   POST /v1/events/:id/register
@@ -310,20 +311,51 @@ export const updateRegistrationStatus = async (req: AuthRequest, res: Response, 
 // @access  Private
 export const getEventRoster = async (req: Request, res: Response) => {
     try {
-        const regs = await EventRegistration.find({ eventId: req.params.id, status: { $ne: 'cancelled' } })
-            .populate('userId', 'displayName')
-            .sort({ registeredAt: -1 })
-            .lean();
-        const rows = regs.map((r: any) => ({
+        const eventId = req.params.id;
+        // Confirmed + cancelled come from EventRegistration; the waitlist tab
+        // is a separate collection. Host sees phone per the DPDP consent (A4).
+        const [regs, waitlist] = await Promise.all([
+            EventRegistration.find({ eventId }).populate('userId', 'displayName').sort({ registeredAt: -1 }).lean(),
+            WaitlistEntry.find({ eventId, status: { $in: ['waiting', 'promoted'] } }).populate('userId', 'displayName').sort({ position: 1 }).lean(),
+        ]);
+
+        const toRow = (r: any) => ({
             _id: String(r._id),
             userId: String(r.userId?._id || r.userId || ''),
             name: r.attendees?.[0]?.fullName || r.userId?.displayName || 'Guest',
-            city: r.attendees?.[0]?.city,
+            phone: r.attendees?.[0]?.phone,
+            seats: r.quantity ?? 1,
             registeredAt: r.registeredAt,
             status: r.status,
             visibility: r.visibility,
+        });
+
+        const confirmed = regs.filter((r: any) => r.status === 'registered' || r.status === 'attended').map(toRow);
+        const cancelled = regs.filter((r: any) => r.status === 'cancelled').map(toRow);
+        const waitlistRows = waitlist.map((w: any) => ({
+            _id: String(w._id),
+            userId: String(w.userId?._id || w.userId || ''),
+            name: w.attendeeSnapshot?.fullName || w.userId?.displayName || 'Guest',
+            phone: w.attendeeSnapshot?.phone,
+            seats: w.quantity ?? 1,
+            position: w.position,
+            joinedAt: w.createdAt,
+            status: w.status,
         }));
-        return res.status(200).json({ meta: { status: 200, message: 'OK' }, data: { rows, total: rows.length }, errors: [] });
+
+        return res.status(200).json({
+            meta: { status: 200, message: 'OK' },
+            data: {
+                confirmed,
+                waitlist: waitlistRows,
+                cancelled,
+                counts: { confirmed: confirmed.length, waitlist: waitlistRows.length, cancelled: cancelled.length },
+                // legacy aliases (old callers expect a flat confirmed list)
+                rows: confirmed,
+                total: confirmed.length,
+            },
+            errors: [],
+        });
     } catch (err) {
         return res.status(500).json({ meta: { status: 500, message: 'Server Error' }, data: null, errors: [{ message: (err as Error).message }] });
     }
