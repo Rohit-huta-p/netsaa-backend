@@ -26,7 +26,7 @@ import { submitPayoutAccount, getMyPayoutAccount, updatePayoutAccount } from '..
 import { cancelMyRegistration } from '../controllers/registrationCancel';
 import { cancelEvent } from '../controllers/eventCancel';
 import { joinWaitlist, leaveWaitlist, promoteWaitlist, confirmPromotion, getMyWaitlistEntry } from '../controllers/waitlist';
-import { getPreferences, updatePreferences } from '../controllers/notifications';
+import { getPreferences, updatePreferences, createAnnouncement } from '../controllers/notifications';
 import { protect, optionalAuth, requireOrganizer } from '../middleware/auth';
 
 const router = express.Router();
@@ -93,5 +93,8 @@ router.route('/events/:eventId/discussion')
 
 // Notification preference routes
 router.route('/users/me/notifications/preferences').get(protect, getPreferences).patch(protect, updatePreferences);
+
+// Organizer announcement broadcast
+router.route('/events/:id/notifications').post(protect, createAnnouncement);
 
 export default router;
