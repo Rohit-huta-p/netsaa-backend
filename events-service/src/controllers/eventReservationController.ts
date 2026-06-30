@@ -27,6 +27,11 @@ export const reserveTickets = async (req: AuthRequest, res: Response) => {
     if (!event || event.status !== 'live') return res.status(409).json({ meta: { status: 409, message: 'Event not open' }, data: null, errors: [] });
     if (event.registrationDeadline && Date.now() > new Date(event.registrationDeadline).getTime()) return res.status(409).json({ meta: { status: 409, message: 'Registration closed' }, data: null, errors: [] });
 
+    // Host can manually close RSVPs without cancelling the event.
+    if (event.registrationClosed) {
+      return res.status(409).json({ meta: { status: 409, message: 'Registration is closed' }, data: { closed: true }, errors: [{ message: 'Host closed registration' }] });
+    }
+
     const quantity = Math.max(1, Math.min(event.maxGuestsPerRegistration || 5, req.body.quantity || 1));
 
     // Capacity gate (counts active registrations; held reservations are a Sprint 8 hardening note).

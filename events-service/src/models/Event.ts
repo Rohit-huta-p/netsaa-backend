@@ -103,6 +103,7 @@ export interface IEvent extends Document {
     prizes?: Array<{ position: string; reward: string }>;
   };
 
+  registrationClosed: boolean;        // host can manually close RSVPs without cancelling the event
   status: 'draft' | 'live' | 'cancelled' | 'completed';
   isFeatured: boolean;
 
@@ -277,6 +278,8 @@ const eventSchema = new Schema<IEvent>(
       default: 'draft',
     },
     isFeatured: { type: Boolean, default: false },
+
+    registrationClosed: { type: Boolean, default: false },
 
     publishedAt: Date,
   },

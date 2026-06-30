@@ -46,6 +46,12 @@ export const registerForEvent = async (req: Request, res: Response, next: NextFu
             return res.status(200).json({ meta: { status: 200, message: 'Already registered' }, data: prior, errors: [] });
         }
 
+        // Host can manually close RSVPs without cancelling the event.
+        // The idempotent early-return above ensures already-registered users are not blocked.
+        if (event.registrationClosed) {
+            return res.status(409).json({ meta: { status: 409, message: 'Registration is closed' }, data: { closed: true }, errors: [{ message: 'Host closed registration' }] });
+        }
+
         const slotsLeft = await slotsLeftForEvent(event._id);
         if (slotsLeft < quantity) {
             return res.status(409).json({ meta: { status: 409, message: 'Event is full' }, data: { full: true, waitlistAvailable: !!event.allowWaitlist }, errors: [{ message: 'No seats left' }] });
