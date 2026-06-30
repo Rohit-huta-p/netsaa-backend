@@ -386,15 +386,28 @@ export const createEvent = async (req: Request, res: Response, next: NextFunctio
   }
 };
 
+// Fields that the organizer is allowed to change via PATCH.
+// Deliberately excludes: status, organizerId, pricing/ticketPrice, registrationMode,
+// organizerSnapshot — those must go through dedicated endpoints or server-side logic.
+const UPDATE_WHITELIST = new Set([
+  'title', 'tagline', 'about', 'whatToExpect',
+  'startsAt', 'endsAt', 'durationKind',
+  'location', 'capacity', 'registrationDeadline',
+  'allowWaitlist', 'waitlistAutoPromote',
+  'visibility', 'discussionVisibility',
+  'registrationClosed',
+  'skills', 'topicTags',
+  'agenda', 'media',
+  'walkupsAllowed', 'maxGuestsPerRegistration', 'requiredAttendeeFields',
+]);
+
 // @desc    Update event
-// @route   PUT /api/grow/events/:id
-// @access  Private (Organizer)
+// @route   PATCH /api/grow/events/:id
+// @access  Private (Organizer — owner only)
 export const updateEvent = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const event = await Event.findByIdAndUpdate(req.params.id, req.body, {
-      new: true,
-      runValidators: true,
-    });
+    // 1. Load the event first so we can check ownership.
+    const event = await Event.findById(req.params.id);
     if (!event) {
       return res.status(404).json({
         meta: { status: 404, message: 'Event not found' },
@@ -402,9 +415,35 @@ export const updateEvent = async (req: Request, res: Response, next: NextFunctio
         errors: [{ message: 'Event not found' }],
       });
     }
+
+    // 2. Ownership gate — only the host may edit.
+    const userId = (req as AuthRequest).user?.id || (req as AuthRequest).user?._id;
+    if (String(event.organizerId) !== String(userId)) {
+      return res.status(403).json({
+        meta: { status: 403, message: 'Not authorized' },
+        data: null,
+        errors: [{ message: 'Only the host can edit this event' }],
+      });
+    }
+
+    // 3. Build a whitelisted update — ignore any other keys.
+    const update: Record<string, unknown> = {};
+    for (const key of Object.keys(req.body)) {
+      if (UPDATE_WHITELIST.has(key)) {
+        update[key] = req.body[key];
+      }
+    }
+
+    // 4. Apply the safe update.
+    const updated = await Event.findByIdAndUpdate(
+      req.params.id,
+      { $set: update },
+      { new: true, runValidators: true },
+    );
+
     res.status(200).json({
       meta: { status: 200, message: 'OK' },
-      data: event,
+      data: updated,
       errors: [],
     });
   } catch (err) {
