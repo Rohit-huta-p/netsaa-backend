@@ -49,4 +49,19 @@ describe('dispatchNotification', () => {
     expect(providers.sendPush).toHaveBeenCalledTimes(1);  // sent despite all prefs off
     expect(providers.sendEmail).toHaveBeenCalledTimes(1);
   });
+
+  it('tolerates a userId-less walk-up guest in the audience (no throw, guest gets nothing)', async () => {
+    const realUser = await confirmedUser(); // has userId
+    // At-the-door guest reg: no userId (no NETSA account), attended, source 'walkup'.
+    await EventRegistration.create({ eventId, quantity: 1, status: 'attended', idempotencyKey: `walkup-${new mongoose.Types.ObjectId()}`, source: 'walkup', visibility: 'public', attendees: [{ fullName: 'Nikhil Sharma', phone: '+919456712345' }] });
+    const notification = { _id: new mongoose.Types.ObjectId(), eventId, kind: 'announcement', channels: ['push', 'email'], audience: 'confirmed', body: 'Bring ghungroo', subject: 'Note' } as any;
+
+    const result = await dispatchNotification(notification); // must not throw on the guest's missing userId
+    // Audience = only the real user (guest is skipped) → 2 sends (push+email) for exactly one recipient.
+    expect(providers.sendPush).toHaveBeenCalledTimes(1);
+    expect(providers.sendPush).toHaveBeenCalledWith(realUser.toString(), expect.anything(), expect.anything());
+    expect(providers.sendEmail).toHaveBeenCalledTimes(1);
+    expect(result.sentCount).toBe(2);
+    expect(result.failedCount).toBe(0);
+  });
 });

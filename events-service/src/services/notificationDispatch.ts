@@ -29,7 +29,9 @@ async function resolveAudience(notification: any): Promise<string[]> {
     ? { eventId, status: { $in: ['registered', 'attended'] }, tags: 'vip' }
     : { eventId, status: { $in: ['registered', 'attended'] } }; // 'all' + 'confirmed' both = active registrants
   const regs = await EventRegistration.find(statusFilter).select('userId');
-  return regs.map((r: any) => r.userId.toString());
+  // Walk-up guests are userId-less (no NETSA account) yet match the active-registrant
+  // filter — skip them here so we never deref undefined; they get no user-id-scoped push/email/SMS.
+  return regs.filter((r: any) => r.userId).map((r: any) => r.userId.toString());
 }
 
 async function allowsChannel(userId: string, category: Category | null, channel: Channel): Promise<boolean> {
