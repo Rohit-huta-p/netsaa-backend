@@ -4,7 +4,7 @@ export interface IEventTicket extends Document {
     ticketId: string;
     eventId: mongoose.Types.ObjectId;
     registrationId: mongoose.Types.ObjectId;
-    userId: mongoose.Types.ObjectId;
+    userId?: mongoose.Types.ObjectId;
     attendeeName: string;
     qrCode: string;
     status: 'issued' | 'checked_in' | 'cancelled';
@@ -18,7 +18,7 @@ const eventTicketSchema = new Schema<IEventTicket>(
         ticketId: { type: String, required: true, unique: true },
         eventId: { type: Schema.Types.ObjectId, ref: 'Event', required: true },
         registrationId: { type: Schema.Types.ObjectId, ref: 'EventRegistration', required: true },
-        userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+        userId: { type: Schema.Types.ObjectId, ref: 'User', required: false },
         attendeeName: { type: String, required: true, trim: true },
         qrCode: { type: String, required: true },
         status: {

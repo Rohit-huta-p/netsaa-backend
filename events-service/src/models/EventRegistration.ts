@@ -20,7 +20,7 @@ export interface IPaymentRecord {
 
 export interface IEventRegistration extends Document {
     eventId: mongoose.Types.ObjectId;
-    userId: mongoose.Types.ObjectId;
+    userId?: mongoose.Types.ObjectId;
     ticketTypeId?: mongoose.Types.ObjectId;
     status: 'registered' | 'cancelled' | 'attended' | 'no-show';
 
@@ -33,6 +33,14 @@ export interface IEventRegistration extends Document {
 
     // Payment audit (paid events only)
     paymentRecord?: IPaymentRecord;
+
+    // Offline payment (walk-up cash) — no Razorpay; NETSA takes no fee (money never touches platform)
+    offlinePayment?: {
+        method: 'cash';
+        amountPaise: number;
+        recordedByUserId: mongoose.Types.ObjectId;
+        recordedAt: Date;
+    };
 
     // Cancellation audit
     cancelledAt?: Date;
@@ -82,10 +90,20 @@ const paymentRecordSchema = new Schema(
     { _id: false }
 );
 
+const offlinePaymentSchema = new Schema(
+    {
+        method: { type: String, enum: ['cash'], required: true },
+        amountPaise: { type: Number, required: true },
+        recordedByUserId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+        recordedAt: { type: Date, required: true },
+    },
+    { _id: false }
+);
+
 const eventRegistrationSchema = new Schema<IEventRegistration>(
     {
         eventId: { type: Schema.Types.ObjectId, ref: 'Event', required: true },
-        userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+        userId: { type: Schema.Types.ObjectId, ref: 'User', required: false },
         ticketTypeId: { type: Schema.Types.ObjectId, ref: 'EventTicketType' },
 
         status: {
@@ -100,6 +118,7 @@ const eventRegistrationSchema = new Schema<IEventRegistration>(
         idempotencyKey: { type: String, required: true },
 
         paymentRecord: paymentRecordSchema,
+        offlinePayment: offlinePaymentSchema,
 
         cancelledAt: { type: Date },
         cancelledBy: {
@@ -134,7 +153,7 @@ const eventRegistrationSchema = new Schema<IEventRegistration>(
 // Indexes
 eventRegistrationSchema.index({ eventId: 1 });
 eventRegistrationSchema.index({ userId: 1 });
-eventRegistrationSchema.index({ eventId: 1, userId: 1 }, { unique: true });
+eventRegistrationSchema.index({ eventId: 1, userId: 1 }, { unique: true, partialFilterExpression: { userId: { $exists: true } } });
 eventRegistrationSchema.index({ idempotencyKey: 1 }, { unique: true });
 eventRegistrationSchema.index({ eventId: 1, status: 1 });          // roster filters
 eventRegistrationSchema.index({ eventId: 1, source: 1 });          // walkup analytics

@@ -202,7 +202,7 @@ export const getRegistrationTicket = async (req: AuthRequest, res: Response) => 
         if (!registration) {
             return res.status(404).json({ meta: { status: 404, message: 'Registration not found' }, data: null, errors: [] });
         }
-        if (registration.userId.toString() !== String(userId)) {
+        if (registration.userId?.toString() !== String(userId)) {
             return res.status(403).json({ meta: { status: 403, message: 'Not your ticket' }, data: null, errors: [] });
         }
         const tickets = await EventTicket.find({ registrationId: registration._id });

@@ -28,6 +28,7 @@ import { cancelEvent } from '../controllers/eventCancel';
 import { joinWaitlist, leaveWaitlist, promoteWaitlist, confirmPromotion, getMyWaitlistEntry } from '../controllers/waitlist';
 import { getPreferences, updatePreferences, createAnnouncement } from '../controllers/notifications';
 import { getPublicRoster } from '../controllers/rosterPublic';
+import { addWalkup } from '../controllers/walkup';
 import { protect, optionalAuth, requireOrganizer } from '../middleware/auth';
 
 const router = express.Router();
@@ -54,6 +55,9 @@ router.route('/registrations/:id/ticket').get(protect, getRegistrationTicket);
 
 // Check-in by ticket code or backup code
 router.route('/events/:id/check-in').post(protect, checkInByCode);
+
+// Organizer adds a walk-up at the door (guest, gated by walkupsAllowed + ownership)
+router.route('/events/:id/walkup').post(protect, addWalkup);
 
 // Registration Routes
 router.route('/events/:id/register').post(protect, registerForEvent);

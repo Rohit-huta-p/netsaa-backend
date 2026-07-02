@@ -88,7 +88,7 @@ describe('auto-promote on cancel → confirm', () => {
       .send({ quantity: 1, attendeeSnapshot: { fullName: 'Wendy', phone: '+919999999999' } });
 
     // holder cancels → frees the seat → auto-promote fires
-    const holderToken = jwt.sign({ id: holder!.userId.toString(), role: 'artist' }, process.env.JWT_SECRET!);
+    const holderToken = jwt.sign({ id: holder!.userId!.toString(), role: 'artist' }, process.env.JWT_SECRET!);
     await request(app).post(`/v1/registrations/${holder!._id}/cancel`).set('Authorization', `Bearer ${holderToken}`).send({ reason: 'x' });
 
     const entry = await WaitlistEntry.findOne({ eventId: event._id, userId: waitUserId });
@@ -102,7 +102,7 @@ describe('auto-promote on cancel → confirm', () => {
     const waitUserId = new mongoose.Types.ObjectId().toString();
     const join = await request(app).post(`/v1/events/${event._id}/waitlist/join`).set('Authorization', `Bearer ${tokenFor(waitUserId)}`)
       .send({ quantity: 1, attendeeSnapshot: { fullName: 'Wendy', phone: '+919999999999' } });
-    const holderToken = jwt.sign({ id: holder!.userId.toString(), role: 'artist' }, process.env.JWT_SECRET!);
+    const holderToken = jwt.sign({ id: holder!.userId!.toString(), role: 'artist' }, process.env.JWT_SECRET!);
     await request(app).post(`/v1/registrations/${holder!._id}/cancel`).set('Authorization', `Bearer ${holderToken}`).send({ reason: 'x' });
 
     const res = await request(app).post(`/v1/waitlist/${join.body.data.entryId}/confirm`)

@@ -14,7 +14,7 @@ export const cancelMyRegistration = async (req: AuthRequest, res: Response) => {
     const userId = req.user?.id || req.user?._id;
     const registration = await EventRegistration.findById(req.params.id);
     if (!registration) return res.status(404).json({ meta: { status: 404, message: 'Registration not found' }, data: null, errors: [] });
-    if (registration.userId.toString() !== String(userId)) return res.status(403).json({ meta: { status: 403, message: 'Not your registration' }, data: null, errors: [] });
+    if (registration.userId?.toString() !== String(userId)) return res.status(403).json({ meta: { status: 403, message: 'Not your registration' }, data: null, errors: [] });
     if (registration.status === 'cancelled') return res.status(409).json({ meta: { status: 409, message: 'Already cancelled' }, data: null, errors: [] });
 
     const event = await Event.findById(registration.eventId);
