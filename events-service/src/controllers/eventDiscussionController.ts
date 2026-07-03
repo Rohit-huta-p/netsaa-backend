@@ -25,13 +25,18 @@ export const getEventDiscussion = async (req: Request, res: Response) => {
             return res.status(404).json({ success: false, message: 'Event not found' });
         }
 
-        // Only allow discussion for published events
-        if (event.status !== 'live') {
+        // Host exemption — strictly the event's organizer, nobody else. The
+        // organizer has no EventRegistration and may need to read their own
+        // thread on drafts/completed events from the manage surface.
+        const userId = (req as any).user?.id || (req as any).user?._id;
+        const isHost = String(event.organizerId) === String(userId);
+
+        // Only allow discussion for published events (host may read at any status)
+        if (event.status !== 'live' && !isHost) {
             return res.status(403).json({ success: false, message: 'Discussion only available for published events' });
         }
 
-        if (event.discussionVisibility === 'attendees_only') {
-          const userId = (req as any).user?.id || (req as any).user?._id;
+        if (event.discussionVisibility === 'attendees_only' && !isHost) {
           const isRegistered = await EventRegistration.exists({ eventId: event._id, userId, status: { $in: ['registered', 'attended'] } });
           if (!isRegistered) {
             return res.status(403).json({ meta: { status: 403, message: 'Register to view this discussion' }, data: null, errors: [] });
@@ -73,8 +78,12 @@ export const addEventComment = async (req: Request, res: Response) => {
             return res.status(403).json({ success: false, message: 'Cannot verify comment on unpublished event' });
         }
 
-        if (event.discussionVisibility === 'attendees_only') {
-          const userId = user?.id || user?._id;
+        // Host exemption — strictly the event's organizer, nobody else. The
+        // organizer has no EventRegistration but owns the thread.
+        const userId = user?.id || user?._id;
+        const isHost = String(event.organizerId) === String(userId);
+
+        if (event.discussionVisibility === 'attendees_only' && !isHost) {
           const isRegistered = await EventRegistration.exists({ eventId: event._id, userId, status: { $in: ['registered', 'attended'] } });
           if (!isRegistered) {
             return res.status(403).json({ meta: { status: 403, message: 'Register to comment in this discussion' }, data: null, errors: [] });
