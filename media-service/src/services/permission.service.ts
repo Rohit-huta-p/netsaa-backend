@@ -200,17 +200,12 @@ async function checkArtistOwnership(user: AuthUser, entityId: string): Promise<v
 }
 
 /**
- * Gig upload: gig.organizerId must match user.id
+ * Gig upload: caller must own the gig (gig.organizerId === user.id).
+ *
+ * Role-agnostic for the same reason as event ownership above — the poster owns
+ * the gig regardless of role. `organizerId === user.id` is the security boundary.
  */
 async function checkGigOwnership(user: AuthUser, entityId: string): Promise<void> {
-    if (user.role !== 'organizer' && user.role !== 'admin') {
-        throw new PermissionError(
-            'Only organizers can upload gig media',
-            'FORBIDDEN',
-            403
-        );
-    }
-
     const Gig = getGigModel();
 
     const gig = await Gig.findById(entityId).select('organizerId').lean() as { organizerId: mongoose.Types.ObjectId } | null;
@@ -233,17 +228,15 @@ async function checkGigOwnership(user: AuthUser, entityId: string): Promise<void
 }
 
 /**
- * Event upload: event.organizerId must match user.id
+ * Event upload: caller must own the event (event.organizerId === user.id).
+ *
+ * Ownership is role-agnostic, matching events-service which authorizes the owner
+ * regardless of role. Under the three-role model (client / creative_lead / artist)
+ * hosts never carry the legacy 'organizer' role, so gating on role here wrongly
+ * 403'd real owners. `organizerId === user.id` is the security boundary. (admin is
+ * short-circuited earlier in checkUploadPermission.)
  */
 async function checkEventOwnership(user: AuthUser, entityId: string): Promise<void> {
-    if (user.role !== 'organizer' && user.role !== 'admin') {
-        throw new PermissionError(
-            'Only organizers can upload event media',
-            'FORBIDDEN',
-            403
-        );
-    }
-
     const Event = getEventModel();
 
     const event = await Event.findById(entityId).select('organizerId').lean() as { organizerId: mongoose.Types.ObjectId } | null;
