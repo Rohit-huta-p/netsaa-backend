@@ -37,15 +37,37 @@ export async function createVideoUpload(user: AuthUser, input: CreateVideoUpload
 }
 
 export async function getAssetStatus(user: AuthUser, uploadId: string) {
-  const rec = await MediaAsset.findOne({ uploadId });
+  let rec = await MediaAsset.findOne({ uploadId });
   if (!rec) return null;
   if (rec.ownerId !== user.id && user.role !== 'admin') return null; // owner-scoped
+
+  // Fallback: if not terminal, reconcile straight from Mux (no webhook needed).
+  // Drives the same idempotent applyMuxEvent state machine (forward-only, duration
+  // cap, events-service attach). Silently ignores Mux errors — the client keeps polling.
+  if (rec.status !== 'ready' && rec.status !== 'errored') {
+    try {
+      const upload = await mux.video.uploads.retrieve(uploadId);
+      const assetId = upload.asset_id;
+      if (assetId) {
+        const asset = await mux.video.assets.retrieve(assetId);
+        if (asset.status === 'ready') {
+          await applyMuxEvent({ type: 'video.asset.ready', data: { id: assetId, upload_id: uploadId, duration: asset.duration, aspect_ratio: asset.aspect_ratio, playback_ids: asset.playback_ids } });
+        } else if (asset.status === 'errored') {
+          await applyMuxEvent({ type: 'video.asset.errored', data: { id: assetId, upload_id: uploadId, errors: asset.errors } });
+        } else {
+          await applyMuxEvent({ type: 'video.upload.asset_created', data: { id: uploadId, asset_id: assetId } });
+        }
+        rec = await MediaAsset.findOne({ uploadId }); // re-read after reconcile
+      }
+    } catch { /* Mux unreachable or asset not ready yet — return current status */ }
+  }
+
   return {
-    status: rec.status,
-    playbackId: rec.playbackId,
-    duration: rec.duration,
-    aspectRatio: rec.aspectRatio,
-    error: rec.error,
+    status: rec!.status,
+    playbackId: rec!.playbackId,
+    duration: rec!.duration,
+    aspectRatio: rec!.aspectRatio,
+    error: rec!.error,
   };
 }
 
