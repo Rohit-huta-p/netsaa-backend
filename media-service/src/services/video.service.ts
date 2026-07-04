@@ -1,9 +1,10 @@
 import { AuthUser } from '../middleware/auth';
-import { mux, MUX_ASSET_SETTINGS } from '../config/mux';
-import { MediaAsset } from '../models/MediaAsset';
+import { mux, MUX_ASSET_SETTINGS, MAX_VIDEO_DURATION_SECONDS } from '../config/mux';
+import { MediaAsset, MediaAssetStatus } from '../models/MediaAsset';
 import { checkUploadPermission } from './permission.service';
 import { Purpose } from '../utils/mime';
 import { EntityType } from '../utils/fileKey';
+import { attachToEvent } from './attach.client';
 
 export interface CreateVideoUploadInput {
   entityType: EntityType;
@@ -46,4 +47,59 @@ export async function getAssetStatus(user: AuthUser, uploadId: string) {
     aspectRatio: rec.aspectRatio,
     error: rec.error,
   };
+}
+
+const STATUS_RANK = { waiting: 0, asset_created: 1, ready: 2, errored: 2 } as const;
+
+// Idempotent + forward-only. Mux may deliver duplicates or out of order.
+export async function applyMuxEvent(event: { type: string; data: any }): Promise<void> {
+  const { type, data } = event;
+
+  if (type === 'video.upload.asset_created') {
+    const rec = await MediaAsset.findOne({ uploadId: data.id });
+    if (!rec) return;
+    if (STATUS_RANK[rec.status as MediaAssetStatus] < STATUS_RANK.asset_created) {
+      rec.assetId = data.asset_id;
+      rec.status = 'asset_created';
+      await rec.save();
+    } else if (!rec.assetId) {
+      rec.assetId = data.asset_id;
+      await rec.save();
+    }
+    return;
+  }
+
+  if (type === 'video.asset.ready') {
+    const rec = await MediaAsset.findOne(data.upload_id ? { uploadId: data.upload_id } : { assetId: data.id });
+    if (!rec || rec.status === 'ready' || rec.status === 'errored') return;
+
+    const duration = typeof data.duration === 'number' ? data.duration : undefined;
+    const playbackId = data.playback_ids?.[0]?.id;
+
+    if (duration !== undefined && duration > MAX_VIDEO_DURATION_SECONDS) {
+      rec.status = 'errored';
+      rec.error = `Video too long (${Math.round(duration)}s > ${MAX_VIDEO_DURATION_SECONDS}s)`;
+      await rec.save();
+      await attachToEvent({ eventId: rec.entityId, uploadId: rec.uploadId, status: 'errored' });
+      return;
+    }
+
+    rec.assetId = data.id;
+    rec.playbackId = playbackId;
+    rec.duration = duration;
+    rec.aspectRatio = data.aspect_ratio;
+    rec.status = 'ready';
+    await rec.save();
+    await attachToEvent({ eventId: rec.entityId, uploadId: rec.uploadId, playbackId, duration, aspectRatio: data.aspect_ratio, status: 'ready' });
+    return;
+  }
+
+  if (type === 'video.asset.errored') {
+    const rec = await MediaAsset.findOne(data.upload_id ? { uploadId: data.upload_id } : { assetId: data.id });
+    if (!rec || rec.status === 'ready' || rec.status === 'errored') return;
+    rec.status = 'errored';
+    rec.error = data.errors?.messages?.join('; ') || 'Mux asset errored';
+    await rec.save();
+    await attachToEvent({ eventId: rec.entityId, uploadId: rec.uploadId, status: 'errored' });
+  }
 }
