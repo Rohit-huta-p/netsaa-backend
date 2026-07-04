@@ -10,7 +10,7 @@ dotenv.config();
 
 const envSchema = z.object({
     // App
-    NODE_ENV: z.enum(['development', 'staging', 'production']).default('development'),
+    NODE_ENV: z.enum(['development', 'staging', 'production', 'test']).default('development'),
     PORT: z.string().transform(Number).default('4005'),
     SERVICE_NAME: z.string().default('media-service'),
 
@@ -25,6 +25,15 @@ const envSchema = z.object({
     AWS_SECRET_ACCESS_KEY: z.string().min(1, 'AWS_SECRET_ACCESS_KEY is required'),
     AWS_REGION: z.string().default('ap-south-1'),
     AWS_S3_BUCKET: z.string().min(1, 'AWS_S3_BUCKET is required'),
+
+    // Mux
+    MUX_TOKEN_ID: z.string().min(1, 'MUX_TOKEN_ID is required'),
+    MUX_TOKEN_SECRET: z.string().min(1, 'MUX_TOKEN_SECRET is required'),
+    MUX_WEBHOOK_SECRET: z.string().min(1, 'MUX_WEBHOOK_SECRET is required'),
+
+    // Service-to-service
+    INTERNAL_SERVICE_TOKEN: z.string().min(1, 'INTERNAL_SERVICE_TOKEN is required'),
+    EVENTS_SERVICE_URL: z.string().url().default('http://localhost:5003'),
 
     // CDN (optional)
     CDN_BASE_URL: z.string().optional().default(''),
@@ -83,6 +92,17 @@ export const env = {
         region: parsedEnv.AWS_REGION,
         bucket: parsedEnv.AWS_S3_BUCKET,
     },
+
+    // Mux
+    mux: {
+        tokenId: parsedEnv.MUX_TOKEN_ID,
+        tokenSecret: parsedEnv.MUX_TOKEN_SECRET,
+        webhookSecret: parsedEnv.MUX_WEBHOOK_SECRET,
+    },
+
+    // Service-to-service
+    internalServiceToken: parsedEnv.INTERNAL_SERVICE_TOKEN,
+    eventsServiceUrl: parsedEnv.EVENTS_SERVICE_URL,
 
     // CDN
     cdnBaseUrl: parsedEnv.CDN_BASE_URL,
