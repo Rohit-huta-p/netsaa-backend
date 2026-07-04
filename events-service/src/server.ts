@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import connectDB from './config/db';
 import eventRoutes from './routes/eventRoutes';
 import searchRoutes from './routes/search';
+import internalRoutes from './routes/internal';
 import { startReservationExpiryWorker } from './workers/reservationExpiryWorker';
 import { handleWebhook } from './controllers/razorpayWebhook';
 import './models/User';
@@ -27,6 +28,7 @@ app.use(express.json());
 // API Versioning
 app.use('/v1', eventRoutes);
 app.use('/v1/search', searchRoutes);
+app.use('/internal', internalRoutes);
 
 const PORT = process.env.PORT || 5003;
 
