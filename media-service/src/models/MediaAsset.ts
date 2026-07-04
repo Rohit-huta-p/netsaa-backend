@@ -1,4 +1,5 @@
 import mongoose, { Schema, Document } from 'mongoose';
+import { EntityType } from '../utils/fileKey';
 
 export type MediaAssetStatus = 'waiting' | 'asset_created' | 'ready' | 'errored';
 
@@ -7,7 +8,7 @@ export interface IMediaAsset extends Document {
   assetId?: string;
   playbackId?: string;
   playbackPolicy: 'public' | 'signed';
-  entityType: 'event';
+  entityType: EntityType;
   entityId: string;
   purpose: string;
   ownerId: string;
@@ -23,7 +24,7 @@ const MediaAssetSchema = new Schema<IMediaAsset>(
     assetId: { type: String, index: true, sparse: true },
     playbackId: { type: String },
     playbackPolicy: { type: String, enum: ['public', 'signed'], default: 'public' },
-    entityType: { type: String, enum: ['event'], required: true },
+    entityType: { type: String, enum: ['user', 'artist', 'gig', 'event', 'contract'], required: true },
     entityId: { type: String, required: true },
     purpose: { type: String, required: true },
     ownerId: { type: String, required: true },

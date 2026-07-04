@@ -16,4 +16,21 @@ describe('MediaAsset', () => {
       }),
     ).rejects.toThrow();
   });
+
+  // Guards the entityType widening: the schema enum must accept the full EntityType
+  // union (not just 'event'), or a non-event upload would throw a ValidationError at
+  // create() despite passing checkUploadPermission. (Phase-2 surfaces: gig/artist video.)
+  it('accepts non-event entity types across the full EntityType union', async () => {
+    const gig = await MediaAsset.create({
+      uploadId: 'up_gig', entityType: 'gig', entityId: 'g1', purpose: 'gallery',
+      ownerId: 'u1', status: 'waiting',
+    });
+    expect(gig.entityType).toBe('gig');
+
+    const artist = await MediaAsset.create({
+      uploadId: 'up_artist', entityType: 'artist', entityId: 'a1', purpose: 'portfolio',
+      ownerId: 'u2', status: 'waiting',
+    });
+    expect(artist.entityType).toBe('artist');
+  });
 });
