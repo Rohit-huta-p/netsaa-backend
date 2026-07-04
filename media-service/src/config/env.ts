@@ -29,7 +29,9 @@ const envSchema = z.object({
     // Mux
     MUX_TOKEN_ID: z.string().min(1, 'MUX_TOKEN_ID is required'),
     MUX_TOKEN_SECRET: z.string().min(1, 'MUX_TOKEN_SECRET is required'),
-    MUX_WEBHOOK_SECRET: z.string().min(1, 'MUX_WEBHOOK_SECRET is required'),
+    // Optional: unset → incoming webhooks are rejected and status resolves via the
+    // getAssetStatus Mux poll-fallback. Set it in staging/prod for the server-side push.
+    MUX_WEBHOOK_SECRET: z.string().optional().default(''),
 
     // Service-to-service
     INTERNAL_SERVICE_TOKEN: z.string().min(1, 'INTERNAL_SERVICE_TOKEN is required'),

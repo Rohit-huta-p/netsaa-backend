@@ -8,6 +8,13 @@ export const mux = new Mux({
   webhookSecret: env.mux.webhookSecret,
 });
 
+if (!env.mux.webhookSecret) {
+  console.warn(
+    '[mux] MUX_WEBHOOK_SECRET is unset — incoming Mux webhooks will be rejected. ' +
+      'Video status still resolves via the getAssetStatus poll-fallback. Set it in staging/prod.',
+  );
+}
+
 // Phase-1 policy: public playback, free Basic encoding tier.
 export const MUX_ASSET_SETTINGS = {
   playback_policy: ['public'],
