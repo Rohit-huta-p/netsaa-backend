@@ -13,7 +13,12 @@ export interface IEvent extends Document {
   tags: string[];
   skills?: string[];
   topicTags?: string[];
-  media?: Array<{ kind: string; url: string; width?: number; height?: number; isHero?: boolean; sortOrder?: number }>;
+  media?: Array<{
+    kind: string; url?: string; width?: number; height?: number;
+    isHero?: boolean; sortOrder?: number;
+    thumbnailUrl?: string; status?: 'processing' | 'ready' | 'errored';
+    uploadId?: string; muxPlaybackId?: string; duration?: number; aspectRatio?: string;
+  }>;
 
   registrationMode?: 'free_rsvp' | 'paid_ticket';
   startsAt?: Date;
@@ -138,6 +143,12 @@ const eventSchema = new Schema<IEvent>(
         height: Number,
         isHero: Boolean,
         sortOrder: Number,
+        thumbnailUrl: String,
+        status: { type: String, enum: ['processing', 'ready', 'errored'] },
+        uploadId: String,
+        muxPlaybackId: String,
+        duration: Number,
+        aspectRatio: String,
       }],
       default: [],
       _id: false,
