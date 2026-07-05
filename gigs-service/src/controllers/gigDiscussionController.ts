@@ -64,17 +64,21 @@ export const addGigComment = async (req: Request, res: Response) => {
             return res.status(403).json({ success: false, message: 'Cannot verify comment on unpublished gig' });
         }
 
-        let authorName = user.name || user.displayName || `${user.firstName} ${user.lastName}`;
-        let authorImageUrl = user.profileImageUrl || user.imageUrl || user.avatarUrl;
-
-        // If user details are missing (e.g. only ID verified), fetch from DB
-        if (!authorName || authorName.replace('undefined undefined', '').trim() === '') {
-            const fullUser = await User.findById(user.id);
-            if (fullUser) {
-                authorName = fullUser.displayName || `${(fullUser as any).firstName} ${(fullUser as any).lastName}` || 'User';
-                authorImageUrl = fullUser.profileImageUrl;
-            }
-        }
+        // Resolve author identity from the DB (authoritative + current), NOT the
+        // JWT. The token carries a login-time profileImageUrl snapshot that goes
+        // stale/empty when the user sets or changes their photo after login — the
+        // old code only refreshed from the DB when the NAME was missing, so new
+        // comments showed a placeholder (or the wrong avatar). JWT fields are the
+        // fallback only if the lookup misses.
+        const fullUser: any = await User.findById(user.id || user._id)
+            .select('displayName firstName lastName profileImageUrl')
+            .lean();
+        const authorName =
+            fullUser?.displayName ||
+            `${fullUser?.firstName ?? ''} ${fullUser?.lastName ?? ''}`.trim() ||
+            user.displayName || user.name || 'User';
+        const authorImageUrl =
+            fullUser?.profileImageUrl || user.profileImageUrl || user.imageUrl || user.avatarUrl || undefined;
 
         // Create Comment
         const comment = await GigComment.create({
