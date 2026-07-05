@@ -39,4 +39,14 @@ describe('applyMuxEvent', () => {
     expect(rec?.status).toBe('errored');
     expect(attachSpy).toHaveBeenCalledWith(expect.objectContaining({ status: 'errored' }));
   });
+
+  it('does NOT push to events-service for a user (profile) asset', async () => {
+    attachSpy.mockClear();
+    await MediaAsset.create({ uploadId: 'up_u', entityType: 'user', entityId: 'u1', purpose: 'portfolio', ownerId: 'u1', status: 'waiting' });
+    await applyMuxEvent({ type: 'video.asset.ready', data: { id: 'as_u', upload_id: 'up_u', duration: 10, aspect_ratio: '9:16', playback_ids: [{ id: 'pb_u' }] } });
+    const rec = await MediaAsset.findOne({ uploadId: 'up_u' });
+    expect(rec?.status).toBe('ready');
+    expect(rec?.playbackId).toBe('pb_u');
+    expect(attachSpy).not.toHaveBeenCalled();
+  });
 });

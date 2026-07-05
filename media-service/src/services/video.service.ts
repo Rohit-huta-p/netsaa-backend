@@ -102,7 +102,7 @@ export async function applyMuxEvent(event: { type: string; data: any }): Promise
       rec.status = 'errored';
       rec.error = `Video too long (${Math.round(duration)}s > ${MAX_VIDEO_DURATION_SECONDS}s)`;
       await rec.save();
-      await attachToEvent({ eventId: rec.entityId, uploadId: rec.uploadId, status: 'errored' });
+      if (rec.entityType === 'event') await attachToEvent({ eventId: rec.entityId, uploadId: rec.uploadId, status: 'errored' });
       return;
     }
 
@@ -112,7 +112,7 @@ export async function applyMuxEvent(event: { type: string; data: any }): Promise
     rec.aspectRatio = data.aspect_ratio;
     rec.status = 'ready';
     await rec.save();
-    await attachToEvent({ eventId: rec.entityId, uploadId: rec.uploadId, playbackId, duration, aspectRatio: data.aspect_ratio, status: 'ready' });
+    if (rec.entityType === 'event') await attachToEvent({ eventId: rec.entityId, uploadId: rec.uploadId, playbackId, duration, aspectRatio: data.aspect_ratio, status: 'ready' });
     return;
   }
 
@@ -122,6 +122,6 @@ export async function applyMuxEvent(event: { type: string; data: any }): Promise
     rec.status = 'errored';
     rec.error = data.errors?.messages?.join('; ') || 'Mux asset errored';
     await rec.save();
-    await attachToEvent({ eventId: rec.entityId, uploadId: rec.uploadId, status: 'errored' });
+    if (rec.entityType === 'event') await attachToEvent({ eventId: rec.entityId, uploadId: rec.uploadId, status: 'errored' });
   }
 }
