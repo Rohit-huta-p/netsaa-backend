@@ -181,6 +181,16 @@ export interface IUser extends Document {
   galleryUrls?: string[];  // Up to 5 photo URLs
   videoUrls?: string[];    // Up to 3 video URLs
 
+  // Structured video reels (Mux-backed), replaces raw videoUrls for artist profile reels.
+  videoReels?: Array<{
+    muxPlaybackId: string;
+    status: 'processing' | 'ready' | 'errored';
+    uploadId?: string;
+    thumbnailUrl?: string;
+    duration?: number;
+    aspectRatio?: string;
+  }>;
+
   // Three-role marketplace model (2026-06): stored field, set at signup, switchable.
   // client posts gigs for creative_leads; creative_leads post gigs for artists.
   role: 'client' | 'creative_lead' | 'artist';
@@ -445,7 +455,21 @@ const UserSchema = new Schema<IUser>(
     // Media URLs (stored as URLs only - no binary data)
     hasPhotos: { type: Boolean, default: false },
     galleryUrls: { type: [String], default: [] },  // Up to 5 photo URLs
-    videoUrls: { type: [String], default: [] }     // Up to 3 video URLs
+    videoUrls: { type: [String], default: [] },    // Up to 3 video URLs
+
+    // Structured video reels (Mux-backed), replaces raw videoUrls for artist profile reels.
+    videoReels: {
+      type: [{
+        muxPlaybackId: String,
+        status: { type: String, enum: ['processing', 'ready', 'errored'] },
+        uploadId: String,
+        thumbnailUrl: String,
+        duration: Number,
+        aspectRatio: String,
+      }],
+      default: [],
+      _id: false,
+    },
   },
   { timestamps: true }
 );
