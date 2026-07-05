@@ -25,6 +25,7 @@ export const getEvents = async (req: Request, res: Response, next: NextFunction)
       skillLevel,
       isFeatured,
       category,
+      organizerId,
       sort,
       page = 1,
       limit = 20,
@@ -39,6 +40,9 @@ export const getEvents = async (req: Request, res: Response, next: NextFunction)
     if (skillLevel) query.skillLevel = skillLevel;
     if (isFeatured) query.isFeatured = isFeatured === 'true';
     if (category) query.category = category;
+    // Public "more by organizer" — filter to a given organizer's events. Safe on
+    // this optionalAuth route: status defaults to 'live', so drafts never leak.
+    if (organizerId) query.organizerId = organizerId;
 
     const sortBy: any = {};
     if (sort === 'newest') sortBy.publishedAt = -1;
