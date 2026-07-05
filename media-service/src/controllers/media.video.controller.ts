@@ -5,9 +5,9 @@ import { createVideoUpload, getAssetStatus } from '../services/video.service';
 import { PermissionError } from '../services/permission.service';
 
 const Body = z.object({
-  entityType: z.enum(['event']),
+  entityType: z.enum(['event', 'user']),
   entityId: z.string().min(1).max(50),
-  purpose: z.enum(['gallery']),
+  purpose: z.enum(['gallery', 'portfolio']),
 });
 
 export async function videoUploadController(req: AuthRequest, res: Response): Promise<void> {
