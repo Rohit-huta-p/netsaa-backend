@@ -26,6 +26,10 @@ export const getEvents = async (req: Request, res: Response, next: NextFunction)
       isFeatured,
       category,
       organizerId,
+      format,
+      mode,
+      startsAfter,
+      startsBefore,
       sort,
       page = 1,
       limit = 20,
@@ -39,13 +43,25 @@ export const getEvents = async (req: Request, res: Response, next: NextFunction)
     else query.status = 'live'; // Default to live (published) events only
     if (skillLevel) query.skillLevel = skillLevel;
     if (isFeatured) query.isFeatured = isFeatured === 'true';
-    if (category) query.category = category;
+    // Category — comma-separated → any-of match (multi-select craft filter).
+    if (category) query.category = { $in: String(category).split(',').filter(Boolean) };
     // Public "more by organizer" — filter to a given organizer's events. Safe on
     // this optionalAuth route: status defaults to 'live', so drafts never leak.
     if (organizerId) query.organizerId = organizerId;
+    // Format — in-person vs online (composer events set location.kind).
+    if (format === 'in_person' || format === 'online') query['location.kind'] = format;
+    // Price — free vs paid, via registrationMode.
+    if (mode === 'free_rsvp' || mode === 'paid_ticket') query.registrationMode = mode;
+    // When — date window on the event start (top-level startsAt on composer events).
+    if (startsAfter || startsBefore) {
+      query.startsAt = {};
+      if (startsAfter) query.startsAt.$gte = new Date(String(startsAfter));
+      if (startsBefore) query.startsAt.$lte = new Date(String(startsBefore));
+    }
 
     const sortBy: any = {};
-    if (sort === 'newest') sortBy.publishedAt = -1;
+    if (sort === 'soonest') sortBy.startsAt = 1;
+    else if (sort === 'newest') sortBy.publishedAt = -1;
     else if (sort === 'oldest') sortBy.publishedAt = 1;
     else sortBy.createdAt = -1;
 
