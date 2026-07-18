@@ -6,14 +6,18 @@
  * syncIndexes() drops indexes absent from the schema and creates the schema's.
  *
  * Run with:  ts-node src/migrations/2026-07-02-walkup-userid-optional.ts
- * SAFE TO RE-RUN (idempotent). REQUIRES: MONGO_URI env var.
+ * SAFE TO RE-RUN (idempotent). REQUIRES: EVENTS_MONGO_URI (or MONGO_URI) — loaded from .env.
  */
+import dotenv from 'dotenv';
 import mongoose from 'mongoose';
 import EventRegistration from '../models/EventRegistration';
 import EventTicket from '../models/EventTicket';
 
-const MONGO_URI = process.env.MONGO_URI;
-if (!MONGO_URI) { console.error('✗ MONGO_URI env var required'); process.exit(1); }
+dotenv.config();
+
+// The service connects with EVENTS_MONGO_URI (see src/config/db.ts); accept MONGO_URI as a fallback.
+const MONGO_URI = process.env.EVENTS_MONGO_URI || process.env.MONGO_URI;
+if (!MONGO_URI) { console.error('✗ EVENTS_MONGO_URI (or MONGO_URI) env var required'); process.exit(1); }
 const log = (m: string) => console.log(`[migration] ${m}`);
 
 async function main() {

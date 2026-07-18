@@ -134,7 +134,7 @@ export const getOrganizerGigs = async (req: AuthRequest, res: Response, next: Ne
     }
 };
 
-// @desc    Get applicants across ALL of the organizer's gigs (dashboard inbox / action queue)
+// @desc    Get applicants across ALL of the organizer's gigs (dashboard inbox)
 // @route   GET /v1/organizers/me/applicants?status=&gigId=&limit=
 // @access  Private (Organizer) — organizer resolved from the auth token, NOT a query param
 export const getOrganizerApplicants = async (req: AuthRequest, res: Response, next: NextFunction) => {
