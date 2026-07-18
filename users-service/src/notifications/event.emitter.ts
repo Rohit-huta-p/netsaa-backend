@@ -299,6 +299,30 @@ class NotificationEventEmitter {
 
         this.emit(event);
     }
+
+    /**
+     * Helper method to emit profile.viewed event
+     */
+    emitProfileViewed(payload: {
+        viewedUserId: string;
+        viewerId: string;
+        viewerName: string;
+    }): void {
+        const event: NotificationEvent = {
+            eventName: 'profile.viewed',
+            idempotencyKey: generateIdempotencyKey(
+                'profile.viewed',
+                `${payload.viewerId}:${payload.viewedUserId}`
+            ),
+            payload: {
+                viewedUserId: payload.viewedUserId as any,
+                viewerId: payload.viewerId as any,
+                viewerName: payload.viewerName,
+            },
+        };
+
+        this.emit(event);
+    }
 }
 
 // Export singleton instance

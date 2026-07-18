@@ -302,6 +302,26 @@ export interface ContractSignedEvent extends BaseNotificationEvent {
 }
 
 // ============================================================================
+// PROFILE EVENTS
+// ============================================================================
+
+/**
+ * Emitted when a user views another user's profile (first view of the day —
+ * deduped by the ProfileView unique index, self-views excluded).
+ *
+ * Triggers notification to: viewedUserId (profile owner)
+ * Notification type: profile.viewed
+ */
+export interface ProfileViewedEvent extends BaseNotificationEvent {
+    eventName: 'profile.viewed';
+    payload: {
+        viewedUserId: Types.ObjectId;     // Profile owner (receives notification)
+        viewerId: Types.ObjectId;         // User who viewed the profile (the actor)
+        viewerName: string;               // Viewer's display name for the notification text
+    };
+}
+
+// ============================================================================
 // UNION TYPE FOR ALL EVENTS
 // ============================================================================
 
@@ -323,7 +343,8 @@ export type NotificationEvent =
     | PaymentCompletedEvent
     | PaymentFailedEvent
     | ContractSentEvent
-    | ContractSignedEvent;
+    | ContractSignedEvent
+    | ProfileViewedEvent;
 
 /**
  * Event names as a union type for validation
@@ -360,4 +381,5 @@ export const NotificationEventNames = {
     PAYMENT_FAILED: 'payment.failed' as const,
     CONTRACT_SENT: 'contract.sent' as const,
     CONTRACT_SIGNED: 'contract.signed' as const,
+    PROFILE_VIEWED: 'profile.viewed' as const,
 } as const;

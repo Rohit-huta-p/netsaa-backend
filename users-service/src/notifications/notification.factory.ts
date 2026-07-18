@@ -33,6 +33,7 @@ import {
     PaymentFailedEvent,
     ContractSentEvent,
     ContractSignedEvent,
+    ProfileViewedEvent,
 } from './notification.events';
 import {
     NotificationType,
@@ -42,6 +43,7 @@ import {
     EventSubtype,
     PaymentSubtype,
     ContractSubtype,
+    ProfileSubtype,
 } from './notification.types';
 import { INotificationChannel, INotificationData } from './notification.model';
 
@@ -100,6 +102,8 @@ class NotificationFactory {
                 return this.createContractSent(event);
             case 'contract.signed':
                 return this.createContractSigned(event);
+            case 'profile.viewed':
+                return this.createProfileViewed(event);
             default:
                 console.warn('[NotificationFactory] Unknown event type:', (event as any).eventName);
                 return [];
@@ -516,6 +520,38 @@ class NotificationFactory {
                 inApp: true,
                 push: true,
                 email: true, // Important legal document, send email
+                sms: false,
+            },
+        }];
+    }
+
+    // ============================================================================
+    // PROFILE NOTIFICATIONS
+    // ============================================================================
+
+    private createProfileViewed(event: ProfileViewedEvent): NotificationPayload[] {
+        const name = event.payload.viewerName?.trim() || 'Someone';
+        const viewerId = event.payload.viewerId.toString();
+        return [{
+            userId: event.payload.viewedUserId,
+            actorId: event.payload.viewerId,
+            type: NotificationType.PROFILE,
+            subtype: ProfileSubtype.VIEWED,
+            title: `${name} viewed your profile`,
+            body: 'Tap to view their profile',
+            entityType: undefined,
+            // entityId = viewer → the service's per-(user,type,subtype,entity) dedup
+            // collapses repeat views by the same person within its 7-day window,
+            // so a single viewer can't spam you (distinct viewers still each notify).
+            entityId: event.payload.viewerId,
+            data: {
+                route: `/profile/${viewerId}`,   // full path → opens THAT viewer's profile
+                params: { userId: viewerId },
+            },
+            channel: {
+                inApp: true,
+                push: false,   // low-urgency — in-app only
+                email: false,
                 sms: false,
             },
         }];

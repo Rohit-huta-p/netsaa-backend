@@ -22,6 +22,7 @@ export enum NotificationType {
     PAYMENT = 'payment',
     CONTRACT = 'contract',
     SYSTEM = 'system',
+    PROFILE = 'profile',
 }
 
 /**
@@ -86,6 +87,11 @@ export const SystemSubtype = {
     POLICY_UPDATE: 'system.policy.update',   // Terms/privacy policy update
 } as const;
 
+// Profile-related notifications
+export const ProfileSubtype = {
+    VIEWED: 'profile.viewed',                // Someone viewed your profile
+} as const;
+
 /**
  * Union type of all possible notification subtypes
  * This ensures type safety when creating notifications
@@ -97,7 +103,8 @@ export type NotificationSubtype =
     | typeof EventSubtype[keyof typeof EventSubtype]
     | typeof PaymentSubtype[keyof typeof PaymentSubtype]
     | typeof ContractSubtype[keyof typeof ContractSubtype]
-    | typeof SystemSubtype[keyof typeof SystemSubtype];
+    | typeof SystemSubtype[keyof typeof SystemSubtype]
+    | typeof ProfileSubtype[keyof typeof ProfileSubtype];
 
 /**
  * Helper to get all subtypes as an array (useful for validation)
@@ -110,6 +117,7 @@ export const ALL_NOTIFICATION_SUBTYPES = [
     ...Object.values(PaymentSubtype),
     ...Object.values(ContractSubtype),
     ...Object.values(SystemSubtype),
+    ...Object.values(ProfileSubtype),
 ] as const;
 
 /**
@@ -124,6 +132,7 @@ export function getNotificationTypeFromSubtype(subtype: NotificationSubtype): No
     if (subtype.startsWith('payment.')) return NotificationType.PAYMENT;
     if (subtype.startsWith('contract.')) return NotificationType.CONTRACT;
     if (subtype.startsWith('system.')) return NotificationType.SYSTEM;
+    if (subtype.startsWith('profile.')) return NotificationType.PROFILE;
 
     throw new Error(`Unknown notification subtype: ${subtype}`);
 }
