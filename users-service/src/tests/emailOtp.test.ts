@@ -14,3 +14,12 @@ describe('EmailOtpSession model', () => {
     expect(s.email).toBe('priya.iyer@gmail.com');
   });
 });
+
+import { isValidEmail } from '../modules/auth/services/otp.service';
+describe('isValidEmail', () => {
+  it('accepts a normal address and rejects junk', () => {
+    expect(isValidEmail('priya.iyer@gmail.com')).toBe(true);
+    expect(isValidEmail('nope')).toBe(false);
+    expect(isValidEmail('a@b')).toBe(false);
+  });
+});
