@@ -498,6 +498,7 @@ Enter it in the app to secure your account with a backup email. It expires in 5 
     const html = renderPasswordResetEmail({ displayName, code }).html
         .replace(/reset your password/gi, 'confirm your email')
         .replace(/password reset code/gi, 'verification code')
+        .replace(/your reset code/gi, 'your verification code')
         .replace(/10 minutes/gi, '5 minutes');
     return { subject: `${code} is your NETSA verification code`, text, html };
 }

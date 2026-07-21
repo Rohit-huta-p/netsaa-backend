@@ -32,6 +32,12 @@ describe('renderEmailVerifyEmail', () => {
     expect(r.text).toContain('482917');
     expect(r.subject.toLowerCase()).not.toContain('kyc');
   });
+
+  it('never mentions reset or password anywhere in the rendered HTML', () => {
+    const r = renderEmailVerifyEmail({ displayName: 'Priya', code: '482917' });
+    expect(r.html).not.toMatch(/reset/i);
+    expect(r.html).not.toMatch(/password/i);
+  });
 });
 
 // ── sendEmailCode controller ──────────────────────────────────────────────
