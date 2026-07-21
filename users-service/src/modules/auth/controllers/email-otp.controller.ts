@@ -34,3 +34,37 @@ export const sendEmailCode = async (req: AuthRequest, res: Response) => {
         return res.status(500).json(envelope(500, 'Could not send code. Please try again.'));
     }
 };
+
+export const verifyEmailCode = async (req: AuthRequest, res: Response) => {
+    try {
+        if (!req.user) return res.status(401).json(envelope(401, 'Not authorized'));
+        const email = String(req.body?.email ?? '').trim().toLowerCase();
+        const code = String(req.body?.code ?? '').trim();
+        if (!email || !code) return res.status(400).json(envelope(400, 'Email and code are required'));
+
+        const session = await EmailOtpSession.findOne({ userId: req.user._id, email, isUsed: false }).sort({ createdAt: -1 });
+        if (!session) return res.status(400).json(envelope(400, 'No active code. Please request a new one.'));
+        if (session.expiresAt < new Date()) return res.status(400).json(envelope(400, 'Code expired. Please request a new one.'));
+        if (session.attempts >= 5) return res.status(429).json(envelope(429, 'Too many attempts. Please request a new code.'));
+
+        if (hashOTP(code) !== session.codeHash) {
+            session.attempts += 1; await session.save();
+            return res.status(400).json(envelope(400, 'Invalid code. Please try again.'));
+        }
+        const burned = await EmailOtpSession.findOneAndUpdate({ _id: session._id, isUsed: false }, { $set: { isUsed: true } });
+        if (!burned) return res.status(400).json(envelope(400, 'This code was already used.'));
+
+        const user: any = await User.findById(req.user._id);
+        user.email = email;
+        user.emailVerifiedAt = new Date();
+        if (user.phoneVerifiedAt && (user.kycLevel ?? 0) < 1) user.kycLevel = 1; // Global Constraint
+        await user.save();
+
+        const userObj = user.toObject();
+        delete userObj.passwordHash; delete userObj.otp; delete userObj.otpExpires;
+        return res.status(200).json(envelope(200, 'Email verified', userObj));
+    } catch (err: any) {
+        console.error('[verifyEmailCode]', err.message);
+        return res.status(500).json(envelope(500, 'Could not verify. Please try again.'));
+    }
+};
