@@ -23,3 +23,13 @@ describe('isValidEmail', () => {
     expect(isValidEmail('a@b')).toBe(false);
   });
 });
+
+import { renderEmailVerifyEmail } from '../email/email.templates';
+describe('renderEmailVerifyEmail', () => {
+  it('includes the code and a plain, non-scary subject', () => {
+    const r = renderEmailVerifyEmail({ displayName: 'Priya', code: '482917' });
+    expect(r.subject).toContain('482917');
+    expect(r.text).toContain('482917');
+    expect(r.subject.toLowerCase()).not.toContain('kyc');
+  });
+});

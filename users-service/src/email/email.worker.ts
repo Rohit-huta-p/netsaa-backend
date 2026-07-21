@@ -10,9 +10,9 @@
  * ───────────────────────────────────────────── */
 
 import { Worker, Job, UnrecoverableError } from 'bullmq';
-import { redisConnection, EmailJobData, EmailJobName, WelcomeEmailJob, PasswordResetEmailJob } from './email.queue';
+import { redisConnection, EmailJobData, EmailJobName, WelcomeEmailJob, PasswordResetEmailJob, EmailVerifyJob } from './email.queue';
 import { emailService } from './email.service';
-import { renderWelcomeEmail, renderPasswordResetEmail } from './email.templates';
+import { renderWelcomeEmail, renderPasswordResetEmail, renderEmailVerifyEmail } from './email.templates';
 
 const QUEUE_NAME = 'emailQueue';
 
@@ -71,6 +71,28 @@ async function processEmailJob(job: Job<EmailJobData, void, EmailJobName>): Prom
                 });
 
                 console.log(`[EmailWorker] ✓ password-reset email sent to ${email} (userId=${job.data.userId})`);
+                break;
+            }
+
+            case 'email-verify': {
+                const { email, displayName, code } = job.data as EmailVerifyJob;
+
+                if (!email || !code) {
+                    throw new UnrecoverableError(
+                        `[EmailWorker] email-verify job id=${job.id} missing email or code`
+                    );
+                }
+
+                const template = renderEmailVerifyEmail({ displayName, code });
+
+                await emailService.send({
+                    to: email,
+                    subject: template.subject,
+                    html: template.html,
+                    text: template.text,
+                });
+
+                console.log(`[EmailWorker] ✓ email-verify email sent to ${email} (userId=${job.data.userId})`);
                 break;
             }
 

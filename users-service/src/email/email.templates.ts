@@ -468,3 +468,36 @@ This code expires in 10 minutes. If you didn't request a password reset, you can
         text,
     };
 }
+
+/* ══════════════════════════════════════════
+ *  EMAIL VERIFICATION EMAIL
+ * ══════════════════════════════════════════ */
+
+export interface EmailVerifyParams { displayName: string; code: string; }
+
+/**
+ * Render the email-verification code email template.
+ *
+ * @example
+ * const { subject, html, text } = renderEmailVerifyEmail({
+ *   displayName: 'Priya',
+ *   code: '482917',
+ * });
+ */
+export function renderEmailVerifyEmail(params: EmailVerifyParams): RenderedEmail {
+    const { displayName, code } = params;
+    const text = `Hi ${displayName},
+
+Your NETSA verification code is: ${code}
+
+Enter it in the app to secure your account with a backup email. It expires in 5 minutes. If you didn't request this, you can ignore this email.`;
+    // For the HTML body, copy renderPasswordResetEmail's HTML block verbatim and
+    // replace its heading/instruction line with:
+    //   "Use the code below to confirm your email and secure your account."
+    // and its expiry line with "expires in 5 minutes".
+    const html = renderPasswordResetEmail({ displayName, code }).html
+        .replace(/reset your password/gi, 'confirm your email')
+        .replace(/password reset code/gi, 'verification code')
+        .replace(/10 minutes/gi, '5 minutes');
+    return { subject: `${code} is your NETSA verification code`, text, html };
+}
