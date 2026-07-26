@@ -33,8 +33,15 @@ export interface PasswordResetEmailJob {
     code: string;
 }
 
-export type EmailJobData = WelcomeEmailJob | PasswordResetEmailJob;
-export type EmailJobName = 'welcome-email' | 'password-reset';
+export interface EmailVerifyJob {
+    userId: string;
+    email: string;
+    displayName: string;
+    code: string;
+}
+
+export type EmailJobData = WelcomeEmailJob | PasswordResetEmailJob | EmailVerifyJob;
+export type EmailJobName = 'welcome-email' | 'password-reset' | 'email-verify';
 
 /* ── Queue (controllers enqueue jobs here) ── */
 
