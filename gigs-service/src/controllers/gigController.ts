@@ -208,16 +208,24 @@ export const getGigById = async (req: Request, res: Response, next: NextFunction
 
         // If we successfully populated the user, use fresh data
         if (organizer && organizer._id) {
+            // Trust signal — count of the organizer's live gigs (mirrors
+            // getOrganizerStats). Surfaced on the gig-detail producer card as
+            // "N gigs hosted". Excludes drafts.
+            const gigsHosted = await Gig.countDocuments({
+                organizerId: organizer._id,
+                status: { $in: ['published', 'closed', 'expired'] },
+            });
+
             organizerSnapshot = {
                 displayName: organizer.displayName || organizerSnapshot.displayName,
                 organizationName: organizerSnapshot.organizationName, // Keep original or fetch if stored in User
                 profileImageUrl: organizer.profileImageUrl || organizerSnapshot.profileImageUrl,
                 rating: organizer.cached?.averageRating || organizerSnapshot.rating,
                 testimonials: organizer.testimonials || organizerSnapshot.testimonials || [],
-                // Add verification status
-                // @ts-ignore - Adding dynamic property not in original schema interface for response
-                isVerified: organizer.kycStatus === 'approved'
-            };
+                // Dynamic properties not in the schema interface, added for the response.
+                gigsHosted,
+                isVerified: organizer.kycStatus === 'approved',
+            } as any;
         } else {
             // Fallback if population fails or user deleted
             // @ts-ignore
