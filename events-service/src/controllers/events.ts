@@ -11,6 +11,7 @@ import EventReservation from '../models/EventReservation';
 import EventStats from '../models/EventStats';
 import { shouldRevealMeetingLink } from '../utils/meetingLinkReveal';
 import { scheduleEventReminders } from '../services/reminderScheduler';
+import { mapComposerToEventDoc } from '../services/composerMapping';
 
 // @desc    Get all events with filters
 // @route   GET /api/grow/events
@@ -270,11 +271,6 @@ export const getEventById = async (req: Request, res: Response, next: NextFuncti
 // @desc    Create new event
 // @route   POST /v1/events
 // @access  Private (any authenticated user)
-
-const DURATION_MIN: Record<string, number> = {
-  m30: 30, h1: 60, h2: 120, h3: 180, half: 240, full: 480, multi: 480,
-};
-
 export const createEvent = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const b = req.body || {};
@@ -331,68 +327,21 @@ export const createEvent = async (req: Request, res: Response, next: NextFunctio
       return res.status(201).json({ meta: { status: 201, message: 'Event created' }, data: event, errors: [] });
     }
 
-    // ── NEW composer shape → map to model ──
-    if (!b.startsAt) {
+    // ── NEW composer shape (v3 + v4 "one form") → map to model ──
+    // A date is required unless the host explicitly left the time to be announced.
+    if (!b.startsAt && !b.timeTbd) {
       return res.status(400).json({ meta: { status: 400, message: 'Start time required' }, data: null, errors: [] });
     }
 
-    const startDate = new Date(b.startsAt);
-    const totalDurationMinutes = DURATION_MIN[b.durationKind] ?? 120;
-    const endDate = new Date(startDate.getTime() + totalDurationMinutes * 60000);
-    const locType = b.location?.kind === 'online' ? 'online' : 'physical';
-    const isPaid = b.registrationMode === 'paid_ticket';
+    // Mapping lives in a pure, unit-tested module (see services/composerMapping.ts).
+    // It derives capacity/maxParticipants and ticketPrice from spots[] (count-on-read,
+    // money-from-spot) and persists the v4 embedded fields (spots, offers,
+    // registration{door,questions}, people, lineup, bring, included, …).
+    const { doc, scheduleReminders } = mapComposerToEventDoc(b, user, String(userId));
+    const event = await Event.create(doc);
 
-    const event = await Event.create({
-      title: b.title,
-      description: b.about,
-      about: b.about,
-      tagline: b.tagline,
-      whatToExpect: b.whatToExpect,
-      eventType: b.eventType || 'workshop',
-      category: b.category || b.topicTags?.[0] || b.skills?.[0] || 'general',
-      tags: b.topicTags || [],
-      skills: b.skills || [],
-      topicTags: b.topicTags || [],
-      media: b.media || [],
-      organizerId: userId,
-      organizerSnapshot: {
-        name: user?.name || user?.displayName || 'Host',
-        organizationName: user?.organizationName || '',
-      },
-      pricingMode: 'fixed',
-      registrationMode: b.registrationMode || 'free_rsvp',
-      ticketPrice: isPaid ? (b.pricing?.amount || 0) : 0,
-      capacity: { total: b.capacity?.total ?? 0, registeredCount: 0 },
-      maxParticipants: b.capacity?.total ?? 0,
-      startsAt: startDate,
-      durationKind: b.durationKind,
-      schedule: { startDate, endDate, totalDurationMinutes, dayBreakdown: [] },
-      location: {
-        type: locType,
-        kind: b.location?.kind,
-        venueName: b.location?.venueName,
-        address: b.location?.address,
-        meetingLink: b.location?.meetingLink,
-      },
-      registrationDeadline: b.registrationDeadline ? new Date(b.registrationDeadline) : undefined,
-      maxGuestsPerRegistration: b.maxGuestsPerRegistration ?? 5,
-      requiredAttendeeFields: b.requiredAttendeeFields || ['phone'],
-      allowWaitlist: !!b.allowWaitlist,
-      waitlistAutoPromote: !!b.waitlistAutoPromote,
-      walkupsAllowed: !!b.walkupsAllowed,
-      visibility: b.visibility || 'public',
-      language: b.language || 'en',
-      discussionVisibility: b.discussionVisibility || 'public',
-      // Posting via the composer publishes immediately — the Step7Review screen
-      // expects 'live'|'pending_review', not a draft. The public /events feed only
-      // lists status:'live', so a 'draft' default would silently hide the event.
-      // (No moderation gate yet → 'live'; flip to 'pending_review' when moderation lands.)
-      status: b.status || 'live',
-      publishedAt: (b.status || 'live') === 'live' ? new Date() : undefined,
-    });
-
-    // Composer publishes immediately as 'live' — schedule reminders right away.
-    if (event.status === 'live') {
+    // Composer publishes immediately as 'live' — schedule reminders when it has a real date.
+    if (scheduleReminders) {
       await scheduleEventReminders(event._id);
     }
 
