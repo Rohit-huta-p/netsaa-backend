@@ -8,7 +8,7 @@ export interface IEvent extends Document {
   whatToExpect?: string;
   about?: string;
 
-  eventType: 'workshop' | 'competition' | 'meetup' | 'showcase';
+  eventType: 'workshop' | 'masterclass' | 'audition' | 'open_mic' | 'competition' | 'performance' | 'screening' | 'meetup' | 'other' | 'showcase';
   category: string;
   tags: string[];
   skills?: string[];
@@ -99,6 +99,58 @@ export interface IEvent extends Document {
   language: string;                         // ISO 639-1 (e.g. 'en', 'hi', 'mr') · for translation hints · default 'en'
   discussionVisibility: 'public' | 'attendees_only';  // Q8 · per-event toggle · default public
 
+  // ── v4 composer: "one form for every event" (fields only; create/reserve wiring lands in Phase 1) ──
+  eventTypeLabel?: string;                    // host's own words for a typed-in type
+  otherArtistTypes?: string[];                // typed-in artist types (not in the shared list)
+  openToAll?: boolean;                        // "All creatives"
+  languages?: string[];                       // conducted-in languages (first mirrors `language`)
+  timeTbd?: boolean;                          // no start/end time set yet
+  coverFit?: 'whole' | 'fill';                // how the poster fills wide frames
+
+  people?: Array<{
+    userId?: mongoose.Types.ObjectId;
+    displayName: string;
+    role?: string;
+    avatarUrl?: string;
+    invite?: { status: 'invited' | 'joined'; tokenHash?: string; sentAt?: Date };
+  }>;
+
+  spots?: Array<{
+    name: string;
+    note?: string;
+    capacity: number;                          // seats aren't stored (count-on-read, E5)
+    price: number;                             // rupees; 0 = free
+  }>;
+
+  offers?: Array<{
+    spotId?: mongoose.Types.ObjectId;
+    name: string;
+    price: number;                             // rupees, below the spot's price
+    audience: 'everyone' | 'group';
+    endsAt?: Date;
+    seatLimit?: number;                        // "first N seats"
+    minSeats?: number;                         // group offer: N+ seats
+  }>;
+
+  registration?: {
+    door: 'open' | 'guest_list' | 'apply';
+    questions?: Array<{
+      label: string;
+      type: 'text' | 'choice' | 'link' | 'photo' | 'yes_no';
+      options?: string[];
+      required?: boolean;
+      spotIds?: mongoose.Types.ObjectId[];
+    }>;
+  };
+  requiresApproval?: boolean;                  // derived: registration.door !== 'open'
+
+  lineup?: Array<{ when?: string; title: string; detail?: string }>;
+  bring?: { items?: string[]; note?: string };
+  included?: string[];                         // "what they get"
+
+  ticketSales?: 'open' | 'waiting_for_bank';   // paid event live before the bank is verified
+  notifyMe?: mongoose.Types.ObjectId[];        // users to tell when sales open
+
   eventConfig?: {
     materialsProvided?: boolean;
     preparationRequired?: boolean;
@@ -128,7 +180,7 @@ const eventSchema = new Schema<IEvent>(
 
     eventType: {
       type: String,
-      enum: ['workshop', 'competition', 'meetup', 'showcase'],
+      enum: ['workshop', 'masterclass', 'audition', 'open_mic', 'competition', 'performance', 'screening', 'meetup', 'other', 'showcase'],
       default: 'workshop',
     },
     category: { type: String },
@@ -282,6 +334,62 @@ const eventSchema = new Schema<IEvent>(
         },
       ],
     },
+
+    // ── v4 composer fields (see IEvent). Embedded; no seat counters (count-on-read, E5). ──
+    eventTypeLabel: { type: String },
+    otherArtistTypes: [{ type: String }],
+    openToAll: { type: Boolean, default: false },
+    languages: [{ type: String }],
+    timeTbd: { type: Boolean, default: false },
+    coverFit: { type: String, enum: ['whole', 'fill'], default: 'whole' },
+
+    people: [{
+      userId: { type: Schema.Types.ObjectId, ref: 'User' },
+      displayName: { type: String, required: true },
+      role: String,
+      avatarUrl: String,
+      invite: {
+        status: { type: String, enum: ['invited', 'joined'] },
+        tokenHash: String,
+        sentAt: Date,
+      },
+    }],
+
+    spots: [{
+      name: { type: String, required: true },
+      note: String,
+      capacity: { type: Number, required: true },
+      price: { type: Number, default: 0 },
+    }],
+
+    offers: [{
+      spotId: { type: Schema.Types.ObjectId },
+      name: { type: String, required: true },
+      price: { type: Number, required: true },
+      audience: { type: String, enum: ['everyone', 'group'], required: true },
+      endsAt: Date,
+      seatLimit: Number,
+      minSeats: Number,
+    }],
+
+    registration: {
+      door: { type: String, enum: ['open', 'guest_list', 'apply'] },
+      questions: [{
+        label: { type: String, required: true },
+        type: { type: String, enum: ['text', 'choice', 'link', 'photo', 'yes_no'], required: true },
+        options: [String],
+        required: { type: Boolean, default: false },
+        spotIds: [{ type: Schema.Types.ObjectId }],
+      }],
+    },
+    requiresApproval: { type: Boolean, default: false },
+
+    lineup: [{ when: String, title: { type: String, required: true }, detail: String }],
+    bring: { items: [String], note: String },
+    included: [{ type: String }],
+
+    ticketSales: { type: String, enum: ['open', 'waiting_for_bank'], default: 'open' },
+    notifyMe: [{ type: Schema.Types.ObjectId, ref: 'User' }],
 
     status: {
       type: String,
