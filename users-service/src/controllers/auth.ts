@@ -305,6 +305,7 @@ export const updateMe = async (req: AuthRequest, res: Response) => {
       videoUrls,
       videoReels,
       hasPhotos,
+      featured,
       // Profile fields
       bio,
       location,
@@ -332,6 +333,7 @@ export const updateMe = async (req: AuthRequest, res: Response) => {
     if (videoUrls !== undefined) updateFields.videoUrls = videoUrls;
     if (videoReels !== undefined) updateFields.videoReels = videoReels;
     if (hasPhotos !== undefined) updateFields.hasPhotos = hasPhotos;
+    if (featured !== undefined) updateFields.featured = featured;
     // Profile fields
     if (bio !== undefined) updateFields.bio = bio;
     if (location !== undefined) updateFields.location = location;

@@ -196,6 +196,20 @@ export interface IUser extends Document {
     location?: string;  // where it was shot
   }>;
 
+  // Featured highlights (LinkedIn-style) shown under About on the artist profile.
+  // Each item = title + optional description + attachments (photo/video/pdf/link).
+  featured?: Array<{
+    title: string;
+    description?: string;
+    attachments?: Array<{
+      type: 'photo' | 'video' | 'pdf' | 'link';
+      label?: string;
+      url?: string;           // link/pdf href, or media source
+      thumbnailUrl?: string;  // poster for photo/video
+      muxPlaybackId?: string; // when the attachment is a Mux reel
+    }>;
+  }>;
+
   // Three-role marketplace model (2026-06): stored field, set at signup, switchable.
   // client posts gigs for creative_leads; creative_leads post gigs for artists.
   role: 'client' | 'creative_lead' | 'artist';
@@ -479,6 +493,29 @@ const UserSchema = new Schema<IUser>(
         aspectRatio: String,
         caption: String,
         location: String,
+      }],
+      default: [],
+      _id: false,
+    },
+
+    // Featured highlights (LinkedIn-style) under About.
+    featured: {
+      type: [{
+        title: String,
+        description: String,
+        attachments: {
+          type: [{
+            // `type` is a real field name here (photo/video/pdf/link), so it
+            // must be declared as { type: { type: String, ... } } in Mongoose.
+            type: { type: String, enum: ['photo', 'video', 'pdf', 'link'] },
+            label: String,
+            url: String,
+            thumbnailUrl: String,
+            muxPlaybackId: String,
+          }],
+          default: [],
+          _id: false,
+        },
       }],
       default: [],
       _id: false,
