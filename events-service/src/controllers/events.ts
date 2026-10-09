@@ -11,7 +11,7 @@ import EventReservation from '../models/EventReservation';
 import EventStats from '../models/EventStats';
 import { shouldRevealMeetingLink } from '../utils/meetingLinkReveal';
 import { scheduleEventReminders } from '../services/reminderScheduler';
-import { mapComposerToEventDoc } from '../services/composerMapping';
+import { mapComposerToEventDoc, buildComposerUpdate, isComposerPatch } from '../services/composerMapping';
 
 // @desc    Get all events with filters
 // @route   GET /api/grow/events
@@ -395,13 +395,18 @@ export const updateEvent = async (req: Request, res: Response, next: NextFunctio
       });
     }
 
-    // 3. Build a whitelisted update — ignore any other keys.
-    const update: Record<string, unknown> = {};
-    for (const key of Object.keys(req.body)) {
-      if (UPDATE_WHITELIST.has(key)) {
-        update[key] = req.body[key];
-      }
-    }
+    // 3. Build the update.
+    //    - A v4 composer (one-form) edit re-derives capacity/ticketPrice from spots,
+    //      recomputes schedule from the dates, merges location and keeps description
+    //      in sync with about (see services/composerMapping.ts).
+    //    - Any other PATCH stays on the narrow field whitelist (single-field edits,
+    //      legacy callers) and is copied verbatim.
+    const update: Record<string, unknown> = isComposerPatch(req.body)
+      ? buildComposerUpdate(req.body, event)
+      : Object.keys(req.body).reduce((acc, key) => {
+          if (UPDATE_WHITELIST.has(key)) acc[key] = req.body[key];
+          return acc;
+        }, {} as Record<string, unknown>);
 
     // 4. Apply the safe update.
     const updated = await Event.findByIdAndUpdate(
