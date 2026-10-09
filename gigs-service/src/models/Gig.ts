@@ -72,8 +72,10 @@ export interface IGig extends Document {
 
   // Compensation
   compensation: {
-    model: 'fixed' | 'hourly' | 'per-day';
-    amount: number;
+    model: 'fixed' | 'hourly' | 'per-day' | 'per-track' | 'per-shoot';
+    amount?: number;
+    minAmount?: number;
+    maxAmount?: number;
     currency: string;
     negotiable: boolean;
     perks: string[];
@@ -90,6 +92,21 @@ export interface IGig extends Document {
     audioSample: boolean;
     notes: string;
   };
+
+  // Gig-form v2 additions — collected by the mobile create-flow and surfaced
+  // on the gig detail page. Previously sent by the client but silently dropped
+  // because the model had no fields for them.
+  headcount?: number;
+  eventFunction?: string;
+  languagePreferences?: string[];
+  // Conditional Page-3 "fit" blocks. Stored as Mixed because the shape varies
+  // by performer type (music / model / visual / crew) and they are optional,
+  // rarely-queried sub-documents — this guarantees nothing the client sends is
+  // dropped on create.
+  musicDetails?: Record<string, unknown>;
+  modelDetails?: Record<string, unknown>;
+  visualDetails?: Record<string, unknown>;
+  crewDetails?: Record<string, unknown>;
 
   // Status
   status: 'draft' | 'published' | 'paused' | 'closed' | 'expired';
@@ -195,7 +212,10 @@ const GigSchema = new Schema<IGig>({
   compensation: {
     model: {
       type: String,
-      enum: ['fixed', 'hourly', 'per-day'],
+      // Widened for gig-form v2 (per-track = producers/musicians,
+      // per-shoot = models/photographers). Must stay in sync with the
+      // client CompensationModel union.
+      enum: ['fixed', 'hourly', 'per-day', 'per-track', 'per-shoot'],
       required: true
     },
     amount: { type: Number, required: false }, // Made optional
@@ -206,7 +226,9 @@ const GigSchema = new Schema<IGig>({
     perks: [String]
   },
 
-  applicationDeadline: { type: Date, required: true },
+  // Optional in gig-form v2 — the create-flow lets hirers skip the deadline.
+  // Was `required: true`, which silently 400'd any post without one.
+  applicationDeadline: { type: Date },
   maxApplications: Number,
 
   mediaRequirements: {
@@ -229,6 +251,18 @@ const GigSchema = new Schema<IGig>({
   publishedAt: Date,
   expiresAt: { type: Date, index: true }, // Index for expiration cleanup
   termsAndConditions: String,
+
+  // ── Gig-form v2 additions ──
+  // These were already sent by the client but dropped by strict-mode schema
+  // stripping. Added so the occasion, headcount, language prefs, and the
+  // conditional "fit" detail blocks actually persist.
+  headcount: { type: Number },
+  eventFunction: { type: String, index: true },
+  languagePreferences: [String],
+  musicDetails: { type: Schema.Types.Mixed },
+  modelDetails: { type: Schema.Types.Mixed },
+  visualDetails: { type: Schema.Types.Mixed },
+  crewDetails: { type: Schema.Types.Mixed },
 }, { timestamps: true });
 
 // Compound Indexes from Spec

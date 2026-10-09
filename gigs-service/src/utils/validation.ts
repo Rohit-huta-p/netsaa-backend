@@ -44,14 +44,17 @@ export const gigValidationSchema = z.object({
     }),
 
     compensation: z.object({
-        model: z.enum(['fixed', 'hourly', 'per-day']),
-        amount: z.number().min(0, 'Amount must be positive'),
+        model: z.enum(['fixed', 'hourly', 'per-day', 'per-track', 'per-shoot']),
+        // Optional: 'range' uses min/max, 'decide later' discloses nothing.
+        amount: z.number().min(0, 'Amount must be positive').optional(),
+        minAmount: z.number().min(0).optional(),
+        maxAmount: z.number().min(0).optional(),
         currency: z.string().optional(),
         negotiable: z.boolean().optional(),
         perks: z.array(z.string()).optional()
     }),
 
-    applicationDeadline: z.string().or(z.date()),
+    applicationDeadline: z.string().or(z.date()).optional(),
     maxApplications: z.number().optional(),
 
     mediaRequirements: z.object({
@@ -64,8 +67,17 @@ export const gigValidationSchema = z.object({
 
     status: z.enum(['draft', 'published', 'paused', 'closed', 'expired']).optional(),
     isUrgent: z.boolean().optional(),
-    isFeatured: z.boolean().optional()
-});
+    isFeatured: z.boolean().optional(),
+
+    // Gig-form v2 — persisted on the model; accept + keep them here too.
+    headcount: z.number().int().positive().optional(),
+    eventFunction: z.string().optional(),
+    languagePreferences: z.array(z.string()).optional(),
+    musicDetails: z.record(z.string(), z.unknown()).optional(),
+    modelDetails: z.record(z.string(), z.unknown()).optional(),
+    visualDetails: z.record(z.string(), z.unknown()).optional(),
+    crewDetails: z.record(z.string(), z.unknown()).optional()
+}).passthrough();
 
 export const applyValidationSchema = z.object({
     coverNote: z.string().optional(),
