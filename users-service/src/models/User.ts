@@ -179,6 +179,9 @@ export interface IUser extends Document {
   // Media URLs (stored as URLs only - no binary data)
   hasPhotos?: boolean;
   galleryUrls?: string[];  // Up to 5 photo URLs
+  // Structured photos (url + optional caption/location) for the showcase viewer.
+  // Supersedes galleryUrls when present; galleryUrls kept for back-compat.
+  gallery?: Array<{ url: string; caption?: string; location?: string }>;
   videoUrls?: string[];    // Up to 3 video URLs
 
   // Structured video reels (Mux-backed), replaces raw videoUrls for artist profile reels.
@@ -189,6 +192,8 @@ export interface IUser extends Document {
     thumbnailUrl?: string;
     duration?: number;
     aspectRatio?: string;
+    caption?: string;   // shown as the title in the media viewer
+    location?: string;  // where it was shot
   }>;
 
   // Three-role marketplace model (2026-06): stored field, set at signup, switchable.
@@ -455,6 +460,12 @@ const UserSchema = new Schema<IUser>(
     // Media URLs (stored as URLs only - no binary data)
     hasPhotos: { type: Boolean, default: false },
     galleryUrls: { type: [String], default: [] },  // Up to 5 photo URLs
+    // Structured photos (url + optional caption/location); supersedes galleryUrls when present.
+    gallery: {
+      type: [{ url: String, caption: String, location: String }],
+      default: [],
+      _id: false,
+    },
     videoUrls: { type: [String], default: [] },    // Up to 3 video URLs
 
     // Structured video reels (Mux-backed), replaces raw videoUrls for artist profile reels.
@@ -466,6 +477,8 @@ const UserSchema = new Schema<IUser>(
         thumbnailUrl: String,
         duration: Number,
         aspectRatio: String,
+        caption: String,
+        location: String,
       }],
       default: [],
       _id: false,
