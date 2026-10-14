@@ -60,6 +60,12 @@ export interface IGig extends Document {
   schedule: {
     startDate: Date;
     endDate: Date;
+    // GigForm v2.2 — how the dates were chosen.
+    //  • 'range' (default): runs every day from startDate to endDate.
+    //  • 'dates': runs only on the specific days in `dates`; startDate/endDate
+    //    still hold the envelope (min…max) so existing date-range queries work.
+    dateMode?: 'range' | 'dates';
+    dates?: Date[];
     durationLabel: string;
     timeCommitment: string;
     practiceDays?: {
@@ -199,6 +205,10 @@ const GigSchema = new Schema<IGig>({
   schedule: {
     startDate: { type: Date, required: true },
     endDate: { type: Date, required: true },
+    // v2.2 — specific-dates support (see interface above). `dates` omitted
+    // (not stored as []) unless the gig is in 'dates' mode.
+    dateMode: { type: String, enum: ['range', 'dates'], default: 'range' },
+    dates: { type: [Date], default: undefined },
     durationLabel: String,
     timeCommitment: String,
     practiceDays: {
