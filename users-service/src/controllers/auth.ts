@@ -299,6 +299,7 @@ export const updateMe = async (req: AuthRequest, res: Response) => {
     const {
       displayName,
       profileImageUrl,
+      coverImageUrl,
       // Media fields (URLs only - no binary data)
       galleryUrls,
       gallery,
@@ -327,6 +328,7 @@ export const updateMe = async (req: AuthRequest, res: Response) => {
     const updateFields: any = {};
     if (displayName !== undefined) updateFields.displayName = displayName;
     if (profileImageUrl !== undefined) updateFields.profileImageUrl = profileImageUrl;
+    if (coverImageUrl !== undefined) updateFields.coverImageUrl = coverImageUrl;
     // Media fields
     if (galleryUrls !== undefined) updateFields.galleryUrls = galleryUrls;
     if (gallery !== undefined) updateFields.gallery = gallery;

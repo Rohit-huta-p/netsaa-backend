@@ -109,6 +109,7 @@ export interface IUser extends Document {
   isAdmin: boolean;
 
   profileImageUrl?: string; // small avatar
+  coverImageUrl?: string;   // header/cover image (Spotlight immersive header)
 
   // Trust Engine (PRD v4)
   trustScore: number;         // 0-100
@@ -375,6 +376,7 @@ const UserSchema = new Schema<IUser>(
 
     displayName: { type: String },
     profileImageUrl: { type: String },
+    coverImageUrl: { type: String },
 
     // Trust Engine
     trustScore: { type: Number, default: 0, index: true },
