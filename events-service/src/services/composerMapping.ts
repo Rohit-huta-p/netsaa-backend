@@ -39,23 +39,48 @@ const str = (v: any): string => (typeof v === 'string' ? v.trim() : '');
 
 // ── shared cleaners (drop entries that would violate a required sub-field) ──
 
-export function cleanSpots(raw: any): Array<{ name: string; note?: string; capacity: number; price: number }> {
-  return (Array.isArray(raw) ? raw : [])
+/**
+ * Clean spots AND give each a stable _id, returning a ref→_id map so offers (and
+ * any spot-scoped sub-doc) can be re-pointed at the spot the host actually picked.
+ *
+ *  - A spot whose client ref (clientId | id | _id) is already a real ObjectId
+ *    keeps it as the _id — so an EDIT preserves existing spot ids, and live
+ *    registrations + offer links survive a re-save (no spot churn).
+ *  - Anything else (a composer's ephemeral "spot-1") gets a fresh _id (CREATE).
+ */
+export function buildSpots(raw: any): {
+  spots: Array<{ _id: Types.ObjectId; name: string; note?: string; capacity: number; price: number }>;
+  refToId: Map<string, Types.ObjectId>;
+} {
+  const refToId = new Map<string, Types.ObjectId>();
+  const spots = (Array.isArray(raw) ? raw : [])
     .filter((s: any) => str(s?.name))
-    .map((s: any) => ({
-      name: str(s.name),
-      note: str(s.note) || undefined,
-      capacity: Number(s.capacity) || 0,
-      price: Number(s.price) || 0,
-    }));
+    .map((s: any) => {
+      const ref = s?.clientId ?? s?.id ?? s?._id;
+      const _id = oid(ref) ?? new Types.ObjectId();
+      if (ref != null && String(ref)) refToId.set(String(ref), _id);
+      return { _id, name: str(s.name), note: str(s.note) || undefined, capacity: Number(s.capacity) || 0, price: Number(s.price) || 0 };
+    });
+  return { spots, refToId };
 }
 
-/** Caller decides whether offers apply at all (paid-only); this just cleans them. */
-export function cleanOffers(raw: any): Array<any> {
+/** Back-compat thin wrapper — just the cleaned spots (each now carries an _id). */
+export function cleanSpots(raw: any) { return buildSpots(raw).spots; }
+
+/** Resolve a spot ref (offer/question): the host's client ref first, then a raw ObjectId. */
+function resolveSpotRef(ref: any, map: Map<string, Types.ObjectId>): Types.ObjectId | undefined {
+  if (ref == null) return undefined;
+  return map.get(String(ref)) ?? oid(ref);
+}
+
+/** Caller decides whether offers apply at all (paid-only); this just cleans them.
+ *  Pass the buildSpots ref→_id map so an offer links to the spot the host picked. */
+export function cleanOffers(raw: any, spotMap?: Map<string, Types.ObjectId>): Array<any> {
+  const map = spotMap ?? new Map<string, Types.ObjectId>();
   return (Array.isArray(raw) ? raw : [])
     .filter((o: any) => str(o?.name))
     .map((o: any) => ({
-      spotId: oid(o.spotId),
+      spotId: resolveSpotRef(o.spotId, map),
       name: str(o.name),
       price: Number(o.price) || 0,
       audience: o.audience === 'group' ? 'group' : 'everyone',
@@ -155,7 +180,7 @@ export function mapComposerToEventDoc(b: any, user: any, userId: string): Compos
   const timeTbd = !!b.timeTbd;
   const sched = computeSchedule(b.startsAt, b.endsAt, b.durationKind, timeTbd);
 
-  const spots = cleanSpots(b.spots);
+  const { spots, refToId } = buildSpots(b.spots);
   const isPaid = b.registrationMode === 'paid_ticket';
   const capacityTotal = spots.length ? spots.reduce((n, s) => n + (s.capacity || 0), 0) : (Number(b.capacity?.total) || 0);
   const ticketPrice = deriveTicketPrice(spots, isPaid, b.pricing?.amount, 0);
@@ -213,7 +238,7 @@ export function mapComposerToEventDoc(b: any, user: any, userId: string): Compos
 
     // ── v4 embedded ──
     spots,
-    offers: isPaid ? cleanOffers(b.offers) : [],
+    offers: isPaid ? cleanOffers(b.offers, refToId) : [],
     registration: { door, questions: cleanQuestions(b.registration?.questions) },
     requiresApproval: b.requiresApproval != null ? !!b.requiresApproval : door !== 'open',
     people: cleanPeople(b.people),
@@ -322,8 +347,14 @@ export function buildComposerUpdate(b: any, existing: any): Record<string, any> 
   // registrationMode (free ↔ paid) — affects ticketPrice/offers below
   if (has('registrationMode')) set.registrationMode = b.registrationMode;
 
-  // spots → persist; recompute capacity/maxParticipants/ticketPrice from spots or mode
-  if (has('spots')) set.spots = cleanSpots(b.spots);
+  // spots → persist with stable ids (preserves existing spot _ids on edit → no
+  // churn under live registrations); recompute capacity/maxParticipants/ticketPrice.
+  let spotRefMap: Map<string, Types.ObjectId> | undefined;
+  if (has('spots')) {
+    const built = buildSpots(b.spots);
+    set.spots = built.spots;
+    spotRefMap = built.refToId;
+  }
   const modeChanged = has('registrationMode');
   if (has('spots') || modeChanged) {
     const spots = has('spots') ? set.spots : cleanSpots(existing?.spots);
@@ -340,10 +371,10 @@ export function buildComposerUpdate(b: any, existing: any): Record<string, any> 
     set.maxParticipants = cap;
   }
 
-  // offers (paid only; cleared when free)
+  // offers (paid only; cleared when free) — linked to the spot the host picked
   if (has('offers')) {
     const mode = modeChanged ? b.registrationMode : existing?.registrationMode;
-    set.offers = mode === 'paid_ticket' ? cleanOffers(b.offers) : [];
+    set.offers = mode === 'paid_ticket' ? cleanOffers(b.offers, spotRefMap) : [];
   }
 
   // dates → recompute schedule from the merged values
