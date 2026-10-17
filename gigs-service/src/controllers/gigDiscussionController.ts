@@ -48,7 +48,7 @@ export const getGigDiscussion = async (req: Request, res: Response) => {
 export const addGigComment = async (req: Request, res: Response) => {
     try {
         const { gigId } = req.params;
-        const { text } = req.body;
+        const { text, parentId } = req.body;
         const user = (req as any).user; // Assumes auth middleware populates user
 
         if (!text || text.trim().length === 0) {
@@ -62,6 +62,25 @@ export const addGigComment = async (req: Request, res: Response) => {
 
         if (gig.status !== 'published') {
             return res.status(403).json({ success: false, message: 'Cannot verify comment on unpublished gig' });
+        }
+
+        // Threading (flat, one level). A reply carries the id of the comment it
+        // replies to; we coerce it to the THREAD ROOT so a reply can never parent
+        // another reply. The parent must be a comment on this same gig.
+        let resolvedParentId: mongoose.Types.ObjectId | null = null;
+        if (parentId) {
+            if (!mongoose.Types.ObjectId.isValid(parentId)) {
+                return res.status(400).json({ success: false, message: 'Invalid parent comment id' });
+            }
+            const parent = await GigComment.findOne({
+                _id: parentId,
+                topicId: gigId,
+                collectionType: 'gig',
+            });
+            if (!parent) {
+                return res.status(400).json({ success: false, message: 'Parent comment not found' });
+            }
+            resolvedParentId = (parent.parentId ?? parent._id) as mongoose.Types.ObjectId;
         }
 
         // Resolve author identity from the DB (authoritative + current), NOT the
@@ -88,6 +107,7 @@ export const addGigComment = async (req: Request, res: Response) => {
             authorId: user.id,
             authorName: authorName,
             authorImageUrl: authorImageUrl,
+            parentId: resolvedParentId,
         });
 
         // Emit Socket Event
