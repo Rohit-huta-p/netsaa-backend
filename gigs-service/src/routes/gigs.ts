@@ -15,7 +15,7 @@ import {
     getSavedGigs,
     getOrganizerStats
 } from '../controllers/gigController';
-import { getGigDiscussion, addGigComment } from '../controllers/gigDiscussionController';
+import { getGigDiscussion, addGigComment, togglePinGigComment, deleteGigComment } from '../controllers/gigDiscussionController';
 import { protect, optionalAuth, requireOrganizer } from '../middleware/auth';
 
 const router = express.Router();
@@ -39,6 +39,9 @@ router.route('/gigs/:id').patch(protect, updateGig).delete(protect, deleteGig);
 router.route('/gigs/:gigId/discussion')
     .get(protect, getGigDiscussion)
     .post(protect, addGigComment);
+// Moderation (gig owner / author / admin) — the FE already calls these.
+router.route('/gigs/:gigId/discussion/:commentId/pin').put(protect, togglePinGigComment);
+router.route('/gigs/:gigId/discussion/:commentId').delete(protect, deleteGigComment);
 
 // Organizer Stats Route (public - for trust card)
 router.route('/users/:userId/organizer-stats').get(getOrganizerStats);
