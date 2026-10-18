@@ -202,7 +202,7 @@ export function mapComposerToEventDoc(b: any, user: any, userId: string): Compos
     tags: b.topicTags || [],
     skills: b.skills || [],
     topicTags: b.topicTags || [],
-    skillLevel: b.skillLevel || 'all',
+    skillLevel: cleanSkillLevel(b.skillLevel),
     eligibleArtistTypes: Array.isArray(b.eligibleArtistTypes) ? b.eligibleArtistTypes : [],
     otherArtistTypes: Array.isArray(b.otherArtistTypes) ? b.otherArtistTypes : [],
     openToAll: !!b.openToAll,
@@ -281,6 +281,12 @@ export function isComposerPatch(b: any): boolean {
 
 const num = (v: any): number => Number(v) || 0;
 
+/** Skill level is multi-select: an array of specific levels; [] = any level.
+ *  Accepts a single string (older clients) or an array; drops 'all'/invalid. */
+const SKILL_LEVELS = ['beginner', 'intermediate', 'advanced'];
+const cleanSkillLevel = (v: any): string[] =>
+  (Array.isArray(v) ? v : v ? [v] : []).filter((x: any) => SKILL_LEVELS.includes(x));
+
 /**
  * Build a $set for a v4 composer (one-form) PATCH. Only touches fields present in
  * the body, re-derives capacity/maxParticipants/ticketPrice whenever spots or the
@@ -293,7 +299,7 @@ export function buildComposerUpdate(b: any, existing: any): Record<string, any> 
   const has = (k: string) => b[k] !== undefined;
 
   // simple passthroughs (only when present)
-  for (const k of ['title', 'tagline', 'whatToExpect', 'eventType', 'eventTypeLabel', 'skillLevel',
+  for (const k of ['title', 'tagline', 'whatToExpect', 'eventType', 'eventTypeLabel',
     'visibility', 'discussionVisibility', 'allowWaitlist', 'waitlistAutoPromote', 'walkupsAllowed',
     'maxGuestsPerRegistration', 'requiredAttendeeFields', 'registrationClosed']) {
     if (has(k)) set[k] = b[k];
@@ -304,6 +310,7 @@ export function buildComposerUpdate(b: any, existing: any): Record<string, any> 
   // arrays
   if (has('topicTags')) { set.topicTags = b.topicTags || []; set.tags = b.topicTags || []; }
   if (has('skills')) set.skills = b.skills || [];
+  if (has('skillLevel')) set.skillLevel = cleanSkillLevel(b.skillLevel);
   if (has('eligibleArtistTypes')) set.eligibleArtistTypes = b.eligibleArtistTypes || [];
   if (has('otherArtistTypes')) set.otherArtistTypes = b.otherArtistTypes || [];
   if (has('media')) set.media = b.media || [];

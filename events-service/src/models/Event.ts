@@ -41,7 +41,7 @@ export interface IEvent extends Document {
     rating?: number;
   };
 
-  skillLevel: 'all' | 'beginner' | 'intermediate' | 'advanced';
+  skillLevel: ('all' | 'beginner' | 'intermediate' | 'advanced')[];
   eligibleArtistTypes: string[];
   pricingMode: 'fixed' | 'ticketed';
   ticketPrice: number;
@@ -235,9 +235,9 @@ const eventSchema = new Schema<IEvent>(
     },
 
     skillLevel: {
-      type: String,
+      type: [String],
       enum: ['all', 'beginner', 'intermediate', 'advanced'],
-      default: 'all',
+      default: [],
     },
     eligibleArtistTypes: [{ type: String }],
 
