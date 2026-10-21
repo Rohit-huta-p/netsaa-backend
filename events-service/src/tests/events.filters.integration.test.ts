@@ -44,6 +44,23 @@ describe('GET /v1/events — discovery filters', () => {
     expect(res.body.data.every((e: any) => ['dance', 'music'].includes(e.category))).toBe(true);
   });
 
+  it('eventType — comma-separated is an any-of match; a single value still matches exactly', async () => {
+    await makeEvent({ eventType: 'workshop' });
+    await makeEvent({ eventType: 'audition' });
+    await makeEvent({ eventType: 'performance' });
+
+    // Multi-select: any-of across the CSV (the board's searchable multi-select).
+    const multi = await request(app).get('/v1/events?eventType=workshop,audition');
+    expect(multi.status).toBe(200);
+    expect(multi.body.meta.total).toBe(2);
+    expect(multi.body.data.every((e: any) => ['workshop', 'audition'].includes(e.eventType))).toBe(true);
+
+    // Single value: still an exact match (split yields a one-element $in).
+    const single = await request(app).get('/v1/events?eventType=performance');
+    expect(single.body.meta.total).toBe(1);
+    expect(single.body.data[0].eventType).toBe('performance');
+  });
+
   it('format — filters on location.kind (in_person vs online)', async () => {
     await makeEvent({ location: { type: 'physical', kind: 'in_person', city: 'Pune', state: 'MH', country: 'IN' } });
     await makeEvent({ location: { type: 'online', kind: 'online', city: 'Pune', state: 'MH', country: 'IN' } });
