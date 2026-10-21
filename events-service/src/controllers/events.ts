@@ -12,6 +12,7 @@ import EventStats from '../models/EventStats';
 import { shouldRevealMeetingLink } from '../utils/meetingLinkReveal';
 import { scheduleEventReminders } from '../services/reminderScheduler';
 import { mapComposerToEventDoc, buildComposerUpdate, isComposerPatch } from '../services/composerMapping';
+import { escapeRegex } from '../utils/escapeRegex';
 
 // @desc    Get all events with filters
 // @route   GET /api/grow/events
@@ -20,6 +21,7 @@ export const getEvents = async (req: Request, res: Response, next: NextFunction)
   console.log("getting events...")
   try {
     const {
+      q,
       eventType,
       city,
       status,
@@ -58,6 +60,31 @@ export const getEvents = async (req: Request, res: Response, next: NextFunction)
       query.startsAt = {};
       if (startsAfter) query.startsAt.$gte = new Date(String(startsAfter));
       if (startsBefore) query.startsAt.$lte = new Date(String(startsBefore));
+    }
+    // Free-text search — escaped, case-insensitive substring across the event's
+    // text fields. Grouped under $and so it ANDs with the filters above (search
+    // within the filtered set) and never collides with another top-level $or.
+    if (q && typeof q === 'string' && q.trim()) {
+      const rx = { $regex: escapeRegex(q.trim()), $options: 'i' };
+      query.$and = [
+        ...(query.$and ?? []),
+        {
+          $or: [
+            { title: rx },
+            { tagline: rx },
+            { about: rx },
+            { description: rx },
+            { category: rx },
+            { topicTags: rx },
+            { skills: rx },
+            { 'location.venueName': rx },
+            { 'location.city': rx },
+            { 'location.address': rx },
+            { 'organizerSnapshot.name': rx },
+            { 'organizerSnapshot.organizationName': rx },
+          ],
+        },
+      ];
     }
 
     const sortBy: any = {};
