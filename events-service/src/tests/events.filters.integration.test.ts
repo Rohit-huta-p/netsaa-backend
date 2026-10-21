@@ -80,3 +80,51 @@ describe('GET /v1/events — discovery filters', () => {
     expect(res.body.data[0].title).toBe('Sooner');
   });
 });
+
+describe('GET /v1/events — text search (q)', () => {
+  it('q — matches on title', async () => {
+    await makeEvent({ title: 'Salsa Night' });
+    await makeEvent({ title: 'Pottery Workshop' });
+
+    const res = await request(app).get('/v1/events?q=salsa');
+    expect(res.status).toBe(200);
+    expect(res.body.meta.total).toBe(1);
+    expect(res.body.data[0].title).toBe('Salsa Night');
+  });
+
+  it('q — matches across other text fields and is case-insensitive', async () => {
+    await makeEvent({ title: 'Pottery Workshop', about: 'learn basic salsa footwork' });
+    await makeEvent({ title: 'Jazz Night' });
+
+    const res = await request(app).get('/v1/events?q=SALSA');
+    expect(res.body.meta.total).toBe(1);
+    expect(res.body.data[0].title).toBe('Pottery Workshop');
+  });
+
+  it('q — matches on nested location fields (venue / city)', async () => {
+    await makeEvent({ title: 'Open Mic', location: { type: 'physical', kind: 'in_person', venueName: 'The Salsa Room', city: 'Pune', state: 'MH', country: 'IN' } });
+    await makeEvent({ title: 'Open Mic', location: { type: 'physical', kind: 'in_person', venueName: 'The Cellar', city: 'Pune', state: 'MH', country: 'IN' } });
+
+    const res = await request(app).get('/v1/events?q=salsa');
+    expect(res.body.meta.total).toBe(1);
+    expect(res.body.data[0].location.venueName).toBe('The Salsa Room');
+  });
+
+  it('q — special regex characters are escaped (literal match only)', async () => {
+    await makeEvent({ title: 'axb' });       // would match /a.b/ if the dot were NOT escaped
+    await makeEvent({ title: 'Jam a.b set' }); // the literal we expect to match
+
+    const res = await request(app).get('/v1/events?q=a.b');
+    expect(res.body.meta.total).toBe(1);
+    expect(res.body.data[0].title).toBe('Jam a.b set');
+  });
+
+  it('q — ANDs with other filters (search within the filtered set)', async () => {
+    await makeEvent({ title: 'Salsa Night', category: 'dance' });
+    await makeEvent({ title: 'Salsa Brunch', category: 'music' });
+
+    const res = await request(app).get('/v1/events?q=salsa&category=dance');
+    expect(res.body.meta.total).toBe(1);
+    expect(res.body.data[0].category).toBe('dance');
+  });
+});
