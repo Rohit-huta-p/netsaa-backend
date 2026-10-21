@@ -495,8 +495,13 @@ export const updateApplicationStatus = async (req: AuthRequest, res: Response, n
         const validTransitions: any = {
             'applied': ['shortlisted', 'rejected'],
             'shortlisted': ['hired', 'rejected'],
-            'rejected': [], // Terminal state? Maybe allow reconsidering? The spec implies strict flow.
-            'hired': []
+            // 'rejected' -> 'applied' makes "Pass" reversible: the hub dims a
+            // passed applicant and offers Undo, which returns them to the pool.
+            // No stat restore needed — 'applied' is not a counted stat, and a
+            // reject only ever decremented 'shortlisted' (which stays down; they
+            // are no longer shortlisted). Reject -> shortlisted/hired stays blocked.
+            'rejected': ['applied'],
+            'hired': [] // Revoking a hire is a dedicated cascade (not this plain transition).
         };
 
         const currentStatus = application.status;
