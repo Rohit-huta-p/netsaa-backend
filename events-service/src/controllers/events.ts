@@ -40,7 +40,11 @@ export const getEvents = async (req: Request, res: Response, next: NextFunction)
 
     const query: any = {};
 
-    if (eventType) query.eventType = eventType;
+    // Event type — comma-separated → any-of match (multi-select event-type
+    // filter). Mirrors `category` below so the board's searchable multi-select
+    // filters across ALL pages, not just the loaded one. A single value still
+    // matches exactly (split yields a one-element $in).
+    if (eventType) query.eventType = { $in: String(eventType).split(',').filter(Boolean) };
     if (city) query['location.city'] = city;
     if (status) query.status = status;
     else query.status = 'live'; // Default to live (published) events only
