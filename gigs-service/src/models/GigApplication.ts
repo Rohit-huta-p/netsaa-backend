@@ -9,6 +9,11 @@ export interface IGigApplication extends Document {
         artistType: string;
         profileImageUrl: string;
         rating: number;
+        // B1 — captured at apply-time so the applicant card (D) shows location
+        // + skills without a per-row profile fetch. Optional: applications made
+        // before B1 lack them and get backfilled lazily on the list endpoint.
+        primaryCity?: string;
+        specialities?: string[];
     };
 
     coverNote?: string;
@@ -27,7 +32,9 @@ const GigApplicationSchema = new Schema<IGigApplication>({
         displayName: String,
         artistType: String,
         profileImageUrl: String,
-        rating: Number
+        rating: Number,
+        primaryCity: String,
+        specialities: [String]
     },
 
     coverNote: String,

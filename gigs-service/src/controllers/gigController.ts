@@ -4,9 +4,11 @@ import Gig from '../models/Gig';
 import GigStats from '../models/GigStats';
 import GigApplication from '../models/GigApplication';
 import SavedGig from '../models/SavedGig';
+import User from '../models/User';
 import { notificationEvents } from '../notifications/event.emitter';
 import { geocodeLocation } from '../utils/geocode';
 import { normalizeRole, visiblePosterRolesFor, canApply, posterRoleFor } from '../utils/roleVisibility';
+import { artistSnapshotExtras } from '../utils/artistSnapshot';
 
 // Helper for standard response
 const sendResponse = (res: Response, status: number, data: any = null, message: string = 'OK', errors: any[] = []) => {
@@ -382,13 +384,21 @@ export const applyToGig = async (req: AuthRequest, res: Response, next: NextFunc
             session.endSession();
             return sendResponse(res, 400, null, 'Already applied');
         }
-        console.log("[GIG APPLY] USER: ", req.user)
+        // B1 — capture location + top specialities for the applicant card. The
+        // JWT (req.user) carries primaryCity but not skills, so read the User
+        // mirror once; cached.primaryCity is authoritative, JWT is the fallback.
+        const applicantDoc: any = await User.findById(artistId)
+            .select('skills cached.primaryCity')
+            .lean();
+        const extras = artistSnapshotExtras(applicantDoc, req.user.primaryCity);
+
         // Create Application
         const artistSnapshot = {
             displayName: req.user.displayName || req.user.name || 'Artist',
             artistType: req.user.artistType || 'General',
             profileImageUrl: req.user.profileImageUrl || '',
-            rating: req.user.rating || 0
+            rating: req.user.rating || 0,
+            ...extras,
         };
 
         const application = await GigApplication.create([{
@@ -450,8 +460,34 @@ export const getGigApplications = async (req: AuthRequest, res: Response, next: 
             return sendResponse(res, 403, null, 'Not authorized to view applications for this gig');
         }
 
-        const applications = await GigApplication.find({ gigId }).sort({ appliedAt: -1 });
-        console.log(applications);
+        const applications: any[] = await GigApplication.find({ gigId }).sort({ appliedAt: -1 }).lean();
+
+        // B1 lazy backfill — applications made before the snapshot carried
+        // location/skills get them filled from the current User mirror on read,
+        // so card D renders without a migration. One batched lookup, response-only
+        // (not persisted); new applications already carry the fields and skip this.
+        const needsFill = applications.filter(
+            (a) => !a.artistSnapshot?.primaryCity ||
+                   !(a.artistSnapshot?.specialities && a.artistSnapshot.specialities.length)
+        );
+        if (needsFill.length > 0) {
+            const ids = [...new Set(needsFill.map((a) => String(a.artistId)))];
+            const users = await User.find({ _id: { $in: ids } })
+                .select('skills cached.primaryCity')
+                .lean();
+            const byId = new Map(users.map((u: any) => [String(u._id), u]));
+            for (const a of applications) {
+                const u = byId.get(String(a.artistId));
+                if (!u) continue;
+                const extras = artistSnapshotExtras(u);
+                const snap = (a.artistSnapshot = a.artistSnapshot || {});
+                if (!snap.primaryCity && extras.primaryCity) snap.primaryCity = extras.primaryCity;
+                if (!(snap.specialities && snap.specialities.length) && extras.specialities) {
+                    snap.specialities = extras.specialities;
+                }
+            }
+        }
+
         sendResponse(res, 200, applications);
     } catch (err: any) {
         console.error(err);
