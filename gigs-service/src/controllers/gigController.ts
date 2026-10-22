@@ -537,7 +537,10 @@ export const updateApplicationStatus = async (req: AuthRequest, res: Response, n
             // reject only ever decremented 'shortlisted' (which stays down; they
             // are no longer shortlisted). Reject -> shortlisted/hired stays blocked.
             'rejected': ['applied'],
-            'hired': [] // Revoking a hire is a dedicated cascade (not this plain transition).
+            // 'hired' -> 'shortlisted' is the Remove-hire cascade: revoking a hire
+            // DEMOTES the applicant back onto the shortlist (never a reject) and
+            // reopens the freed slot (handled below). 'hired' has no other exit.
+            'hired': ['shortlisted']
         };
 
         const currentStatus = application.status;
@@ -547,6 +550,18 @@ export const updateApplicationStatus = async (req: AuthRequest, res: Response, n
             await session.abortTransaction();
             session.endSession();
             return sendResponse(res, 400, null, `Invalid status transition from ${currentStatus} to ${status}`);
+        }
+
+        const isRemoveHire = currentStatus === 'hired' && status === 'shortlisted';
+
+        // B3 Remove-hire cascade guard: a hire can be removed on a live gig
+        // (published / paused / closed-because-filled) but not on one that is
+        // already over. An 'expired' gig is past its date, so reopening its slot
+        // makes no sense — the owner should repost instead.
+        if (isRemoveHire && gig.status === 'expired') {
+            await session.abortTransaction();
+            session.endSession();
+            return sendResponse(res, 400, null, 'Cannot remove a hire on an expired gig');
         }
 
         // Perform Update
@@ -562,6 +577,11 @@ export const updateApplicationStatus = async (req: AuthRequest, res: Response, n
 
         if (status === 'shortlisted') {
             statsUpdate.$inc = { shortlisted: 1 };
+            // Remove-hire cascade: coming back from 'hired' also releases the hire
+            // counter so the organizer's "artists hired" aggregate stays truthful.
+            if (currentStatus === 'hired') {
+                statsUpdate.$inc.hired = -1;
+            }
         } else if (status === 'hired') {
             statsUpdate.$inc = { hired: 1 };
             // If it was shortlisted before, should we decrement shortlisted? 
@@ -584,6 +604,19 @@ export const updateApplicationStatus = async (req: AuthRequest, res: Response, n
                 { session }
             );
         }
+
+        // B3 Remove-hire cascade: removing a hire frees a slot, so a gig that had
+        // closed once it filled is reopened for applications. (Auto-close when
+        // filled arrives in B4; this is its forward-compatible inverse.) 'expired'
+        // is guarded above; 'published' / 'paused' / 'draft' are left untouched.
+        if (isRemoveHire && gig.status === 'closed') {
+            gig.status = 'published';
+            await gig.save({ session });
+        }
+
+        // TODO(payments): once advance / instant-split exists, a removed hire must
+        // trigger the refund/reversal path here. Payments are 0% built today (no
+        // escrow — see netsa-contracts-disabled), so there is nothing to undo yet.
 
         await session.commitTransaction();
         session.endSession();
