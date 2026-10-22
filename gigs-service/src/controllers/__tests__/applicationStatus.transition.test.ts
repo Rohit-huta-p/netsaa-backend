@@ -1,11 +1,15 @@
 // src/controllers/__tests__/applicationStatus.transition.test.ts
 //
-// Reversible "Pass": updateApplicationStatus now allows rejected -> applied so
-// the owner hub can Undo a pass and return the applicant to the pool. The other
-// transitions stay as before — reject -> shortlisted/hired is still invalid, and
-// 'hired' stays terminal (revoking a hire is a dedicated cascade, not this plain
-// transition). House pattern: mock the models + the mongoose transaction session,
-// leave the pure response helper and role utils running.
+// Reversible "Pass": updateApplicationStatus allows rejected -> applied so the
+// owner hub can Undo a pass and return the applicant to the pool.
+//
+// Remove-hire cascade (B3): updateApplicationStatus allows hired -> shortlisted —
+// revoking a hire DEMOTES the applicant back onto the shortlist (never a reject),
+// releases the 'hired' stat counter, and reopens a gig that had closed once it
+// filled. It is blocked on an 'expired' gig. reject -> shortlisted/hired is still
+// invalid, and 'hired' has no exit other than shortlisted. House pattern: mock the
+// models + the mongoose transaction session, leave the pure response helper and
+// role utils running.
 
 const mockAppFindById = jest.fn();
 const mockGigFindById = jest.fn();
@@ -51,6 +55,15 @@ const makeApp = (status: string) => ({
     save: jest.fn().mockResolvedValue(undefined),
 });
 
+// Gig with a mutable status + save spy — the Remove-hire cascade may reopen a
+// closed gig, so these tests assert on gig.status and gig.save.
+const makeGig = (status?: string) => ({
+    _id: 'g1', organizerId: 'owner1', title: 'Sangeet night', status,
+    save: jest.fn().mockResolvedValue(undefined),
+});
+const useGig = (gig: any) =>
+    mockGigFindById.mockReturnValue({ session: () => Promise.resolve(gig) });
+
 beforeEach(() => {
     jest.clearAllMocks();
     session.commitTransaction.mockResolvedValue(undefined);
@@ -93,17 +106,6 @@ describe('updateApplicationStatus — reversible Pass', () => {
         expect(session.abortTransaction).toHaveBeenCalled();
     });
 
-    it('keeps hired terminal — hired -> shortlisted stays 400', async () => {
-        const app = makeApp('hired');
-        mockAppFindById.mockReturnValue({ session: () => Promise.resolve(app) });
-
-        const res = mkRes();
-        await updateApplicationStatus(mkReq('a1', 'shortlisted'), res, jest.fn());
-
-        expect(res.status).toHaveBeenCalledWith(400);
-        expect(app.save).not.toHaveBeenCalled();
-    });
-
     it('still allows the forward path applied -> shortlisted (regression guard)', async () => {
         const app = makeApp('applied');
         mockAppFindById.mockReturnValue({ session: () => Promise.resolve(app) });
@@ -114,5 +116,85 @@ describe('updateApplicationStatus — reversible Pass', () => {
         expect(app.status).toBe('shortlisted');
         expect(res.status).toHaveBeenCalledWith(200);
         expect(mockStatsFOU).toHaveBeenCalled(); // shortlisted IS a counted stat
+    });
+});
+
+describe('updateApplicationStatus — Remove-hire cascade', () => {
+    it('demotes hired -> shortlisted on a live gig: saves, commits, emits, no reopen', async () => {
+        const app = makeApp('hired');
+        mockAppFindById.mockReturnValue({ session: () => Promise.resolve(app) });
+        const gig = makeGig('published');
+        useGig(gig);
+
+        const res = mkRes();
+        await updateApplicationStatus(mkReq('a1', 'shortlisted'), res, jest.fn());
+
+        expect(app.status).toBe('shortlisted');
+        expect(app.save).toHaveBeenCalled();
+        expect(session.commitTransaction).toHaveBeenCalled();
+        expect(res.status).toHaveBeenCalledWith(200);
+        // A published gig is already open, so its status is not touched.
+        expect(gig.status).toBe('published');
+        expect(gig.save).not.toHaveBeenCalled();
+        expect(mockEmitStatusChanged).toHaveBeenCalledWith(
+            expect.objectContaining({ oldStatus: 'hired', newStatus: 'shortlisted' })
+        );
+    });
+
+    it('releases the hired stat AND re-adds shortlisted when demoting', async () => {
+        const app = makeApp('hired');
+        mockAppFindById.mockReturnValue({ session: () => Promise.resolve(app) });
+        useGig(makeGig('published'));
+
+        const res = mkRes();
+        await updateApplicationStatus(mkReq('a1', 'shortlisted'), res, jest.fn());
+
+        expect(mockStatsFOU).toHaveBeenCalledWith(
+            { gigId: 'g1' },
+            { $inc: { shortlisted: 1, hired: -1 } },
+            expect.anything()
+        );
+    });
+
+    it('reopens a gig that had closed once it filled', async () => {
+        const app = makeApp('hired');
+        mockAppFindById.mockReturnValue({ session: () => Promise.resolve(app) });
+        const gig = makeGig('closed');
+        useGig(gig);
+
+        const res = mkRes();
+        await updateApplicationStatus(mkReq('a1', 'shortlisted'), res, jest.fn());
+
+        expect(res.status).toHaveBeenCalledWith(200);
+        expect(gig.status).toBe('published'); // freed slot reopens the gig
+        expect(gig.save).toHaveBeenCalled();
+    });
+
+    it('blocks removing a hire on an expired gig (400, aborts, no app/gig save)', async () => {
+        const app = makeApp('hired');
+        mockAppFindById.mockReturnValue({ session: () => Promise.resolve(app) });
+        const gig = makeGig('expired');
+        useGig(gig);
+
+        const res = mkRes();
+        await updateApplicationStatus(mkReq('a1', 'shortlisted'), res, jest.fn());
+
+        expect(res.status).toHaveBeenCalledWith(400);
+        expect(app.save).not.toHaveBeenCalled();
+        expect(gig.save).not.toHaveBeenCalled();
+        expect(session.abortTransaction).toHaveBeenCalled();
+    });
+
+    it('still blocks hired -> rejected: a hire is demoted, never rejected (400)', async () => {
+        const app = makeApp('hired');
+        mockAppFindById.mockReturnValue({ session: () => Promise.resolve(app) });
+        useGig(makeGig('published'));
+
+        const res = mkRes();
+        await updateApplicationStatus(mkReq('a1', 'rejected'), res, jest.fn());
+
+        expect(res.status).toHaveBeenCalledWith(400);
+        expect(app.save).not.toHaveBeenCalled();
+        expect(session.abortTransaction).toHaveBeenCalled();
     });
 });
