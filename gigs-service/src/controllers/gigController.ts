@@ -348,6 +348,14 @@ export const applyToGig = async (req: AuthRequest, res: Response, next: NextFunc
             return sendResponse(res, 400, null, 'Gig is not accepting applications');
         }
 
+        // B4 — the owner can pause NEW applications without closing the gig or
+        // losing the pipeline (the "Pause applications" toggle in the ⋯ sheet).
+        if (gig.applicationsPaused) {
+            await session.abortTransaction();
+            session.endSession();
+            return sendResponse(res, 400, null, 'Applications are paused for this gig');
+        }
+
         // Three-role wall: artist -> creative_lead posts; creative_lead -> client posts.
         // Server-side enforcement — hiding posts in the feed is not a guard.
         if (!canApply(normalizeRole(req.user.role), gig.posterRole)) {
@@ -612,6 +620,22 @@ export const updateApplicationStatus = async (req: AuthRequest, res: Response, n
         if (isRemoveHire && gig.status === 'closed') {
             gig.status = 'published';
             await gig.save({ session });
+        }
+
+        // B4 Auto-close when filled: hiring the final slot closes a gig that opted
+        // in (the ⋯ "Auto-close when filled" toggle, default on). This is the
+        // forward counterpart of the remove-hire reopen above. Slots come from
+        // headcount (v2.2) with maxApplications as the legacy fallback; counting
+        // hired docs in-session is authoritative (the GigStats counter is a mirror).
+        if (status === 'hired' && gig.autoCloseWhenFilled !== false && gig.status === 'published') {
+            const slots = gig.headcount ?? gig.maxApplications;
+            if (slots && slots > 0) {
+                const hiredCount = await GigApplication.countDocuments({ gigId: gig._id, status: 'hired' }).session(session);
+                if (hiredCount >= slots) {
+                    gig.status = 'closed';
+                    await gig.save({ session });
+                }
+            }
         }
 
         // TODO(payments): once advance / instant-split exists, a removed hire must
