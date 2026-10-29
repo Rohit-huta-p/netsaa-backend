@@ -50,8 +50,35 @@ export const getEvents = async (req: Request, res: Response, next: NextFunction)
     else query.status = 'live'; // Default to live (published) events only
     if (skillLevel) query.skillLevel = skillLevel;
     if (isFeatured) query.isFeatured = isFeatured === 'true';
-    // Category — comma-separated → any-of match (multi-select craft filter).
-    if (category) query.category = { $in: String(category).split(',').filter(Boolean) };
+    // Category — comma-separated craft slugs → any-of match.
+    // Case-insensitive regex handles mixed-case stored values. The $or arm also
+    // matches via eligibleArtistTypes so that v4 events (whose category may have
+    // been derived from topicTags rather than artist types) are still discoverable.
+    if (category) {
+      const cats = String(category).split(',').filter(Boolean);
+      const CRAFT_ARTIST_TYPES: Record<string, string[]> = {
+        dance:       ['dancer', 'choreographer'],
+        music:       ['musician', 'singer', 'vocalist', 'dj', 'composer'],
+        theatre:     ['actor', 'playwright', 'director'],
+        modeling:    ['model'],
+        photography: ['photographer'],
+        comedy:      ['comedian'],
+        film:        ['filmmaker', 'director'],
+      };
+      const artistTypePatterns = cats.flatMap(c =>
+        (CRAFT_ARTIST_TYPES[c.toLowerCase()] ?? []).map(a => new RegExp(`^${escapeRegex(a)}$`, 'i'))
+      );
+      const categoryPatterns = cats.map(c => new RegExp(`^${escapeRegex(c)}$`, 'i'));
+      query.$and = [
+        ...(query.$and ?? []),
+        {
+          $or: [
+            { category: { $in: categoryPatterns } },
+            ...(artistTypePatterns.length > 0 ? [{ eligibleArtistTypes: { $in: artistTypePatterns } }] : []),
+          ],
+        },
+      ];
+    }
     // Public "more by organizer" — filter to a given organizer's events. Safe on
     // this optionalAuth route: status defaults to 'live', so drafts never leak.
     if (organizerId) query.organizerId = organizerId;
