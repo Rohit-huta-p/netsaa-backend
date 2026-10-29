@@ -118,6 +118,11 @@ export interface IGig extends Document {
   status: 'draft' | 'published' | 'paused' | 'closed' | 'expired';
   isUrgent: boolean;
   isFeatured: boolean;
+  // B4 — owner "Manage gig" (⋯) toggles. `applicationsPaused` keeps the gig
+  // live + its pipeline but stops NEW applications; `autoCloseWhenFilled` flips
+  // the status to 'closed' once every slot is hired.
+  applicationsPaused: boolean;
+  autoCloseWhenFilled: boolean;
 
   // Lifecycle
   publishedAt?: Date;
@@ -257,6 +262,13 @@ const GigSchema = new Schema<IGig>({
   },
   isUrgent: { type: Boolean, default: false },
   isFeatured: { type: Boolean, default: false },
+
+  // B4 — owner "Manage gig" (⋯) toggles. applicationsPaused keeps the gig live +
+  // pipeline but stops NEW applications (applyToGig gate); autoCloseWhenFilled
+  // flips status -> 'closed' once hiredCount reaches the slot count
+  // (headcount || maxApplications). Default on, matching the mockup.
+  applicationsPaused: { type: Boolean, default: false },
+  autoCloseWhenFilled: { type: Boolean, default: true },
 
   publishedAt: Date,
   expiresAt: { type: Date, index: true }, // Index for expiration cleanup
