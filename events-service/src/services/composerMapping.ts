@@ -17,6 +17,23 @@
  */
 import { Types } from 'mongoose';
 
+// Maps WHO_SUGGEST artist-type labels to board craft category slugs so that
+// a dance workshop with eligibleArtistTypes=['Dancer'] gets category='dance'
+// even though buildEventPayload never writes a category field.
+function craftCategoryFromArtistTypes(types: string[]): string | null {
+  for (const t of types) {
+    const l = t.toLowerCase();
+    if (l === 'dancer' || l.startsWith('danc') || l === 'choreographer') return 'dance';
+    if (l === 'musician' || l === 'singer' || l === 'vocalist' || l === 'dj' || l === 'composer') return 'music';
+    if (l === 'actor' || l === 'playwright' || l === 'theater director') return 'theatre';
+    if (l === 'model') return 'modeling';
+    if (l === 'photographer') return 'photography';
+    if (l === 'comedian') return 'comedy';
+    if (l === 'filmmaker' || l === 'director') return 'film';
+  }
+  return null;
+}
+
 export const DURATION_MIN: Record<string, number> = {
   m30: 30, h1: 60, h2: 120, h3: 180, half: 240, full: 480, multi: 480,
 };
@@ -198,7 +215,7 @@ export function mapComposerToEventDoc(b: any, user: any, userId: string): Compos
     whatToExpect: b.whatToExpect,
     eventType: b.eventType || 'workshop',
     eventTypeLabel: b.eventTypeLabel || undefined,
-    category: b.category || b.topicTags?.[0] || b.skills?.[0] || 'general',
+    category: b.category || craftCategoryFromArtistTypes(b.eligibleArtistTypes || []) || b.topicTags?.[0] || b.skills?.[0] || 'general',
     tags: b.topicTags || [],
     skills: b.skills || [],
     topicTags: b.topicTags || [],

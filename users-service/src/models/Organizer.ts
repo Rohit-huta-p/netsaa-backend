@@ -3,13 +3,17 @@ import mongoose, { Schema, Document, Model } from 'mongoose';
 /* ---------- Type constants ---------- */
 
 export const ORGANIZER_TYPE_CATEGORIES = [
+    // Canonical CL types (v2, 2026-10)
     'individual',
-    'academy',
-    'registered_business',
+    'production_company',
+    'performing_arts_group',
     'agency',
+    'academy',
+    // Legacy values — kept for backwards compatibility, no longer shown in the picker
+    'registered_business',
     'venue',
     'brand',
-    'corporate'
+    'corporate',
 ] as const;
 export type OrganizerTypeCategory = (typeof ORGANIZER_TYPE_CATEGORIES)[number];
 
