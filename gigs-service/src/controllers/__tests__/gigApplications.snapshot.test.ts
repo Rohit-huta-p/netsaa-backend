@@ -46,7 +46,7 @@ describe('getGigApplications — B1 snapshot backfill', () => {
             { _id: 'a3', artistId: 'u3', artistSnapshot: { displayName: 'Half', primaryCity: 'Mumbai' } },
         ]);
         userFindReturns([
-            { _id: 'u2', cached: { primaryCity: 'Delhi' }, skills: ['Bharatanatyam', 'Contemporary', 'Jazz', 'Folk'] },
+            { _id: 'u2', cached: { primaryCity: 'Delhi' }, skills: ['Bharatanatyam', 'Contemporary', 'Jazz', 'Folk'], experienceLevel: 'professional' },
             { _id: 'u3', cached: { primaryCity: 'IGNORED' }, skills: ['Hip-hop', 'Bollywood'] },
         ]);
 
@@ -62,6 +62,9 @@ describe('getGigApplications — B1 snapshot backfill', () => {
         // a3 keeps its own city, only specialities filled
         expect(a3.artistSnapshot.primaryCity).toBe('Mumbai');
         expect(a3.artistSnapshot.specialities).toEqual(['Hip-hop', 'Bollywood']);
+        // experienceLevel backfills too, but only when the mirror has one
+        expect(a2.artistSnapshot.experienceLevel).toBe('professional');
+        expect('experienceLevel' in a3.artistSnapshot).toBe(false);
     });
 
     it('skips the User lookup entirely when every snapshot is complete', async () => {

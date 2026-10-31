@@ -443,7 +443,7 @@ export const applyToGig = async (req: AuthRequest, res: Response, next: NextFunc
         // JWT (req.user) carries primaryCity but not skills, so read the User
         // mirror once; cached.primaryCity is authoritative, JWT is the fallback.
         const applicantDoc: any = await User.findById(artistId)
-            .select('skills cached.primaryCity')
+            .select('skills cached.primaryCity experienceLevel')
             .lean();
         const extras = artistSnapshotExtras(applicantDoc, req.user.primaryCity);
 
@@ -528,7 +528,7 @@ export const getGigApplications = async (req: AuthRequest, res: Response, next: 
         if (needsFill.length > 0) {
             const ids = [...new Set(needsFill.map((a) => String(a.artistId)))];
             const users = await User.find({ _id: { $in: ids } })
-                .select('skills cached.primaryCity')
+                .select('skills cached.primaryCity experienceLevel')
                 .lean();
             const byId = new Map(users.map((u: any) => [String(u._id), u]));
             for (const a of applications) {
@@ -540,6 +540,7 @@ export const getGigApplications = async (req: AuthRequest, res: Response, next: 
                 if (!(snap.specialities && snap.specialities.length) && extras.specialities) {
                     snap.specialities = extras.specialities;
                 }
+                if (!snap.experienceLevel && extras.experienceLevel) snap.experienceLevel = extras.experienceLevel;
             }
         }
 

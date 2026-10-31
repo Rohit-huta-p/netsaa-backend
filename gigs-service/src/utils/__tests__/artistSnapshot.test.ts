@@ -45,4 +45,14 @@ describe('artistSnapshotExtras', () => {
         const base = { primaryCity: 'Delhi', specialities: ['Jazz'] };
         expect({ ...base, ...artistSnapshotExtras(null) }).toEqual(base);
     });
+
+    it('captures experienceLevel from the mirror (the crisp card briefcase meta)', () => {
+        const out = artistSnapshotExtras({ cached: { primaryCity: 'Pune' }, skills: ['Kathak'], experienceLevel: 'professional' });
+        expect(out.experienceLevel).toBe('professional');
+    });
+
+    it('omits experienceLevel when the mirror has none', () => {
+        const out = artistSnapshotExtras({ skills: ['Kathak'] });
+        expect('experienceLevel' in out).toBe(false);
+    });
 });
