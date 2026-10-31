@@ -177,8 +177,24 @@ export const buildEventsPipeline = (
             }
         },
         {
+            // Data drift: some events store organizerId as an Organizer _id (the
+            // model's declared ref), others as a User _id (like gigs). Resolve the
+            // User directly too, so a valid active organizer via EITHER shape keeps
+            // the event. The organizers→users chain alone silently dropped every
+            // event whose organizerId was actually a User _id.
+            $lookup: {
+                from: 'users',
+                localField: 'organizerId',
+                foreignField: '_id',
+                as: 'organizerUserDirect'
+            }
+        },
+        {
             $match: {
-                'organizerUser.accountStatus': 'active'
+                $or: [
+                    { 'organizerUser.accountStatus': 'active' },
+                    { 'organizerUserDirect.accountStatus': 'active' }
+                ]
             }
         },
         {
