@@ -64,7 +64,7 @@ export const searchGigsInDb = async (
             must.push({
                 text: {
                     query: query.trim(),
-                    path: ['title', 'description', 'artistTypes', 'tags', 'city'],
+                    path: ['title', 'description', 'artistTypes', 'tags', 'location.city'],
                     fuzzy: { maxEdits: 1 },
                 },
             });
@@ -96,9 +96,6 @@ export const searchGigsInDb = async (
         }
 
         // --- 8. Execute Atlas Search ---
-        // DEBUG: Log the full pipeline
-        console.log('[Gigs Pipeline] Full pipeline:', JSON.stringify(pipeline, null, 2));
-
         const { results, total } = await atlasClient.executeSearch('gigs', pipeline);
 
         if (results.length === 0) {
@@ -171,7 +168,7 @@ export const searchGigsWithFilters = async (
         must.push({
             text: {
                 query: query.trim(),
-                path: ['title', 'description', 'artistType', 'city'],
+                path: ['title', 'description', 'artistTypes', 'location.city'],
                 fuzzy: { maxEdits: 1 },
             },
         });

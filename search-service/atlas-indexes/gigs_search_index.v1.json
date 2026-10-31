@@ -1,0 +1,6 @@
+{
+  "name": "gigs_search_index",
+  "mappings": {
+    "dynamic": true
+  }
+}

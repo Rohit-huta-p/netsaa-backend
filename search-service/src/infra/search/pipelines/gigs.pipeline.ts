@@ -34,13 +34,11 @@ export function buildGigsFilterClauses(hardFilters?: GigSearchHardFilters): any[
         },
     });
 
-    // applicationDeadline > now (gig still accepting applications)
-    filterClauses.push({
-        range: {
-            path: 'applicationDeadline',
-            gt: new Date(),
-        },
-    });
+    // NOTE: we deliberately do NOT hard-require applicationDeadline > now here.
+    // applicationDeadline is OPTIONAL on the Gig model, and an Atlas `range`
+    // filter skips documents missing the field — so this clause excluded EVERY
+    // deadline-less gig from all search. Instead, buildGigsPipeline excludes
+    // only gigs whose deadline is EXPLICITLY in the past, via compound.mustNot.
 
     // --- User Hard Filters ---
 
@@ -78,11 +76,12 @@ export function buildGigsFilterClauses(hardFilters?: GigSearchHardFilters): any[
         });
     }
 
-    // city (text match - single value)
+    // city (text match - single value). Gig stores the city at location.city,
+    // not a top-level `city`, so filtering path 'city' never matched.
     if (hardFilters.city) {
         filterClauses.push({
             text: {
-                path: 'city',
+                path: 'location.city',
                 query: hardFilters.city,
             },
         });
@@ -183,6 +182,10 @@ export const buildGigsPipeline = (
                 must: must,
                 should: [...rankingClauses, ...should],
                 filter: filterClauses,
+                // Hide only gigs whose application deadline has EXPLICITLY passed.
+                // `range` skips documents missing the field, so deadline-less gigs
+                // (deadline is optional) are NOT excluded here — they stay visible.
+                mustNot: [{ range: { path: 'applicationDeadline', lt: new Date() } }],
                 minimumShouldMatch: (query && must.length === 0) ? 1 : 0
             },
             count: {
