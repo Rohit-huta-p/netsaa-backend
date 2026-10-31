@@ -14,6 +14,9 @@ export interface IGigApplication extends Document {
         // before B1 lack them and get backfilled lazily on the list endpoint.
         primaryCity?: string;
         specialities?: string[];
+        // B1+ — self-reported experience level (beginner|intermediate|
+        // professional), shown on the crisp card's meta row (briefcase).
+        experienceLevel?: string;
     };
 
     coverNote?: string;
@@ -34,7 +37,8 @@ const GigApplicationSchema = new Schema<IGigApplication>({
         profileImageUrl: String,
         rating: Number,
         primaryCity: String,
-        specialities: [String]
+        specialities: [String],
+        experienceLevel: String
     },
 
     coverNote: String,

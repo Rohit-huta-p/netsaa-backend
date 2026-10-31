@@ -43,6 +43,7 @@ export interface IUser extends Document {
     location?: string;
     skills?: string[];
     experience?: string[];
+    experienceLevel?: 'beginner' | 'intermediate' | 'professional';
     artistType?: string;
     instagramHandle?: string;
 
@@ -107,6 +108,7 @@ const UserSchema = new Schema<IUser>(
         location: { type: String },
         skills: { type: [String], default: [] },
         experience: { type: [String], default: [] },
+        experienceLevel: { type: String }, // read-only mirror of the users-service enum
         artistType: { type: String },
         instagramHandle: { type: String },
 

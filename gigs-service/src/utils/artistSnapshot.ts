@@ -9,14 +9,17 @@
 // Field mapping (service → snapshot / card):
 //   User.cached.primaryCity  → primaryCity   (JWT primaryCity is the fallback)
 //   User.skills[] (top 3)    → specialities  (the card's "skill chips")
+//   User.experienceLevel     → experienceLevel  (the crisp card's briefcase meta)
 
 export interface ArtistSnapshotExtras {
     primaryCity?: string;
     specialities?: string[];
+    experienceLevel?: string;
 }
 
 export interface ArtistExtrasSource {
     skills?: string[];
+    experienceLevel?: string;
     cached?: { primaryCity?: string };
 }
 
@@ -42,6 +45,8 @@ export function artistSnapshotExtras(
     if (Array.isArray(skills) && skills.length > 0) {
         out.specialities = skills.slice(0, MAX_SPECIALITIES);
     }
+
+    if (userDoc?.experienceLevel) out.experienceLevel = userDoc.experienceLevel;
 
     return out;
 }
