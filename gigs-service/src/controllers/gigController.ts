@@ -136,6 +136,53 @@ export const getOrganizerGigs = async (req: AuthRequest, res: Response, next: Ne
     }
 };
 
+// @desc    Public list of an organizer's gigs for their company profile ("Now hiring").
+//          Unlike GET /gigs this is NOT role-walled — a Creative Lead's open roles
+//          show to every viewer (artist, client, CL, guest) identically. Published
+//          only by default; drafts/paused are never exposed.
+// @route   GET /v1/organizers/:organizerId/gigs
+// @access  Public
+const PUBLIC_GIG_STATUSES = ['published', 'closed', 'expired'];
+export const getPublicOrganizerGigs = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const { organizerId } = req.params;
+        const { status, page = 1, pageSize = 20 } = req.query;
+
+        if (!organizerId) {
+            return sendResponse(res, 400, null, 'Organizer ID required');
+        }
+
+        const requested = typeof status === 'string' ? status : '';
+        const query: any = {
+            organizerId,
+            status: PUBLIC_GIG_STATUSES.includes(requested) ? requested : 'published',
+        };
+
+        const limit = Number(pageSize);
+        const skip = (Number(page) - 1) * limit;
+
+        const gigs = await Gig.find(query)
+            .sort({ publishedAt: -1, createdAt: -1 })
+            .skip(skip)
+            .limit(limit);
+
+        const total = await Gig.countDocuments(query);
+
+        sendResponse(res, 200, {
+            gigs,
+            pagination: {
+                page: Number(page),
+                pageSize: limit,
+                total,
+                pages: Math.ceil(total / limit)
+            }
+        });
+    } catch (err: any) {
+        console.error(err);
+        sendResponse(res, 500, null, 'Server Error', [{ message: err.message }]);
+    }
+};
+
 // @desc    Get applicants across ALL of the organizer's gigs (dashboard inbox / action queue)
 // @route   GET /v1/organizers/me/applicants?status=&gigId=&limit=
 // @access  Private (Organizer) — organizer resolved from the auth token, NOT a query param
