@@ -4,6 +4,7 @@ import EventTicket from '../models/EventTicket';
 import Event from '../models/Event';
 import { AuthRequest } from '../middleware/auth';
 import { findOrCreateRegistration } from '../utils/idempotency';
+import { buildRegistrationAnswers } from '../utils/registrationAnswers';
 import { generateTicketCode, generateBackupCode } from '../utils/ticketCode';
 import { slotsLeftForEvent } from '../services/waitlistService';
 import EventNotification from '../models/EventNotification';
@@ -39,6 +40,9 @@ export const registerForEvent = async (req: Request, res: Response, next: NextFu
         const { quantity = 1, attendees = [] } = req.body;
 
         // Idempotent per user: the unique (eventId, userId) index allows only ONE registration
+        // NOTE: custom-question answers are validated/built below, only on the branches that
+        // actually create or reactivate — so an idempotent replay that omits them is never
+        // rejected, and a question-less event ignores them entirely (open-door stays open).
         // per event. A non-cancelled prior is a no-op (return it). A cancelled prior, or no prior,
         // ADDS a seat → enforce capacity first (full → 409, the client routes to the waitlist).
         const prior = await EventRegistration.findOne({ eventId: event._id, userId });
@@ -57,6 +61,12 @@ export const registerForEvent = async (req: Request, res: Response, next: NextFu
             return res.status(409).json({ meta: { status: 409, message: 'Event is full' }, data: { full: true, waitlistAvailable: !!event.allowWaitlist }, errors: [{ message: 'No seats left' }] });
         }
 
+        // Custom-question answers: validate against the event's questions + enforce required.
+        const { answers, error: answersError } = buildRegistrationAnswers(event, req.body.answers);
+        if (answersError) {
+            return res.status(400).json({ meta: { status: 400, message: 'Invalid answers' }, data: null, errors: [{ message: answersError }] });
+        }
+
         if (prior) {
             // cancelled → reactivate (re-RSVP after leaving)
             prior.status = 'registered';
@@ -64,6 +74,7 @@ export const registerForEvent = async (req: Request, res: Response, next: NextFu
             prior.cancelledBy = undefined;
             prior.cancellationReason = undefined;
             if (quantity) prior.quantity = quantity;
+            if (answers.length) prior.answers = answers;
             await prior.save();
             const existingTickets = await EventTicket.countDocuments({ registrationId: prior._id });
             if (existingTickets === 0) {
@@ -89,6 +100,7 @@ export const registerForEvent = async (req: Request, res: Response, next: NextFu
             userId,
             quantity,
             attendees,
+            answers: answers.length ? answers : undefined,
             source: 'standard',
             visibility: 'public',
         });
@@ -334,6 +346,7 @@ export const getEventRoster = async (req: Request, res: Response) => {
             registeredAt: r.registeredAt,
             status: r.status,
             visibility: r.visibility,
+            answers: r.answers ?? [],
         });
 
         const confirmed = regs.filter((r: any) => r.status === 'registered' || r.status === 'attended').map(toRow);
