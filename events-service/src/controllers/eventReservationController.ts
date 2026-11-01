@@ -6,6 +6,7 @@ import UserPayoutAccount from '../models/UserPayoutAccount';
 import { createOrderWithTransfer } from '../services/razorpay';
 import { computeFeesPaise } from '../utils/eventFees';
 import { slotsLeftForEvent } from '../services/waitlistService';
+import { buildRegistrationAnswers } from '../utils/registrationAnswers';
 
 const RESERVATION_TTL_MS = 10 * 60 * 1000;
 
@@ -34,6 +35,13 @@ export const reserveTickets = async (req: AuthRequest, res: Response) => {
 
     const quantity = Math.max(1, Math.min(event.maxGuestsPerRegistration || 5, req.body.quantity || 1));
 
+    // Custom-question answers: validate against the event's questions + enforce required
+    // (carried on the reservation → copied onto the paid Registration by the webhook).
+    const { answers, error: answersError } = buildRegistrationAnswers(event, req.body.answers);
+    if (answersError) {
+      return res.status(400).json({ meta: { status: 400, message: 'Invalid answers' }, data: null, errors: [{ message: answersError }] });
+    }
+
     // Capacity gate (counts active registrations; held reservations are a Sprint 8 hardening note).
     const slotsLeft = await slotsLeftForEvent(event._id);
     if (slotsLeft < quantity) {
@@ -55,6 +63,7 @@ export const reserveTickets = async (req: AuthRequest, res: Response) => {
 
     const reservation = await EventReservation.create({
       eventId: event._id, userId, quantity,
+      answers: answers.length ? answers : undefined,
       totalAmount: fees.customerPaysPaise / 100,
       status: 'reserved',
       expiresAt: new Date(Date.now() + RESERVATION_TTL_MS),

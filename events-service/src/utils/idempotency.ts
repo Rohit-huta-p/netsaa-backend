@@ -5,6 +5,7 @@ interface RegistrationInput {
   userId: any;
   quantity: number;
   attendees: { fullName: string; phone: string; email?: string; notes?: string }[];
+  answers?: { questionId?: any; label: string; type: string; value: string }[];
   source: 'standard' | 'walkup' | 'admin_added';
   visibility: 'public' | 'private';
   ticketTypeId?: any;
