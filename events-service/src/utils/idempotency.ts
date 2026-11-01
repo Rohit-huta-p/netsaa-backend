@@ -10,6 +10,8 @@ interface RegistrationInput {
   visibility: 'public' | 'private';
   ticketTypeId?: any;
   spotId?: any;
+  // 'pending' for approval-gated doors (guest_list / apply); defaults to 'registered' (§6a-c/d).
+  status?: 'registered' | 'pending';
 }
 
 /**
@@ -25,7 +27,7 @@ export async function findOrCreateRegistration(
   if (existing) return { registration: existing, created: false };
 
   try {
-    const registration = await EventRegistration.create({ ...input, idempotencyKey, status: 'registered' });
+    const registration = await EventRegistration.create({ ...input, idempotencyKey, status: input.status ?? 'registered' });
     return { registration, created: true };
   } catch (err: any) {
     if (err?.code === 11000) {
