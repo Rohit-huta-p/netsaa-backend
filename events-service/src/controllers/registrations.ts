@@ -6,6 +6,7 @@ import { AuthRequest } from '../middleware/auth';
 import { findOrCreateRegistration } from '../utils/idempotency';
 import { resolveSpot } from '../utils/eventSpots';
 import { buildRegistrationAnswers } from '../utils/registrationAnswers';
+import { buildApplication } from '../utils/registrationApplication';
 import { consentFromRequest, recordEventRegistrationConsent } from '../utils/consent';
 import { doApprove, doDecline } from './registrationApproval';
 import { generateTicketCode, generateBackupCode } from '../utils/ticketCode';
@@ -99,6 +100,9 @@ export const registerForEvent = async (req: Request, res: Response, next: NextFu
         }
         const spotId = spotRes.spot?._id;
 
+        // Apply-with-work payload (gap §6a-d): captured only for the apply door (optional).
+        const application = door === 'apply' ? buildApplication(req.body.application) : undefined;
+
         // DPDP consent (gap §6a-f): the attendee consents to sharing name/phone with the
         // host. Persisted (non-fatal) when the client sends it — the open-door client that
         // sends none is unaffected. Recorded here since both branches below register a seat.
@@ -114,6 +118,7 @@ export const registerForEvent = async (req: Request, res: Response, next: NextFu
             if (quantity) prior.quantity = quantity;
             if (spotId) prior.spotId = spotId;
             if (answers.length) prior.answers = answers;
+            if (application) prior.application = application;
             await prior.save();
             if (!requiresApproval) {
                 const existingTickets = await EventTicket.countDocuments({ registrationId: prior._id });
@@ -144,6 +149,7 @@ export const registerForEvent = async (req: Request, res: Response, next: NextFu
             attendees,
             spotId,
             answers: answers.length ? answers : undefined,
+            application,
             status: requiresApproval ? 'pending' : 'registered',
             source: 'standard',
             visibility: 'public',
@@ -422,6 +428,7 @@ export const getEventRoster = async (req: Request, res: Response) => {
             visibility: r.visibility,
             spotId: r.spotId ? String(r.spotId) : undefined,
             answers: r.answers ?? [],
+            application: r.application ?? undefined,
         });
 
         const confirmed = regs.filter((r: any) => r.status === 'registered' || r.status === 'attended').map(toRow);
