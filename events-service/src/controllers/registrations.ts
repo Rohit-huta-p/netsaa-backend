@@ -4,6 +4,7 @@ import EventTicket from '../models/EventTicket';
 import Event from '../models/Event';
 import { AuthRequest } from '../middleware/auth';
 import { findOrCreateRegistration } from '../utils/idempotency';
+import { consentFromRequest, recordEventRegistrationConsent } from '../utils/consent';
 import { generateTicketCode, generateBackupCode } from '../utils/ticketCode';
 import { slotsLeftForEvent } from '../services/waitlistService';
 import EventNotification from '../models/EventNotification';
@@ -56,6 +57,12 @@ export const registerForEvent = async (req: Request, res: Response, next: NextFu
         if (slotsLeft < quantity) {
             return res.status(409).json({ meta: { status: 409, message: 'Event is full' }, data: { full: true, waitlistAvailable: !!event.allowWaitlist }, errors: [{ message: 'No seats left' }] });
         }
+
+        // DPDP consent (gap §6a-f): the attendee consents to sharing name/phone with the
+        // host. Persisted (non-fatal) when the client sends it — the open-door client that
+        // sends none is unaffected. Recorded here since both branches below register a seat.
+        const consent = consentFromRequest(req);
+        if (consent.accepted) await recordEventRegistrationConsent(userId, consent);
 
         if (prior) {
             // cancelled → reactivate (re-RSVP after leaving)
