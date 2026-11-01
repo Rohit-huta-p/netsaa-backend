@@ -36,6 +36,23 @@ function viewerRoleFrom(req: Request): ViewerRole {
     }
 }
 
+/**
+ * Resolve the viewer's own user id from an optional Bearer token (VERIFIED).
+ * Used to exclude the searcher from their own people-search results. Guests and
+ * invalid tokens yield undefined. Mirrors viewerRoleFrom's verify-first stance.
+ */
+function viewerIdFrom(req: Request): string | undefined {
+    try {
+        const header = req.headers?.authorization;
+        if (!header || !header.startsWith('Bearer ')) return undefined;
+        const decoded: any = jwt.verify(header.split(' ')[1], process.env.JWT_SECRET as string);
+        const u = decoded.user || decoded;
+        return u?._id || u?.id || undefined;
+    } catch {
+        return undefined;
+    }
+}
+
 function flattenGigFilters(nestedFilters: Record<string, any>): Record<string, any> {
     const flat: Record<string, any> = {};
 
@@ -245,7 +262,7 @@ export class SearchController {
             // or req.user if middleware populated it.
             // Supporting both for flexibility.
             const reqAny = req as any;
-            const userId = reqAny.user?._id || reqAny.user?.id || req.headers['x-user-id'] as string;
+            const userId = reqAny.user?._id || reqAny.user?.id || (req.headers['x-user-id'] as string) || viewerIdFrom(req);
 
             const results = await searchService.searchPeople(q, filters, page, userId);
             return res.json(results);

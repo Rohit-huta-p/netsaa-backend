@@ -1,7 +1,5 @@
-import mongoose from 'mongoose';
 import { SEARCH_CONFIG } from '../../config';
 import { env } from '../../config/env';
-import { buildPeopleFilters } from './people.filters';
 import { mapPersonToSearchResult } from './people.mapper';
 import { atlasClient } from '../../infra/search/atlas.client';
 import { buildPeoplePipeline } from '../../infra/search/pipelines/people.pipeline';
@@ -31,29 +29,10 @@ export const searchPeopleInDb = async (
     }
 
     const skip = (page - 1) * pageSize;
-    const { must, should, filter, mustNot: baseMustNot } = buildPeopleFilters(filters);
 
-    // Initialize mustNot with baseMustNot or empty array
-    const mustNot = baseMustNot || [];
-
-    // Add exclusion for current user if ID is provided
-    if (currentUserId) {
-        try {
-            // Ensure ID is valid ObjectId
-            const userObjectId = new mongoose.Types.ObjectId(currentUserId);
-            mustNot.push({
-                equals: {
-                    path: '_id',
-                    value: userObjectId
-                }
-            });
-        } catch (e) {
-            // If invalid ID passed, ignore exclusion to prevent crash
-            console.warn(`Invalid currentUserId passed to search: ${currentUserId}`);
-        }
-    }
-
-    // 1. Build Pipeline (ID + Score only)
+    // 1. Build Pipeline (ID + Score only).
+    // Self-exclusion (never match the searcher's own account) is handled inside
+    // each pipeline: V2 via `viewer._id`, V1 via `viewerId`.
     const useV2 = env.SEARCH_PEOPLE_V2;
     const pipeline = useV2
         ? buildPeoplePipelineV2({
@@ -68,6 +47,7 @@ export const searchPeopleInDb = async (
               filters,
               limit: pageSize,
               skip,
+              viewerId: currentUserId,
           });
 
     assertPeopleSearchPipeline(pipeline);
