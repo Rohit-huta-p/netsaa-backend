@@ -4,8 +4,9 @@ import EventTicket from '../models/EventTicket';
 import Event from '../models/Event';
 import { AuthRequest } from '../middleware/auth';
 import { findOrCreateRegistration } from '../utils/idempotency';
+import { resolveSpot } from '../utils/eventSpots';
 import { generateTicketCode, generateBackupCode } from '../utils/ticketCode';
-import { slotsLeftForEvent } from '../services/waitlistService';
+import { slotsLeftForEvent, seatsLeftForSpot } from '../services/waitlistService';
 import EventNotification from '../models/EventNotification';
 import WaitlistEntry from '../models/WaitlistEntry';
 
@@ -57,6 +58,24 @@ export const registerForEvent = async (req: Request, res: Response, next: NextFu
             return res.status(409).json({ meta: { status: 409, message: 'Event is full' }, data: { full: true, waitlistAvailable: !!event.allowWaitlist }, errors: [{ message: 'No seats left' }] });
         }
 
+        // Spot/tier selection (gap §6a-b). Resolve the chosen spot (defaults to the sole
+        // spot; errors if a multi-spot event sent none). A paid spot can't be taken on the
+        // free path. Spot-less legacy events resolve to {} → unchanged behaviour.
+        const spotRes = resolveSpot(event, req.body.spotId);
+        if (spotRes.error) {
+            return res.status(400).json({ meta: { status: 400, message: 'Invalid spot' }, data: null, errors: [{ message: spotRes.error }] });
+        }
+        if (spotRes.requiresPayment) {
+            return res.status(409).json({ meta: { status: 409, message: 'This option is paid — reserve to pay' }, data: { paid: true, spotId: String(spotRes.spot?._id) }, errors: [{ message: 'Paid spot on free register' }] });
+        }
+        if (spotRes.spot) {
+            const spotLeft = await seatsLeftForSpot(event, spotRes.spot._id);
+            if (spotLeft < quantity) {
+                return res.status(409).json({ meta: { status: 409, message: 'This option is full' }, data: { full: true, spotId: String(spotRes.spot._id), waitlistAvailable: !!event.allowWaitlist }, errors: [{ message: 'No seats left for this spot' }] });
+            }
+        }
+        const spotId = spotRes.spot?._id;
+
         if (prior) {
             // cancelled → reactivate (re-RSVP after leaving)
             prior.status = 'registered';
@@ -64,6 +83,7 @@ export const registerForEvent = async (req: Request, res: Response, next: NextFu
             prior.cancelledBy = undefined;
             prior.cancellationReason = undefined;
             if (quantity) prior.quantity = quantity;
+            if (spotId) prior.spotId = spotId;
             await prior.save();
             const existingTickets = await EventTicket.countDocuments({ registrationId: prior._id });
             if (existingTickets === 0) {
@@ -89,6 +109,7 @@ export const registerForEvent = async (req: Request, res: Response, next: NextFu
             userId,
             quantity,
             attendees,
+            spotId,
             source: 'standard',
             visibility: 'public',
         });
@@ -334,6 +355,7 @@ export const getEventRoster = async (req: Request, res: Response) => {
             registeredAt: r.registeredAt,
             status: r.status,
             visibility: r.visibility,
+            spotId: r.spotId ? String(r.spotId) : undefined,
         });
 
         const confirmed = regs.filter((r: any) => r.status === 'registered' || r.status === 'attended').map(toRow);

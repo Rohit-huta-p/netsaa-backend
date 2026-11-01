@@ -1,3 +1,4 @@
+import { Types } from 'mongoose';
 import Event from '../models/Event';
 import EventRegistration from '../models/EventRegistration';
 import WaitlistEntry from '../models/WaitlistEntry';
@@ -15,6 +16,19 @@ export async function slotsLeftForEvent(eventId: any): Promise<number> {
   ]);
   const taken = agg[0]?.seats ?? 0;
   return Math.max(0, (event.maxParticipants || 0) - taken);
+}
+
+/** Seats remaining for ONE spot/tier = spot.capacity − sum(quantity of active regs
+ *  for that spot). Takes the already-loaded event to avoid a redundant read. */
+export async function seatsLeftForSpot(event: any, spotId: any): Promise<number> {
+  const spot = (event?.spots ?? []).find((s: any) => String(s._id) === String(spotId));
+  if (!spot) return 0;
+  const agg = await EventRegistration.aggregate([
+    { $match: { eventId: event._id, spotId: new Types.ObjectId(String(spotId)), status: { $in: ['registered', 'attended'] } } },
+    { $group: { _id: null, seats: { $sum: '$quantity' } } },
+  ]);
+  const taken = agg[0]?.seats ?? 0;
+  return Math.max(0, (spot.capacity || 0) - taken);
 }
 
 export async function nextPosition(eventId: any): Promise<number> {

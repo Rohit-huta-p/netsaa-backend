@@ -3,6 +3,7 @@ import mongoose, { Schema, Document, Model } from 'mongoose';
 export interface IEventReservation extends Document {
     eventId: mongoose.Types.ObjectId;
     ticketTypeId?: mongoose.Types.ObjectId;
+    spotId?: mongoose.Types.ObjectId;        // embedded event spot/tier chosen (§6a-b)
     userId: mongoose.Types.ObjectId;
     quantity: number;
     totalAmount: number;             // in rupees (legacy)
@@ -18,6 +19,7 @@ const eventReservationSchema = new Schema<IEventReservation>(
     {
         eventId: { type: Schema.Types.ObjectId, ref: 'Event', required: true },
         ticketTypeId: { type: Schema.Types.ObjectId, ref: 'EventTicketType' },
+        spotId: { type: Schema.Types.ObjectId },        // embedded event spot/tier (§6a-b)
         userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
         quantity: { type: Number, required: true },
         totalAmount: { type: Number, required: true },
