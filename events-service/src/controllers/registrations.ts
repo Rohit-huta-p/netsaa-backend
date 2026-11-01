@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import EventRegistration from '../models/EventRegistration';
+import EventRegistration, { IEventRegistration } from '../models/EventRegistration';
 import EventTicket from '../models/EventTicket';
 import Event from '../models/Event';
 import { AuthRequest } from '../middleware/auth';
@@ -7,6 +7,7 @@ import { findOrCreateRegistration } from '../utils/idempotency';
 import { resolveSpot } from '../utils/eventSpots';
 import { buildRegistrationAnswers } from '../utils/registrationAnswers';
 import { consentFromRequest, recordEventRegistrationConsent } from '../utils/consent';
+import { doApprove, doDecline } from './registrationApproval';
 import { generateTicketCode, generateBackupCode } from '../utils/ticketCode';
 import { slotsLeftForEvent, seatsLeftForSpot } from '../services/waitlistService';
 import EventNotification from '../models/EventNotification';
@@ -39,6 +40,13 @@ export const registerForEvent = async (req: Request, res: Response, next: NextFu
             return res.status(409).json({ meta: { status: 409, message: 'Registration is closed' }, data: null, errors: [{ message: 'Deadline passed' }] });
         }
 
+        // Approval-gated door (gap §6a-c/d): guest_list / apply events create a `pending`
+        // request (no ticket, no seat consumed) that the host approves/declines. Open door
+        // registers immediately. Capacity + paid-spot gates are skipped for a pending request —
+        // a request may exceed capacity; the host decides (and is capacity-checked) at approval.
+        const door = event.registration?.door ?? 'open';
+        const requiresApproval = door !== 'open';
+
         const { quantity = 1, attendees = [] } = req.body;
 
         // Idempotent per user: the unique (eventId, userId) index allows only ONE registration
@@ -58,9 +66,11 @@ export const registerForEvent = async (req: Request, res: Response, next: NextFu
             return res.status(409).json({ meta: { status: 409, message: 'Registration is closed' }, data: { closed: true }, errors: [{ message: 'Host closed registration' }] });
         }
 
-        const slotsLeft = await slotsLeftForEvent(event._id);
-        if (slotsLeft < quantity) {
-            return res.status(409).json({ meta: { status: 409, message: 'Event is full' }, data: { full: true, waitlistAvailable: !!event.allowWaitlist }, errors: [{ message: 'No seats left' }] });
+        if (!requiresApproval) {
+            const slotsLeft = await slotsLeftForEvent(event._id);
+            if (slotsLeft < quantity) {
+                return res.status(409).json({ meta: { status: 409, message: 'Event is full' }, data: { full: true, waitlistAvailable: !!event.allowWaitlist }, errors: [{ message: 'No seats left' }] });
+            }
         }
 
         // Custom-question answers: validate against the event's questions + enforce required.
@@ -76,13 +86,15 @@ export const registerForEvent = async (req: Request, res: Response, next: NextFu
         if (spotRes.error) {
             return res.status(400).json({ meta: { status: 400, message: 'Invalid spot' }, data: null, errors: [{ message: spotRes.error }] });
         }
-        if (spotRes.requiresPayment) {
-            return res.status(409).json({ meta: { status: 409, message: 'This option is paid — reserve to pay' }, data: { paid: true, spotId: String(spotRes.spot?._id) }, errors: [{ message: 'Paid spot on free register' }] });
-        }
-        if (spotRes.spot) {
-            const spotLeft = await seatsLeftForSpot(event, spotRes.spot._id);
-            if (spotLeft < quantity) {
-                return res.status(409).json({ meta: { status: 409, message: 'This option is full' }, data: { full: true, spotId: String(spotRes.spot._id), waitlistAvailable: !!event.allowWaitlist }, errors: [{ message: 'No seats left for this spot' }] });
+        if (!requiresApproval) {
+            if (spotRes.requiresPayment) {
+                return res.status(409).json({ meta: { status: 409, message: 'This option is paid — reserve to pay' }, data: { paid: true, spotId: String(spotRes.spot?._id) }, errors: [{ message: 'Paid spot on free register' }] });
+            }
+            if (spotRes.spot) {
+                const spotLeft = await seatsLeftForSpot(event, spotRes.spot._id);
+                if (spotLeft < quantity) {
+                    return res.status(409).json({ meta: { status: 409, message: 'This option is full' }, data: { full: true, spotId: String(spotRes.spot._id), waitlistAvailable: !!event.allowWaitlist }, errors: [{ message: 'No seats left for this spot' }] });
+                }
             }
         }
         const spotId = spotRes.spot?._id;
@@ -94,8 +106,8 @@ export const registerForEvent = async (req: Request, res: Response, next: NextFu
         if (consent.accepted) await recordEventRegistrationConsent(userId, consent);
 
         if (prior) {
-            // cancelled → reactivate (re-RSVP after leaving)
-            prior.status = 'registered';
+            // cancelled → reactivate (re-RSVP, or re-request for an approval-gated door)
+            prior.status = requiresApproval ? 'pending' : 'registered';
             prior.cancelledAt = undefined;
             prior.cancelledBy = undefined;
             prior.cancellationReason = undefined;
@@ -103,23 +115,26 @@ export const registerForEvent = async (req: Request, res: Response, next: NextFu
             if (spotId) prior.spotId = spotId;
             if (answers.length) prior.answers = answers;
             await prior.save();
-            const existingTickets = await EventTicket.countDocuments({ registrationId: prior._id });
-            if (existingTickets === 0) {
-                const reissued = Array.from({ length: prior.quantity || 1 }).map((_, i) => ({
-                    ticketId: `${prior._id}-${i}`,
-                    eventId: event._id,
-                    registrationId: prior._id,
-                    userId,
-                    attendeeName: attendees[i]?.fullName || attendees[0]?.fullName || 'Guest',
-                    qrCode: `${generateTicketCode(event.title)}|${generateBackupCode()}`,
-                    status: 'issued',
-                }));
-                await EventTicket.insertMany(reissued);
+            if (!requiresApproval) {
+                const existingTickets = await EventTicket.countDocuments({ registrationId: prior._id });
+                if (existingTickets === 0) {
+                    const reissued = Array.from({ length: prior.quantity || 1 }).map((_, i) => ({
+                        ticketId: `${prior._id}-${i}`,
+                        eventId: event._id,
+                        registrationId: prior._id,
+                        userId,
+                        attendeeName: attendees[i]?.fullName || attendees[0]?.fullName || 'Guest',
+                        qrCode: `${generateTicketCode(event.title)}|${generateBackupCode()}`,
+                        status: 'issued',
+                    }));
+                    await EventTicket.insertMany(reissued);
+                }
+                try {
+                  await EventNotification.create({ eventId: event._id, kind: 'confirmation', channels: ['push', 'email'], audience: 'custom', customAudienceUserIds: [userId], body: `You're registered for ${event.title}.`, scheduledAt: new Date(), status: 'queued' });
+                } catch { /* non-fatal */ }
             }
-            try {
-              await EventNotification.create({ eventId: event._id, kind: 'confirmation', channels: ['push', 'email'], audience: 'custom', customAudienceUserIds: [userId], body: `You're registered for ${event.title}.`, scheduledAt: new Date(), status: 'queued' });
-            } catch { /* non-fatal */ }
-            return res.status(200).json({ meta: { status: 200, message: 'Re-registered' }, data: prior, errors: [] });
+            const message = requiresApproval ? 'Request submitted' : 'Re-registered';
+            return res.status(200).json({ meta: { status: 200, message }, data: { ...prior.toObject(), requiresApproval }, errors: [] });
         }
 
         const { registration, created } = await findOrCreateRegistration(idempotencyKey, {
@@ -129,11 +144,14 @@ export const registerForEvent = async (req: Request, res: Response, next: NextFu
             attendees,
             spotId,
             answers: answers.length ? answers : undefined,
+            status: requiresApproval ? 'pending' : 'registered',
             source: 'standard',
             visibility: 'public',
         });
 
-        if (created) {
+        // Tickets + confirmation are issued only on a confirmed (open-door) registration.
+        // A pending request gets its ticket when the host approves it (§6a-c).
+        if (created && !requiresApproval) {
             const ticketDocs = Array.from({ length: quantity }).map((_, i) => ({
                 ticketId: `${registration._id}-${i}`,
                 eventId: event._id,
@@ -149,7 +167,8 @@ export const registerForEvent = async (req: Request, res: Response, next: NextFu
             } catch { /* non-fatal */ }
         }
 
-        return res.status(201).json({ meta: { status: 201, message: 'Registered successfully' }, data: registration, errors: [] });
+        const message = requiresApproval ? 'Request submitted — awaiting host approval' : 'Registered successfully';
+        return res.status(201).json({ meta: { status: 201, message }, data: { ...registration.toObject(), requiresApproval }, errors: [] });
     } catch (err) {
         return res.status(400).json({ meta: { status: 400, message: 'Validation Error' }, data: null, errors: [{ message: (err as Error).message }] });
     }
@@ -308,13 +327,27 @@ export const getMyRegistration = async (req: Request, res: Response) => {
 export const updateRegistrationStatus = async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
         const { registrationId } = req.params;
-        const { status } = req.body; // 'approved', 'rejected', 'checked-in'
         const organizerId = req.user.id;
+
+        // Accept the schema statuses + the host-facing synonyms (approve/approved, reject/
+        // rejected/decline). Previously this wrote the raw value straight to the doc — a value
+        // like 'approved' isn't in the enum, so save() threw a 500. Validate + translate instead.
+        const raw = String(req.body?.status ?? '').trim();
+        const SYNONYMS: Record<string, string> = {
+            approve: 'registered', approved: 'registered',
+            reject: 'declined', rejected: 'declined', decline: 'declined', declined: 'declined',
+        };
+        const target = SYNONYMS[raw] ?? raw;
+        const VALID = ['registered', 'cancelled', 'attended', 'no-show', 'pending', 'declined'];
+        if (!VALID.includes(target)) {
+            return res.status(400).json({ meta: { status: 400, message: 'Invalid status' }, data: null, errors: [{ message: `Unsupported status "${raw}"` }] });
+        }
 
         const registration = await EventRegistration.findById(registrationId);
         if (!registration) {
             return res.status(404).json({
                 meta: { status: 404, message: 'Registration not found' },
+                data: null,
                 errors: [{ message: 'Registration not found' }]
             });
         }
@@ -323,6 +356,7 @@ export const updateRegistrationStatus = async (req: AuthRequest, res: Response, 
         if (!event) {
             return res.status(404).json({
                 meta: { status: 404, message: 'Event not found' },
+                data: null,
                 errors: [{ message: 'Event not found' }]
             });
         }
@@ -330,11 +364,23 @@ export const updateRegistrationStatus = async (req: AuthRequest, res: Response, 
         if (event.organizerId.toString() !== organizerId) {
             return res.status(403).json({
                 meta: { status: 403, message: 'Not authorized' },
+                data: null,
                 errors: [{ message: 'Not authorized to manage this event' }]
             });
         }
 
-        registration.status = status;
+        // Approving a pending request goes through the capacity-checked path (issues tickets);
+        // declining routes through the shared decline. Any other transition is a plain set.
+        if (target === 'registered' && registration.status === 'pending') {
+            const result = await doApprove(registration, event);
+            return res.status(result.code).json({ meta: { status: result.code, message: result.message }, data: result.code === 200 ? registration : null, errors: result.code === 200 ? [] : [{ message: result.message }] });
+        }
+        if (target === 'declined') {
+            await doDecline(registration, typeof req.body?.reason === 'string' ? req.body.reason : undefined);
+            return res.status(200).json({ meta: { status: 200, message: 'Declined' }, data: registration, errors: [] });
+        }
+
+        registration.status = target as IEventRegistration['status'];
         await registration.save();
 
         res.status(200).json({
@@ -380,6 +426,9 @@ export const getEventRoster = async (req: Request, res: Response) => {
 
         const confirmed = regs.filter((r: any) => r.status === 'registered' || r.status === 'attended').map(toRow);
         const cancelled = regs.filter((r: any) => r.status === 'cancelled').map(toRow);
+        // Approval-gated requests awaiting the host's decision (§6a-c/d), newest first.
+        const requests = regs.filter((r: any) => r.status === 'pending').map(toRow);
+        const declined = regs.filter((r: any) => r.status === 'declined').map(toRow);
         const waitlistRows = waitlist.map((w: any) => ({
             _id: String(w._id),
             userId: String(w.userId?._id || w.userId || ''),
@@ -395,9 +444,11 @@ export const getEventRoster = async (req: Request, res: Response) => {
             meta: { status: 200, message: 'OK' },
             data: {
                 confirmed,
+                requests,
                 waitlist: waitlistRows,
                 cancelled,
-                counts: { confirmed: confirmed.length, waitlist: waitlistRows.length, cancelled: cancelled.length },
+                declined,
+                counts: { confirmed: confirmed.length, requests: requests.length, waitlist: waitlistRows.length, cancelled: cancelled.length, declined: declined.length },
                 // legacy aliases (old callers expect a flat confirmed list)
                 rows: confirmed,
                 total: confirmed.length,

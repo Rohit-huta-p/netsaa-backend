@@ -252,7 +252,8 @@ describe('GET /v1/events/:id/roster (organizer attendee list)', () => {
     });
 
     const res = await request(app).get(`/v1/events/${event._id}/roster`).set('Authorization', `Bearer ${token}`);
-    expect(res.body.data.counts).toEqual({ confirmed: 1, waitlist: 1, cancelled: 0 });
+    // toMatchObject (not toEqual): the roster also reports requests/declined counts (§6a-c).
+    expect(res.body.data.counts).toMatchObject({ confirmed: 1, waitlist: 1, cancelled: 0 });
     expect(res.body.data.confirmed[0]).toMatchObject({ name: 'Aditi Rao', phone: '+919876500000', seats: 2 });
     expect(res.body.data.waitlist[0]).toMatchObject({ name: 'Rohan Mehta', position: 1 });
   });

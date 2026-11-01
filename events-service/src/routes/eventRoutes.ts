@@ -24,6 +24,7 @@ import { createPaymentIntent, finalizeRegistration } from '../controllers/eventR
 import { getEventDiscussion, addEventComment } from '../controllers/eventDiscussionController';
 import { submitPayoutAccount, getMyPayoutAccount, updatePayoutAccount } from '../controllers/payouts';
 import { cancelMyRegistration } from '../controllers/registrationCancel';
+import { approveRegistration, declineRegistration } from '../controllers/registrationApproval';
 import { cancelEvent } from '../controllers/eventCancel';
 import { joinWaitlist, leaveWaitlist, promoteWaitlist, confirmPromotion, getMyWaitlistEntry } from '../controllers/waitlist';
 import { getPreferences, updatePreferences, createAnnouncement } from '../controllers/notifications';
@@ -65,6 +66,9 @@ router.route('/events/:id/registrations/me').get(protect, getMyRegistration);
 router.route('/events/:id/registrations').get(protect, getEventRegistrations);
 router.route('/events/:id/roster').get(protect, getEventRoster);
 router.route('/registrations/:registrationId/status').patch(protect, updateRegistrationStatus);
+// Host approve/decline of a pending (guest_list / apply) request (§6a-c/d)
+router.route('/registrations/:id/approve').post(protect, approveRegistration);
+router.route('/registrations/:id/decline').post(protect, declineRegistration);
 router.route('/users/me/event-registrations').get(protect, getUserRegistrations);
 router.route('/users/me/saved-events').get(protect, getSavedEvents);
 

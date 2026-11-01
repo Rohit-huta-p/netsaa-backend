@@ -34,7 +34,9 @@ export interface IEventRegistration extends Document {
     userId?: mongoose.Types.ObjectId;
     ticketTypeId?: mongoose.Types.ObjectId;
     spotId?: mongoose.Types.ObjectId;        // which embedded event spot/tier was chosen (§6a-b)
-    status: 'registered' | 'cancelled' | 'attended' | 'no-show';
+    // 'pending' = approval-gated request (guest_list / apply door) awaiting host decision;
+    // 'declined' = host rejected the request. Both hold no ticket and consume no seat (§6a-c/d).
+    status: 'registered' | 'cancelled' | 'attended' | 'no-show' | 'pending' | 'declined';
 
     // Group registration
     quantity: number;
@@ -134,7 +136,7 @@ const eventRegistrationSchema = new Schema<IEventRegistration>(
 
         status: {
             type: String,
-            enum: ['registered', 'cancelled', 'attended', 'no-show'],
+            enum: ['registered', 'cancelled', 'attended', 'no-show', 'pending', 'declined'],
             default: 'registered',
         },
 
