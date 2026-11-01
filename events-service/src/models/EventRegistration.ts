@@ -18,6 +18,14 @@ export interface IRegistrationAnswer {
     value: string;
 }
 
+// Apply-with-work submission (apply-door events, §6a-d): a short pitch plus portfolio
+// links and/or media-service upload ids, shown to the host when they select applicants.
+export interface IRegistrationApplication {
+    pitch?: string;
+    links?: string[];
+    mediaIds?: string[];
+}
+
 export interface IPaymentRecord {
     razorpayPaymentId: string;
     razorpayOrderId?: string;
@@ -44,6 +52,9 @@ export interface IEventRegistration extends Document {
 
     // Answers to the event's custom registration questions (host-configured)
     answers?: IRegistrationAnswer[];
+
+    // Apply-with-work submission (apply-door events)
+    application?: IRegistrationApplication;
 
     // Idempotency · prevents double-tap from creating two registrations
     idempotencyKey: string;
@@ -117,6 +128,15 @@ const registrationAnswerSchema = new Schema(
     { _id: false }
 );
 
+const registrationApplicationSchema = new Schema(
+    {
+        pitch: { type: String },
+        links: { type: [String], default: undefined },
+        mediaIds: { type: [String], default: undefined },
+    },
+    { _id: false }
+);
+
 const offlinePaymentSchema = new Schema(
     {
         method: { type: String, enum: ['cash'], required: true },
@@ -144,6 +164,7 @@ const eventRegistrationSchema = new Schema<IEventRegistration>(
         attendees: [attendeeInfoSchema],
 
         answers: { type: [registrationAnswerSchema], default: undefined },
+        application: { type: registrationApplicationSchema, default: undefined },
 
         idempotencyKey: { type: String, required: true },
 

@@ -6,6 +6,7 @@ interface RegistrationInput {
   quantity: number;
   attendees: { fullName: string; phone: string; email?: string; notes?: string }[];
   answers?: { questionId?: any; label: string; type: string; value: string }[];
+  application?: { pitch?: string; links?: string[]; mediaIds?: string[] };
   source: 'standard' | 'walkup' | 'admin_added';
   visibility: 'public' | 'private';
   ticketTypeId?: any;
