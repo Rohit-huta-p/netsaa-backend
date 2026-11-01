@@ -11,7 +11,8 @@ export async function slotsLeftForEvent(eventId: any): Promise<number> {
   const event = await Event.findById(eventId);
   if (!event) return 0;
   const agg = await EventRegistration.aggregate([
-    { $match: { eventId: event._id, status: { $in: ['registered', 'attended'] } } },
+    // 'approved' = a paid request approved + awaiting payment holds its seat (§6a-e).
+    { $match: { eventId: event._id, status: { $in: ['registered', 'attended', 'approved'] } } },
     { $group: { _id: null, seats: { $sum: '$quantity' } } },
   ]);
   const taken = agg[0]?.seats ?? 0;
@@ -24,7 +25,7 @@ export async function seatsLeftForSpot(event: any, spotId: any): Promise<number>
   const spot = (event?.spots ?? []).find((s: any) => String(s._id) === String(spotId));
   if (!spot) return 0;
   const agg = await EventRegistration.aggregate([
-    { $match: { eventId: event._id, spotId: new Types.ObjectId(String(spotId)), status: { $in: ['registered', 'attended'] } } },
+    { $match: { eventId: event._id, spotId: new Types.ObjectId(String(spotId)), status: { $in: ['registered', 'attended', 'approved'] } } },
     { $group: { _id: null, seats: { $sum: '$quantity' } } },
   ]);
   const taken = agg[0]?.seats ?? 0;

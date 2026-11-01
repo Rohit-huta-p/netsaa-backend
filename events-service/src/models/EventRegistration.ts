@@ -44,7 +44,9 @@ export interface IEventRegistration extends Document {
     spotId?: mongoose.Types.ObjectId;        // which embedded event spot/tier was chosen (§6a-b)
     // 'pending' = approval-gated request (guest_list / apply door) awaiting host decision;
     // 'declined' = host rejected the request. Both hold no ticket and consume no seat (§6a-c/d).
-    status: 'registered' | 'cancelled' | 'attended' | 'no-show' | 'pending' | 'declined';
+    // 'approved' = host approved a PAID request; holds a seat and awaits payment within 48h,
+    // then the webhook flips it to 'registered' and issues the ticket (§6a-e).
+    status: 'registered' | 'cancelled' | 'attended' | 'no-show' | 'pending' | 'declined' | 'approved';
 
     // Group registration
     quantity: number;
@@ -156,7 +158,7 @@ const eventRegistrationSchema = new Schema<IEventRegistration>(
 
         status: {
             type: String,
-            enum: ['registered', 'cancelled', 'attended', 'no-show', 'pending', 'declined'],
+            enum: ['registered', 'cancelled', 'attended', 'no-show', 'pending', 'declined', 'approved'],
             default: 'registered',
         },
 
