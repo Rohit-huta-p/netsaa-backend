@@ -4,6 +4,7 @@ import EventTicket from '../models/EventTicket';
 import Event from '../models/Event';
 import { AuthRequest } from '../middleware/auth';
 import { findOrCreateRegistration } from '../utils/idempotency';
+import { buildRegistrationAnswers } from '../utils/registrationAnswers';
 import { consentFromRequest, recordEventRegistrationConsent } from '../utils/consent';
 import { generateTicketCode, generateBackupCode } from '../utils/ticketCode';
 import { slotsLeftForEvent } from '../services/waitlistService';
@@ -42,6 +43,9 @@ export const registerForEvent = async (req: Request, res: Response, next: NextFu
         // Idempotent per user: the unique (eventId, userId) index allows only ONE registration
         // per event. A non-cancelled prior is a no-op (return it). A cancelled prior, or no prior,
         // ADDS a seat → enforce capacity first (full → 409, the client routes to the waitlist).
+        // NOTE: custom-question answers + consent are validated/recorded below, only on the
+        // branches that create or reactivate — so an idempotent replay that omits them is never
+        // rejected, and a question-less / no-consent request is unaffected (open-door stays open).
         const prior = await EventRegistration.findOne({ eventId: event._id, userId });
         if (prior && prior.status !== 'cancelled') {
             return res.status(200).json({ meta: { status: 200, message: 'Already registered' }, data: prior, errors: [] });
@@ -58,6 +62,13 @@ export const registerForEvent = async (req: Request, res: Response, next: NextFu
             return res.status(409).json({ meta: { status: 409, message: 'Event is full' }, data: { full: true, waitlistAvailable: !!event.allowWaitlist }, errors: [{ message: 'No seats left' }] });
         }
 
+        // Custom-question answers: validate against the event's questions + enforce required
+        // (before any consent write, so a bad-answers request 400s cleanly).
+        const { answers, error: answersError } = buildRegistrationAnswers(event, req.body.answers);
+        if (answersError) {
+            return res.status(400).json({ meta: { status: 400, message: 'Invalid answers' }, data: null, errors: [{ message: answersError }] });
+        }
+
         // DPDP consent (gap §6a-f): the attendee consents to sharing name/phone with the
         // host. Persisted (non-fatal) when the client sends it — the open-door client that
         // sends none is unaffected. Recorded here since both branches below register a seat.
@@ -71,6 +82,7 @@ export const registerForEvent = async (req: Request, res: Response, next: NextFu
             prior.cancelledBy = undefined;
             prior.cancellationReason = undefined;
             if (quantity) prior.quantity = quantity;
+            if (answers.length) prior.answers = answers;
             await prior.save();
             const existingTickets = await EventTicket.countDocuments({ registrationId: prior._id });
             if (existingTickets === 0) {
@@ -96,6 +108,7 @@ export const registerForEvent = async (req: Request, res: Response, next: NextFu
             userId,
             quantity,
             attendees,
+            answers: answers.length ? answers : undefined,
             source: 'standard',
             visibility: 'public',
         });
@@ -341,6 +354,7 @@ export const getEventRoster = async (req: Request, res: Response) => {
             registeredAt: r.registeredAt,
             status: r.status,
             visibility: r.visibility,
+            answers: r.answers ?? [],
         });
 
         const confirmed = regs.filter((r: any) => r.status === 'registered' || r.status === 'attended').map(toRow);

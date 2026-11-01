@@ -42,6 +42,7 @@ export const handleWebhook = async (req: Request, res: Response) => {
         const registration = await EventRegistration.create({
           eventId: reservation.eventId, userId: reservation.userId,
           quantity: reservation.quantity, status: 'registered',
+          answers: reservation.answers?.length ? reservation.answers : undefined,
           idempotencyKey: reservation.idempotencyKey, source: 'standard', visibility: 'public',
           paymentRecord: {
             razorpayPaymentId: payment.id, razorpayOrderId: payment.order_id, capturedAt: new Date(),
