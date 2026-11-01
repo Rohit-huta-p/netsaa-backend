@@ -29,6 +29,37 @@ export const handleWebhook = async (req: Request, res: Response) => {
         if (!reservation) return res.status(200).json({ meta: { status: 200, message: 'No reservation (ignored)' }, data: null, errors: [] });
         if (reservation.status === 'paid') return res.status(200).json({ meta: { status: 200, message: 'Already processed' }, data: null, errors: [] });
 
+        // Pay-after-approval (§6a-e): this hold confirms an ALREADY-approved registration
+        // rather than creating a new one. Flip it to registered, write the paymentRecord and
+        // issue its ticket(s). (Must run before the create-by-idempotencyKey path below, since
+        // the approved reg carries its own register-time key, not this hold's `approve-…` key.)
+        if (reservation.registrationId) {
+          const reg = await EventRegistration.findById(reservation.registrationId);
+          if (reg && reg.status !== 'registered') {
+            const ev = await Event.findById(reservation.eventId);
+            const paidSpot = reservation.spotId ? (ev?.spots ?? []).find((s: any) => String(s._id) === String(reservation.spotId)) : undefined;
+            const unit = paidSpot ? (paidSpot.price || 0) : (ev?.ticketPrice || 0);
+            const f = computeFeesPaise(unit * 100, reservation.quantity);
+            reg.status = 'registered';
+            reg.paymentRecord = {
+              razorpayPaymentId: payment.id, razorpayOrderId: payment.order_id, capturedAt: new Date(),
+              amountPaise: f.customerPaysPaise, serviceFeePaise: f.serviceFeePaise,
+              netsaFeePaise: f.netsaFeePaise, organizerNetPaise: f.organizerNetPaise,
+            };
+            await reg.save();
+            const have = await EventTicket.countDocuments({ registrationId: reg._id });
+            if (have === 0) {
+              await EventTicket.insertMany(Array.from({ length: reg.quantity || 1 }).map((_, i) => ({
+                ticketId: `${reg._id}-${i}`, eventId: reservation.eventId, registrationId: reg._id,
+                userId: reg.userId, attendeeName: reg.attendees?.[i]?.fullName || reg.attendees?.[0]?.fullName || 'Guest',
+                qrCode: `${generateTicketCode(ev?.title || 'NETSA')}|${generateBackupCode()}`, status: 'issued',
+              })));
+            }
+          }
+          reservation.status = 'paid'; await reservation.save();
+          return res.status(200).json({ meta: { status: 200, message: 'Registration confirmed (approved)' }, data: null, errors: [] });
+        }
+
         // Idempotency: registration keyed off the reservation's idempotencyKey
         const existing = await EventRegistration.findOne({ idempotencyKey: reservation.idempotencyKey });
         if (existing) {

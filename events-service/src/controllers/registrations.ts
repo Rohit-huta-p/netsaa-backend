@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import EventRegistration, { IEventRegistration } from '../models/EventRegistration';
+import EventReservation from '../models/EventReservation';
 import EventTicket from '../models/EventTicket';
 import Event from '../models/Event';
 import { AuthRequest } from '../middleware/auth';
@@ -306,12 +307,21 @@ export const getMyRegistration = async (req: Request, res: Response) => {
         }
         const ticket = await EventTicket.findOne({ registrationId: registration._id }).select('qrCode status').lean();
         const [ticketCode, backupCode] = ((ticket as any)?.qrCode || '|').split('|');
+
+        // Pay-after-approval (§6a-e): an approved paid request polls here for its 48h pay link.
+        let pendingPayment;
+        if (registration.status === 'approved') {
+            const resv = await EventReservation.findOne({ registrationId: registration._id, status: 'reserved' }).lean();
+            if (resv) pendingPayment = { reservationId: String(resv._id), razorpayOrderId: resv.razorpayOrderId, amountPaise: Math.round(resv.totalAmount * 100), payBy: resv.expiresAt };
+        }
+
         return res.status(200).json({
             meta: { status: 200, message: 'OK' },
             data: {
                 ...registration,
                 ticketCode,
                 backupCode,
+                pendingPayment,
                 // Frontend reads attendeeCount + flat payment fields; the doc stores quantity + nested paymentRecord.
                 attendeeCount: registration.quantity,
                 razorpayPaymentId: registration.paymentRecord?.razorpayPaymentId,
@@ -379,7 +389,7 @@ export const updateRegistrationStatus = async (req: AuthRequest, res: Response, 
         // declining routes through the shared decline. Any other transition is a plain set.
         if (target === 'registered' && registration.status === 'pending') {
             const result = await doApprove(registration, event);
-            return res.status(result.code).json({ meta: { status: result.code, message: result.message }, data: result.code === 200 ? registration : null, errors: result.code === 200 ? [] : [{ message: result.message }] });
+            return res.status(result.code).json({ meta: { status: result.code, message: result.message }, data: result.code === 200 ? { ...registration.toObject(), payment: result.payment } : null, errors: result.code === 200 ? [] : [{ message: result.message }] });
         }
         if (target === 'declined') {
             await doDecline(registration, typeof req.body?.reason === 'string' ? req.body.reason : undefined);
@@ -436,6 +446,8 @@ export const getEventRoster = async (req: Request, res: Response) => {
         // Approval-gated requests awaiting the host's decision (§6a-c/d), newest first.
         const requests = regs.filter((r: any) => r.status === 'pending').map(toRow);
         const declined = regs.filter((r: any) => r.status === 'declined').map(toRow);
+        // Approved paid requests holding a seat while they pay within 48h (§6a-e).
+        const approved = regs.filter((r: any) => r.status === 'approved').map(toRow);
         const waitlistRows = waitlist.map((w: any) => ({
             _id: String(w._id),
             userId: String(w.userId?._id || w.userId || ''),
@@ -452,10 +464,11 @@ export const getEventRoster = async (req: Request, res: Response) => {
             data: {
                 confirmed,
                 requests,
+                approved,
                 waitlist: waitlistRows,
                 cancelled,
                 declined,
-                counts: { confirmed: confirmed.length, requests: requests.length, waitlist: waitlistRows.length, cancelled: cancelled.length, declined: declined.length },
+                counts: { confirmed: confirmed.length, requests: requests.length, approved: approved.length, waitlist: waitlistRows.length, cancelled: cancelled.length, declined: declined.length },
                 // legacy aliases (old callers expect a flat confirmed list)
                 rows: confirmed,
                 total: confirmed.length,

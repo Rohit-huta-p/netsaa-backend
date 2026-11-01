@@ -14,6 +14,9 @@ export interface IEventReservation extends Document {
     eventId: mongoose.Types.ObjectId;
     ticketTypeId?: mongoose.Types.ObjectId;
     spotId?: mongoose.Types.ObjectId;        // embedded event spot/tier chosen (§6a-b)
+    // Set for a pay-after-approval hold (§6a-e): the already-approved registration this
+    // payment confirms. When present, the webhook confirms THAT reg instead of creating one.
+    registrationId?: mongoose.Types.ObjectId;
     userId: mongoose.Types.ObjectId;
     quantity: number;
     answers?: IReservationAnswer[];
@@ -41,6 +44,7 @@ const eventReservationSchema = new Schema<IEventReservation>(
         eventId: { type: Schema.Types.ObjectId, ref: 'Event', required: true },
         ticketTypeId: { type: Schema.Types.ObjectId, ref: 'EventTicketType' },
         spotId: { type: Schema.Types.ObjectId },        // embedded event spot/tier (§6a-b)
+        registrationId: { type: Schema.Types.ObjectId, ref: 'EventRegistration' }, // pay-after-approval link (§6a-e)
         userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
         quantity: { type: Number, required: true },
         answers: { type: [reservationAnswerSchema], default: undefined },
