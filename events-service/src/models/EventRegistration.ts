@@ -7,6 +7,17 @@ export interface IAttendeeInfo {
     notes?: string;
 }
 
+// Custom registration question answer (gap §6a-a). label+type are snapshotted from
+// the event's question at register time so host display survives question edits;
+// questionId is a best-effort link (event question ids churn on edit — see
+// utils/registrationAnswers.ts).
+export interface IRegistrationAnswer {
+    questionId?: mongoose.Types.ObjectId;
+    label: string;
+    type: string;
+    value: string;
+}
+
 export interface IPaymentRecord {
     razorpayPaymentId: string;
     razorpayOrderId?: string;
@@ -28,6 +39,9 @@ export interface IEventRegistration extends Document {
     // Group registration
     quantity: number;
     attendees?: IAttendeeInfo[];
+
+    // Answers to the event's custom registration questions (host-configured)
+    answers?: IRegistrationAnswer[];
 
     // Idempotency · prevents double-tap from creating two registrations
     idempotencyKey: string;
@@ -91,6 +105,16 @@ const paymentRecordSchema = new Schema(
     { _id: false }
 );
 
+const registrationAnswerSchema = new Schema(
+    {
+        questionId: { type: Schema.Types.ObjectId },
+        label: { type: String, required: true },
+        type: { type: String, required: true },
+        value: { type: String, default: '' },
+    },
+    { _id: false }
+);
+
 const offlinePaymentSchema = new Schema(
     {
         method: { type: String, enum: ['cash'], required: true },
@@ -116,6 +140,8 @@ const eventRegistrationSchema = new Schema<IEventRegistration>(
 
         quantity: { type: Number, default: 1, min: 1, max: 10 },
         attendees: [attendeeInfoSchema],
+
+        answers: { type: [registrationAnswerSchema], default: undefined },
 
         idempotencyKey: { type: String, required: true },
 

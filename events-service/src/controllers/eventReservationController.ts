@@ -7,6 +7,8 @@ import { createOrderWithTransfer } from '../services/razorpay';
 import { computeFeesPaise } from '../utils/eventFees';
 import { slotsLeftForEvent, seatsLeftForSpot } from '../services/waitlistService';
 import { resolveSpot } from '../utils/eventSpots';
+import { buildRegistrationAnswers } from '../utils/registrationAnswers';
+import { consentFromRequest, recordEventRegistrationConsent } from '../utils/consent';
 
 const RESERVATION_TTL_MS = 10 * 60 * 1000;
 
@@ -34,6 +36,13 @@ export const reserveTickets = async (req: AuthRequest, res: Response) => {
     }
 
     const quantity = Math.max(1, Math.min(event.maxGuestsPerRegistration || 5, req.body.quantity || 1));
+
+    // Custom-question answers: validate against the event's questions + enforce required
+    // (carried on the reservation; copied onto the paid Registration by the webhook).
+    const { answers, error: answersError } = buildRegistrationAnswers(event, req.body.answers);
+    if (answersError) {
+      return res.status(400).json({ meta: { status: 400, message: 'Invalid answers' }, data: null, errors: [{ message: answersError }] });
+    }
 
     // Spot/tier selection (gap §6a-b): resolve which spot to buy. A multi-spot event must
     // send a spotId; a single-spot / spot-less event keeps the event-level price.
@@ -74,12 +83,18 @@ export const reserveTickets = async (req: AuthRequest, res: Response) => {
     const reservation = await EventReservation.create({
       eventId: event._id, userId, quantity,
       spotId: spotRes.spot?._id,
+      answers: answers.length ? answers : undefined,
       totalAmount: fees.customerPaysPaise / 100,
       status: 'reserved',
       expiresAt: new Date(Date.now() + RESERVATION_TTL_MS),
       razorpayOrderId: orderId,
       idempotencyKey,
     });
+
+    // DPDP consent (gap §6a-f): captured at the consent screen before reserve; persisted
+    // here (non-fatal) since the paid Registration is created later by the webhook (no req).
+    const consent = consentFromRequest(req);
+    if (consent.accepted) await recordEventRegistrationConsent(userId, consent);
 
     return res.status(201).json({ meta: { status: 201, message: 'Reserved' }, data: { reservationId: reservation._id, razorpayOrderId: orderId, amountPaise: fees.customerPaysPaise }, errors: [] });
   } catch (err) {
