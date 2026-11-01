@@ -7,6 +7,7 @@ import { createOrderWithTransfer } from '../services/razorpay';
 import { computeFeesPaise } from '../utils/eventFees';
 import { slotsLeftForEvent } from '../services/waitlistService';
 import { buildRegistrationAnswers } from '../utils/registrationAnswers';
+import { consentFromRequest, recordEventRegistrationConsent } from '../utils/consent';
 
 const RESERVATION_TTL_MS = 10 * 60 * 1000;
 
@@ -70,6 +71,11 @@ export const reserveTickets = async (req: AuthRequest, res: Response) => {
       razorpayOrderId: orderId,
       idempotencyKey,
     });
+
+    // DPDP consent (gap §6a-f): captured at the consent screen before reserve; persisted
+    // here (non-fatal) since the paid Registration is created later by the webhook (no req).
+    const consent = consentFromRequest(req);
+    if (consent.accepted) await recordEventRegistrationConsent(userId, consent);
 
     return res.status(201).json({ meta: { status: 201, message: 'Reserved' }, data: { reservationId: reservation._id, razorpayOrderId: orderId, amountPaise: fees.customerPaysPaise }, errors: [] });
   } catch (err) {
