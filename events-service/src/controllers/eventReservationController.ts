@@ -5,7 +5,8 @@ import EventReservation from '../models/EventReservation';
 import UserPayoutAccount from '../models/UserPayoutAccount';
 import { createOrderWithTransfer } from '../services/razorpay';
 import { computeFeesPaise } from '../utils/eventFees';
-import { slotsLeftForEvent } from '../services/waitlistService';
+import { slotsLeftForEvent, seatsLeftForSpot } from '../services/waitlistService';
+import { resolveSpot } from '../utils/eventSpots';
 import { buildRegistrationAnswers } from '../utils/registrationAnswers';
 import { consentFromRequest, recordEventRegistrationConsent } from '../utils/consent';
 
@@ -37,19 +38,36 @@ export const reserveTickets = async (req: AuthRequest, res: Response) => {
     const quantity = Math.max(1, Math.min(event.maxGuestsPerRegistration || 5, req.body.quantity || 1));
 
     // Custom-question answers: validate against the event's questions + enforce required
-    // (carried on the reservation → copied onto the paid Registration by the webhook).
+    // (carried on the reservation; copied onto the paid Registration by the webhook).
     const { answers, error: answersError } = buildRegistrationAnswers(event, req.body.answers);
     if (answersError) {
       return res.status(400).json({ meta: { status: 400, message: 'Invalid answers' }, data: null, errors: [{ message: answersError }] });
     }
 
-    // Capacity gate (counts active registrations; held reservations are a Sprint 8 hardening note).
-    const slotsLeft = await slotsLeftForEvent(event._id);
-    if (slotsLeft < quantity) {
-      return res.status(409).json({ meta: { status: 409, message: 'Event is full' }, data: { full: true, waitlistAvailable: !!event.allowWaitlist }, errors: [] });
+    // Spot/tier selection (gap §6a-b): resolve which spot to buy. A multi-spot event must
+    // send a spotId; a single-spot / spot-less event keeps the event-level price.
+    const spotRes = resolveSpot(event, req.body.spotId);
+    if (spotRes.error) {
+      return res.status(400).json({ meta: { status: 400, message: 'Invalid spot' }, data: null, errors: [{ message: spotRes.error }] });
+    }
+    // Per-tier price (falls back to event.ticketPrice for single-spot / spot-less events).
+    const unitPriceRupees = spotRes.spot ? (spotRes.spot.price || 0) : event.ticketPrice;
+
+    // Capacity gate: per-spot when a spot is chosen, else event-level (held reservations
+    // are a Sprint 8 hardening note either way).
+    if (spotRes.spot) {
+      const spotLeft = await seatsLeftForSpot(event, spotRes.spot._id);
+      if (spotLeft < quantity) {
+        return res.status(409).json({ meta: { status: 409, message: 'This option is full' }, data: { full: true, spotId: String(spotRes.spot._id), waitlistAvailable: !!event.allowWaitlist }, errors: [] });
+      }
+    } else {
+      const slotsLeft = await slotsLeftForEvent(event._id);
+      if (slotsLeft < quantity) {
+        return res.status(409).json({ meta: { status: 409, message: 'Event is full' }, data: { full: true, waitlistAvailable: !!event.allowWaitlist }, errors: [] });
+      }
     }
 
-    const fees = computeFeesPaise(event.ticketPrice * 100, quantity);
+    const fees = computeFeesPaise(unitPriceRupees * 100, quantity);
 
     // Organizer must be verified to receive Route transfers
     const payout = await UserPayoutAccount.findOne({ userId: event.organizerId, status: 'verified' });
@@ -64,6 +82,7 @@ export const reserveTickets = async (req: AuthRequest, res: Response) => {
 
     const reservation = await EventReservation.create({
       eventId: event._id, userId, quantity,
+      spotId: spotRes.spot?._id,
       answers: answers.length ? answers : undefined,
       totalAmount: fees.customerPaysPaise / 100,
       status: 'reserved',

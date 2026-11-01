@@ -37,11 +37,16 @@ export const handleWebhook = async (req: Request, res: Response) => {
         }
 
         const event = await Event.findById(reservation.eventId);
-        const fees = computeFeesPaise((event?.ticketPrice || 0) * 100, reservation.quantity);
+        // Price off the reserved spot/tier when set (§6a-b), else the event's single price,
+        // so the stored paymentRecord matches what the attendee actually paid.
+        const spot = reservation.spotId ? (event?.spots ?? []).find((s: any) => String(s._id) === String(reservation.spotId)) : undefined;
+        const unitPriceRupees = spot ? (spot.price || 0) : (event?.ticketPrice || 0);
+        const fees = computeFeesPaise(unitPriceRupees * 100, reservation.quantity);
 
         const registration = await EventRegistration.create({
           eventId: reservation.eventId, userId: reservation.userId,
           quantity: reservation.quantity, status: 'registered',
+          spotId: reservation.spotId,
           answers: reservation.answers?.length ? reservation.answers : undefined,
           idempotencyKey: reservation.idempotencyKey, source: 'standard', visibility: 'public',
           paymentRecord: {

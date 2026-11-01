@@ -9,6 +9,7 @@ interface RegistrationInput {
   source: 'standard' | 'walkup' | 'admin_added';
   visibility: 'public' | 'private';
   ticketTypeId?: any;
+  spotId?: any;
 }
 
 /**

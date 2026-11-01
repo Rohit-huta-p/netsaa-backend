@@ -33,6 +33,7 @@ export interface IEventRegistration extends Document {
     eventId: mongoose.Types.ObjectId;
     userId?: mongoose.Types.ObjectId;
     ticketTypeId?: mongoose.Types.ObjectId;
+    spotId?: mongoose.Types.ObjectId;        // which embedded event spot/tier was chosen (§6a-b)
     status: 'registered' | 'cancelled' | 'attended' | 'no-show';
 
     // Group registration
@@ -129,6 +130,7 @@ const eventRegistrationSchema = new Schema<IEventRegistration>(
         eventId: { type: Schema.Types.ObjectId, ref: 'Event', required: true },
         userId: { type: Schema.Types.ObjectId, ref: 'User', required: false },
         ticketTypeId: { type: Schema.Types.ObjectId, ref: 'EventTicketType' },
+        spotId: { type: Schema.Types.ObjectId },        // embedded event spot/tier (§6a-b)
 
         status: {
             type: String,
@@ -182,6 +184,7 @@ eventRegistrationSchema.index({ userId: 1 });
 eventRegistrationSchema.index({ eventId: 1, userId: 1 }, { unique: true, partialFilterExpression: { userId: { $exists: true } } });
 eventRegistrationSchema.index({ idempotencyKey: 1 }, { unique: true });
 eventRegistrationSchema.index({ eventId: 1, status: 1 });          // roster filters
+eventRegistrationSchema.index({ eventId: 1, spotId: 1 }, { sparse: true }); // per-spot seat counts (§6a-b)
 eventRegistrationSchema.index({ eventId: 1, source: 1 });          // walkup analytics
 eventRegistrationSchema.index({ userId: 1, status: 1 });           // "my events"
 eventRegistrationSchema.index({ reviewSubmittedAt: 1 }, { sparse: true }); // review window queries
