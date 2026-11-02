@@ -37,6 +37,15 @@ export function maskAccount(acc: string): string {
 export async function createLinkedAccount(input: {
   email: string; name: string; pan: string; bankAccount: string; ifsc: string; businessType: string;
 }): Promise<{ linkedAccountId: string }> {
+  // Dev convenience: skip the real Razorpay Route accounts.create so the payout wizard
+  // completes end-to-end without Route/KYC infra (or even Razorpay keys). Gated behind an
+  // explicit env flag — OFF by default, so production is unchanged. submitPayoutAccount then
+  // marks the account 'verified', which clears the "Organizer payout not set up" gate on paid
+  // flows. The returned acc_dev_ id is a stub: it cannot receive a real Route transfer.
+  if (process.env.PAYOUTS_DEV_AUTOVERIFY === '1') {
+    return { linkedAccountId: `acc_dev_${crypto.randomBytes(8).toString('hex')}` };
+  }
+
   // Razorpay Accounts API (v2). Real call; mocked in integration tests.
   const acc = await razorpayClient().accounts.create({
     type: 'route',
