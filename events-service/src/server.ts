@@ -6,6 +6,7 @@ import eventRoutes from './routes/eventRoutes';
 import searchRoutes from './routes/search';
 import internalRoutes from './routes/internal';
 import { startReservationExpiryWorker } from './workers/reservationExpiryWorker';
+import { startPayHoldExpiryWorker } from './workers/payHoldExpiryWorker';
 import { handleWebhook } from './controllers/razorpayWebhook';
 import './models/User';
 
@@ -36,6 +37,7 @@ if (process.env.NODE_ENV !== 'test') {
     app.listen(PORT, () => {
         console.log(`Events service running on port ${PORT}`);
         startReservationExpiryWorker();
+        startPayHoldExpiryWorker();
     });
 }
 
