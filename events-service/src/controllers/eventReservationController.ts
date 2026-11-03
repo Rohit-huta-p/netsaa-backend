@@ -3,7 +3,7 @@ import { AuthRequest } from '../middleware/auth';
 import Event from '../models/Event';
 import EventReservation from '../models/EventReservation';
 import UserPayoutAccount from '../models/UserPayoutAccount';
-import { createOrderWithTransfer } from '../services/razorpay';
+import { payments, paiseToRupees, providerOrderId } from '../services/payments';
 import { computeFeesPaise } from '../utils/eventFees';
 import { slotsLeftForEvent, seatsLeftForSpot } from '../services/waitlistService';
 import { resolveSpot } from '../utils/eventSpots';
@@ -12,7 +12,7 @@ import { consentFromRequest, recordEventRegistrationConsent } from '../utils/con
 
 const RESERVATION_TTL_MS = 10 * 60 * 1000;
 
-// @desc    Reserve tickets for an event (Razorpay order + Route transfer)
+// @desc    Reserve tickets for an event (Cashfree order + Easy Split)
 // @route   POST /v1/events/:id/reserve
 // @access  Private
 export const reserveTickets = async (req: AuthRequest, res: Response) => {
@@ -23,7 +23,7 @@ export const reserveTickets = async (req: AuthRequest, res: Response) => {
 
     const existing = await EventReservation.findOne({ idempotencyKey });
     if (existing) {
-      return res.status(201).json({ meta: { status: 201, message: 'Reservation (replay)' }, data: { reservationId: existing._id, razorpayOrderId: existing.razorpayOrderId, amountPaise: Math.round(existing.totalAmount * 100) }, errors: [] });
+      return res.status(201).json({ meta: { status: 201, message: 'Reservation (replay)' }, data: { reservationId: existing._id, orderId: existing.razorpayOrderId, razorpayOrderId: existing.razorpayOrderId, paymentSessionId: existing.paymentSessionId, amountPaise: Math.round(existing.totalAmount * 100) }, errors: [] });
     }
 
     const event = await Event.findById(req.params.id);
@@ -73,11 +73,18 @@ export const reserveTickets = async (req: AuthRequest, res: Response) => {
     const payout = await UserPayoutAccount.findOne({ userId: event.organizerId, status: 'verified' });
     if (!payout?.linkedAccountId) return res.status(409).json({ meta: { status: 409, message: 'Organizer payout not set up' }, data: null, errors: [] });
 
-    const { orderId } = await createOrderWithTransfer({
-      amountPaise: fees.customerPaysPaise,
-      receipt: `evt_${event._id}_${idempotencyKey}`,
-      linkedAccountId: payout.linkedAccountId,
-      organizerNetPaise: fees.organizerNetPaise,
+    // Cashfree order with a static Easy Split: the organizer's share is split on capture,
+    // NETSA keeps the remainder. Amounts cross to the provider in RUPEES (internal = paise).
+    const seedOrderId = providerOrderId('evt', idempotencyKey);
+    const { orderId, paymentSessionId } = await payments.createOrderWithSplit({
+      orderId: seedOrderId,
+      amountRupees: paiseToRupees(fees.customerPaysPaise),
+      // TODO(prod): source the attendee's real phone (JWT carries only id/role). Cashfree
+      // needs a customer_phone; placeholder is fine for sandbox.
+      customer: { id: String(userId), phone: (req.user as any)?.phone || '9999999999' },
+      vendorId: payout.linkedAccountId,
+      vendorAmountRupees: paiseToRupees(fees.organizerNetPaise),
+      notes: { eventId: String(event._id), kind: 'event_reserve' },
     });
 
     const reservation = await EventReservation.create({
@@ -88,6 +95,7 @@ export const reserveTickets = async (req: AuthRequest, res: Response) => {
       status: 'reserved',
       expiresAt: new Date(Date.now() + RESERVATION_TTL_MS),
       razorpayOrderId: orderId,
+      paymentSessionId,
       idempotencyKey,
     });
 
@@ -96,7 +104,7 @@ export const reserveTickets = async (req: AuthRequest, res: Response) => {
     const consent = consentFromRequest(req);
     if (consent.accepted) await recordEventRegistrationConsent(userId, consent);
 
-    return res.status(201).json({ meta: { status: 201, message: 'Reserved' }, data: { reservationId: reservation._id, razorpayOrderId: orderId, amountPaise: fees.customerPaysPaise }, errors: [] });
+    return res.status(201).json({ meta: { status: 201, message: 'Reserved' }, data: { reservationId: reservation._id, orderId, razorpayOrderId: orderId, paymentSessionId, amountPaise: fees.customerPaysPaise }, errors: [] });
   } catch (err) {
     return res.status(400).json({ meta: { status: 400, message: 'Reservation failed' }, data: null, errors: [{ message: (err as Error).message }] });
   }

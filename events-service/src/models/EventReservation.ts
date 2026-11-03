@@ -23,7 +23,8 @@ export interface IEventReservation extends Document {
     totalAmount: number;             // in rupees (legacy)
     status: 'reserved' | 'paid' | 'expired' | 'released';
     expiresAt: Date;
-    razorpayOrderId?: string;        // populated when the Razorpay order is created
+    razorpayOrderId?: string;        // provider order id (Cashfree order_id / legacy Razorpay order) — webhook lookup key
+    paymentSessionId?: string;       // Cashfree payment_session_id — FE checkout handle
     idempotencyKey: string;          // client-supplied · prevents double-tap reservations
     createdAt: Date;
     updatedAt: Date;
@@ -56,6 +57,7 @@ const eventReservationSchema = new Schema<IEventReservation>(
         },
         expiresAt: { type: Date, required: true },
         razorpayOrderId: { type: String },
+        paymentSessionId: { type: String },
         idempotencyKey: { type: String, required: true },
     },
     { timestamps: true }

@@ -6,7 +6,7 @@ import EventReservation from '../models/EventReservation';
 import EventTicket from '../models/EventTicket';
 import EventNotification from '../models/EventNotification';
 import UserPayoutAccount from '../models/UserPayoutAccount';
-import { createOrderWithTransfer } from '../services/razorpay';
+import { payments, paiseToRupees, providerOrderId } from '../services/payments';
 import { computeFeesPaise } from '../utils/eventFees';
 import { generateTicketCode, generateBackupCode } from '../utils/ticketCode';
 import { slotsLeftForEvent, seatsLeftForSpot } from '../services/waitlistService';
@@ -27,7 +27,7 @@ export interface ApprovalResult {
   code: number;
   message: string;
   // Set only for a PAID approval: the 48h pay hold the attendee must complete (§6a-e).
-  payment?: { reservationId: string; razorpayOrderId?: string; amountPaise: number; payBy: Date };
+  payment?: { reservationId: string; orderId?: string; razorpayOrderId?: string; paymentSessionId?: string; amountPaise: number; payBy: Date };
 }
 
 /** Issue one ticket per seat for a registration (no-op if tickets already exist). */
@@ -50,7 +50,7 @@ async function issueTickets(registration: IEventRegistration, event: IEvent): Pr
 /**
  * Approve a pending registration. Capacity-checked (409 when full).
  *  - FREE event/tier → straight to `registered` + ticket(s).
- *  - PAID event/tier (§6a-e) → `approved` (seat held) + a 48h Razorpay pay hold linked to
+ *  - PAID event/tier (§6a-e) → `approved` (seat held) + a 48h Cashfree pay hold linked to
  *    this registration; the webhook flips it to `registered` + issues the ticket on capture.
  */
 export async function doApprove(registration: IEventRegistration, event: IEvent): Promise<ApprovalResult> {
@@ -76,17 +76,21 @@ export async function doApprove(registration: IEventRegistration, event: IEvent)
     let reservation = await EventReservation.findOne({ idempotencyKey });
     if (!reservation) {
       const fees = computeFeesPaise(unitPriceRupees * 100, qty);
-      const { orderId } = await createOrderWithTransfer({
-        amountPaise: fees.customerPaysPaise,
-        receipt: `apr_${registration._id}`,
-        linkedAccountId: payout.linkedAccountId,
-        organizerNetPaise: fees.organizerNetPaise,
+      const seedOrderId = providerOrderId('apr', String(registration._id));
+      const { orderId, paymentSessionId } = await payments.createOrderWithSplit({
+        orderId: seedOrderId,
+        amountRupees: paiseToRupees(fees.customerPaysPaise),
+        // TODO(prod): source the attendee's real phone (not on the registration today).
+        customer: { id: String(registration.userId), phone: '9999999999' },
+        vendorId: payout.linkedAccountId,
+        vendorAmountRupees: paiseToRupees(fees.organizerNetPaise),
+        notes: { eventId: String(event._id), registrationId: String(registration._id), kind: 'event_approval' },
       });
       reservation = await EventReservation.create({
         eventId: event._id, userId: registration.userId, quantity: qty, spotId: registration.spotId,
         answers: registration.answers, registrationId: registration._id,
         totalAmount: fees.customerPaysPaise / 100, status: 'reserved',
-        expiresAt: new Date(Date.now() + PAY_AFTER_APPROVAL_TTL_MS), razorpayOrderId: orderId, idempotencyKey,
+        expiresAt: new Date(Date.now() + PAY_AFTER_APPROVAL_TTL_MS), razorpayOrderId: orderId, paymentSessionId, idempotencyKey,
       });
     }
 
@@ -105,7 +109,7 @@ export async function doApprove(registration: IEventRegistration, event: IEvent)
     return {
       code: 200,
       message: 'Approved — payment required',
-      payment: { reservationId: String(reservation._id), razorpayOrderId: reservation.razorpayOrderId, amountPaise: Math.round(reservation.totalAmount * 100), payBy: reservation.expiresAt },
+      payment: { reservationId: String(reservation._id), orderId: reservation.razorpayOrderId, razorpayOrderId: reservation.razorpayOrderId, paymentSessionId: reservation.paymentSessionId, amountPaise: Math.round(reservation.totalAmount * 100), payBy: reservation.expiresAt },
     };
   }
 

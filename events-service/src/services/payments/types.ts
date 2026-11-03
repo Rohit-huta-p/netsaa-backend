@@ -11,6 +11,7 @@
 // Internal event money math (utils/eventFees.ts) is in paise; convert once, right here
 // at the provider edge.
 
+import crypto from 'crypto';
 import type { PayoutStatus } from '../../models/UserPayoutAccount';
 
 /** Organizer payout identity (Cashfree Easy Split "vendor" / Razorpay Route "linked account"). */
@@ -90,4 +91,13 @@ export function toRupees2dp(rupees: number): number {
 /** Convert paise (internal) → rupees (provider boundary), 2dp. */
 export function paiseToRupees(paise: number): number {
   return Math.round(paise) / 100;
+}
+
+/**
+ * Deterministic, provider-safe order id from a seed (Cashfree order_id must be <=45 chars,
+ * letters/digits/_/-). `${prefix}_${sha256(seed)[:32]}` = prefix + 1 + 32 chars.
+ */
+export function providerOrderId(prefix: string, seed: string): string {
+  const h = crypto.createHash('sha256').update(seed).digest('hex').slice(0, 32);
+  return `${prefix}_${h}`;
 }

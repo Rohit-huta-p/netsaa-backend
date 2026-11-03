@@ -9,9 +9,9 @@ import { DPDP_POLICY_VERSION } from '../utils/consent';
 
 process.env.JWT_SECRET = 'test-secret';
 
-jest.mock('../services/razorpay', () => ({
-  ...jest.requireActual('../services/razorpay'),
-  createOrderWithTransfer: jest.fn().mockResolvedValue({ orderId: 'order_CONSENT1' }),
+jest.mock('../services/payments', () => ({
+  ...jest.requireActual('../services/payments'),
+  payments: { createOrderWithSplit: jest.fn().mockResolvedValue({ orderId: 'order_CONSENT1', paymentSessionId: 'sess_C1' }) },
 }));
 
 const userId = new mongoose.Types.ObjectId().toString();

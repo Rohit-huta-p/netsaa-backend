@@ -11,9 +11,9 @@ import UserPayoutAccount from '../models/UserPayoutAccount';
 process.env.JWT_SECRET = 'test-secret';
 process.env.RAZORPAY_WEBHOOK_SECRET = 'whsec_test';
 
-jest.mock('../services/razorpay', () => ({
-  ...jest.requireActual('../services/razorpay'),
-  createOrderWithTransfer: jest.fn().mockResolvedValue({ orderId: 'order_TEST1' }),
+jest.mock('../services/payments', () => ({
+  ...jest.requireActual('../services/payments'),
+  payments: { createOrderWithSplit: jest.fn().mockResolvedValue({ orderId: 'order_TEST1', paymentSessionId: 'sess_T1' }) },
 }));
 
 const userId = new mongoose.Types.ObjectId().toString();

@@ -12,9 +12,9 @@ import { computeFeesPaise } from '../utils/eventFees';
 process.env.JWT_SECRET = 'test-secret';
 process.env.RAZORPAY_WEBHOOK_SECRET = 'whsec_test';
 
-jest.mock('../services/razorpay', () => ({
-  ...jest.requireActual('../services/razorpay'),
-  createOrderWithTransfer: jest.fn().mockResolvedValue({ orderId: 'order_SPOT1' }),
+jest.mock('../services/payments', () => ({
+  ...jest.requireActual('../services/payments'),
+  payments: { createOrderWithSplit: jest.fn().mockResolvedValue({ orderId: 'order_SPOT1', paymentSessionId: 'sess_S1' }) },
 }));
 
 const token = (id = new mongoose.Types.ObjectId().toString()) => jwt.sign({ id, role: 'artist' }, process.env.JWT_SECRET!);
