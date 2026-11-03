@@ -1,9 +1,10 @@
 import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth';
 import UserPayoutAccount from '../models/UserPayoutAccount';
-import { createLinkedAccount, maskPan, maskAccount } from '../services/razorpay';
+import { maskPan } from '../services/razorpay';
+import { payments } from '../services/payments';
 
-// @desc Submit payout account → create Razorpay linked account
+// @desc Submit payout account → create Cashfree Easy Split vendor (real KYC status)
 // @route POST /v1/payouts/account
 // @access Private
 export const submitPayoutAccount = async (req: AuthRequest, res: Response) => {
@@ -15,20 +16,27 @@ export const submitPayoutAccount = async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ meta: { status: 400, message: 'Missing required fields' }, data: null, errors: [] });
     }
 
-    const { linkedAccountId } = await createLinkedAccount({ email, name: accountHolderName, pan, bankAccount, ifsc, businessType });
+    // Stable vendor id = the organizer's userId. On re-submit, refresh the existing
+    // vendor's status instead of re-creating it (bank-detail changes are the Sprint 2.5
+    // re-verify path). createVendor/getVendorStatus return the REAL mapped Cashfree
+    // status — no more hard-coded 'verified'. pending_kyc/rejected now actually fire.
+    const existing = await UserPayoutAccount.findOne({ userId });
+    const vendor = existing?.linkedAccountId
+      ? await payments.getVendorStatus(existing.linkedAccountId)
+      : await payments.createVendor({ vendorId: String(userId), name: accountHolderName, email, pan, businessType, bankAccount, ifsc });
 
-    // Razorpay returns activated immediately for ~95% (penny-drop ok) → 'verified',
-    // else 'pending_kyc'. For test mode treat as verified.
-    const status = 'verified';
+    const status = vendor.status;
 
     const doc = await UserPayoutAccount.findOneAndUpdate(
       { userId },
       {
-        userId, provider: 'razorpay', linkedAccountId, status, businessType,
+        userId, provider: 'cashfree', linkedAccountId: vendor.vendorId, status, businessType,
         panMasked: maskPan(pan), accountHolderName,
         bankLast4: bankAccount.slice(-4), bankName: 'Resolved from IFSC', ifsc,
         ...(gstin ? { gstin } : {}),
-        submittedAt: new Date(), ...(status === 'verified' ? { verifiedAt: new Date() } : {}),
+        ...(status === 'rejected' && vendor.raw ? { rejectionReason: vendor.raw } : {}),
+        submittedAt: new Date(),
+        ...(status === 'verified' ? { verifiedAt: new Date() } : {}),
       },
       { upsert: true, new: true, setDefaultsOnInsert: true },
     );
