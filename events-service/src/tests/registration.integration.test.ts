@@ -14,13 +14,15 @@ process.env.JWT_SECRET = 'test-secret';
 const userId = new mongoose.Types.ObjectId().toString();
 const token = jwt.sign({ id: userId, role: 'artist' }, process.env.JWT_SECRET);
 
-async function makeFreeEvent() {
+// organizerId defaults to a throwaway id (caller is a plain attendee). Pass `userId` to
+// make the token's user the host — required for the now ownership-gated organizer endpoints.
+async function makeFreeEvent(organizerId: any = new mongoose.Types.ObjectId()) {
   return Event.create({
     title: 'Kathak Foundations',
     description: 'A week of Kathak',
     eventType: 'workshop',
     category: 'dance',
-    organizerId: new mongoose.Types.ObjectId(),
+    organizerId,
     organizerSnapshot: { name: 'Saswati', organizationName: 'Sawai' },
     pricingMode: 'fixed',
     ticketPrice: 0,
@@ -109,7 +111,7 @@ describe('GET /v1/registrations/:id/ticket', () => {
 
 describe('POST /v1/events/:id/check-in', () => {
   it('marks the ticket checked_in and registration attended', async () => {
-    const event = await makeFreeEvent();
+    const event = await makeFreeEvent(userId);
     const reg = await request(app).post(`/v1/events/${event._id}/register`)
       .set('Authorization', `Bearer ${token}`).set('Idempotency-Key', 'idem-ci')
       .send({ quantity: 1, attendees: [{ fullName: 'Aditi', phone: '+919876543210' }] });
@@ -127,7 +129,7 @@ describe('POST /v1/events/:id/check-in', () => {
   });
 
   it('rejects a second check-in of the same ticket', async () => {
-    const event = await makeFreeEvent();
+    const event = await makeFreeEvent(userId);
     const reg = await request(app).post(`/v1/events/${event._id}/register`)
       .set('Authorization', `Bearer ${token}`).set('Idempotency-Key', 'idem-ci2')
       .send({ quantity: 1, attendees: [{ fullName: 'Aditi', phone: '+919876543210' }] });
@@ -141,6 +143,21 @@ describe('POST /v1/events/:id/check-in', () => {
 
     expect(second.status).toBe(409);
     expect(second.body.meta.message).toMatch(/already/i);
+  });
+
+  it('403s when a non-host tries to check in (ownership gate)', async () => {
+    const event = await makeFreeEvent(userId);
+    const reg = await request(app).post(`/v1/events/${event._id}/register`)
+      .set('Authorization', `Bearer ${token}`).set('Idempotency-Key', 'idem-ci3')
+      .send({ quantity: 1, attendees: [{ fullName: 'Aditi', phone: '+919876543210' }] });
+    const ticket = await request(app).get(`/v1/registrations/${reg.body.data._id}/ticket`)
+      .set('Authorization', `Bearer ${token}`);
+
+    const otherToken = jwt.sign({ id: new mongoose.Types.ObjectId().toString(), role: 'artist' }, process.env.JWT_SECRET!);
+    const res = await request(app).post(`/v1/events/${event._id}/check-in`)
+      .set('Authorization', `Bearer ${otherToken}`)
+      .send({ code: ticket.body.data.ticketCode, method: 'qr' });
+    expect(res.status).toBe(403);
   });
 });
 
@@ -225,7 +242,7 @@ describe('GET /v1/events/:id — live capacity.registeredCount', () => {
 
 describe('GET /v1/events/:id/roster (organizer attendee list)', () => {
   it('lists non-cancelled attendees with names; excludes cancelled', async () => {
-    const event = await makeFreeEvent();
+    const event = await makeFreeEvent(userId);
     const reg = await request(app).post(`/v1/events/${event._id}/register`)
       .set('Authorization', `Bearer ${token}`).set('Idempotency-Key', 'ros-1')
       .send({ quantity: 1, attendees: [{ fullName: 'Aditi Rao', phone: '+919876543210' }] });
@@ -242,7 +259,7 @@ describe('GET /v1/events/:id/roster (organizer attendee list)', () => {
   });
 
   it('groups by status (confirmed/waitlist/cancelled) with phone + seats', async () => {
-    const event = await makeFreeEvent();
+    const event = await makeFreeEvent(userId);
     await request(app).post(`/v1/events/${event._id}/register`)
       .set('Authorization', `Bearer ${token}`).set('Idempotency-Key', 'ros-tab-1')
       .send({ quantity: 2, attendees: [{ fullName: 'Aditi Rao', phone: '+919876500000' }] });
@@ -256,6 +273,17 @@ describe('GET /v1/events/:id/roster (organizer attendee list)', () => {
     expect(res.body.data.counts).toMatchObject({ confirmed: 1, waitlist: 1, cancelled: 0 });
     expect(res.body.data.confirmed[0]).toMatchObject({ name: 'Aditi Rao', phone: '+919876500000', seats: 2 });
     expect(res.body.data.waitlist[0]).toMatchObject({ name: 'Rohan Mehta', position: 1 });
+  });
+
+  it('403s for a non-host (ownership gate — no PII leak)', async () => {
+    const event = await makeFreeEvent(userId);
+    await request(app).post(`/v1/events/${event._id}/register`)
+      .set('Authorization', `Bearer ${token}`).set('Idempotency-Key', 'ros-403')
+      .send({ quantity: 1, attendees: [{ fullName: 'Aditi Rao', phone: '+919876543210' }] });
+
+    const otherToken = jwt.sign({ id: new mongoose.Types.ObjectId().toString(), role: 'artist' }, process.env.JWT_SECRET!);
+    const res = await request(app).get(`/v1/events/${event._id}/roster`).set('Authorization', `Bearer ${otherToken}`);
+    expect(res.status).toBe(403);
   });
 });
 
