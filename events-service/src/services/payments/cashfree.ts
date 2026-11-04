@@ -143,7 +143,8 @@ export const cashfreeProvider: PaymentProvider = {
   },
 
   verifyWebhookSignature(rawBody: string, signature: string, timestamp: string): boolean {
-    if (DEV) return true;
+    // Pure HMAC over the configured secret — no Cashfree API call or account activation —
+    // so it runs in every mode (incl. CASHFREE_DEV_MODE); with no secret it rejects below.
     // Cashfree signs with the client secret (allow an explicit override if ever needed).
     const secret = process.env.CASHFREE_WEBHOOK_SECRET || process.env.CASHFREE_SECRET_KEY || '';
     if (!secret || !signature || !timestamp) return false;

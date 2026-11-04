@@ -312,7 +312,7 @@ export const getMyRegistration = async (req: Request, res: Response) => {
         let pendingPayment;
         if (registration.status === 'approved') {
             const resv = await EventReservation.findOne({ registrationId: registration._id, status: 'reserved' }).lean();
-            if (resv) pendingPayment = { reservationId: String(resv._id), razorpayOrderId: resv.razorpayOrderId, amountPaise: Math.round(resv.totalAmount * 100), payBy: resv.expiresAt };
+            if (resv) pendingPayment = { reservationId: String(resv._id), razorpayOrderId: resv.razorpayOrderId, paymentSessionId: resv.paymentSessionId, amountPaise: Math.round(resv.totalAmount * 100), payBy: resv.expiresAt };
         }
 
         return res.status(200).json({
