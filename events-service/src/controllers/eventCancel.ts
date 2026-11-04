@@ -35,6 +35,7 @@ export const cancelEvent = async (req: AuthRequest, res: Response) => {
         await Refund.create({
           registrationId: reg._id, eventId: event._id, userId: reg.userId,
           razorpayPaymentId: reg.paymentRecord.razorpayPaymentId,
+          razorpayOrderId: reg.paymentRecord.razorpayOrderId,
           trigger: 'organizer_cancel', triggeredBy: userId,
           refundAmountPaise: comp.refundAmountPaise, netsaAbsorbedPaise: comp.netsaAbsorbedPaise,
           status: 'pending', initiatedAt: new Date(),

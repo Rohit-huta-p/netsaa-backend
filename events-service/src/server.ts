@@ -7,7 +7,9 @@ import searchRoutes from './routes/search';
 import internalRoutes from './routes/internal';
 import { startReservationExpiryWorker } from './workers/reservationExpiryWorker';
 import { startPayHoldExpiryWorker } from './workers/payHoldExpiryWorker';
+import { startRefundRetryWorker } from './workers/refundRetryWorker';
 import { handleWebhook } from './controllers/razorpayWebhook';
+import { handleCashfreeWebhook } from './controllers/cashfreeWebhook';
 import './models/User';
 
 dotenv.config();
@@ -23,6 +25,8 @@ app.use(cors({ origin: ['http://localhost:8081', 'https://netsaa.onrender.com', 
 // Webhook raw body mount MUST come before express.json() — signature verification requires
 // the exact bytes Razorpay signed; JSON.parse would alter them.
 app.post('/v1/razorpay/webhook', express.raw({ type: 'application/json' }), handleWebhook);
+// Cashfree (active provider) — base64 HMAC over timestamp + raw body; needs the exact bytes.
+app.post('/v1/cashfree/webhook', express.raw({ type: 'application/json' }), handleCashfreeWebhook);
 
 app.use(express.json());
 
@@ -38,6 +42,7 @@ if (process.env.NODE_ENV !== 'test') {
         console.log(`Events service running on port ${PORT}`);
         startReservationExpiryWorker();
         startPayHoldExpiryWorker();
+        startRefundRetryWorker();
     });
 }
 

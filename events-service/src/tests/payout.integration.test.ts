@@ -7,10 +7,12 @@ import UserPayoutAccount from '../models/UserPayoutAccount';
 process.env.JWT_SECRET = 'test-secret';
 process.env.RAZORPAY_WEBHOOK_SECRET = 'whsec_test';
 
-// Mock the Razorpay account creation so no network call happens
-jest.mock('../services/razorpay', () => ({
-  ...jest.requireActual('../services/razorpay'),
-  createLinkedAccount: jest.fn().mockResolvedValue({ linkedAccountId: 'acc_TEST123' }),
+// Mock the payment provider so no network call happens (maskPan stays real via ../services/razorpay)
+jest.mock('../services/payments', () => ({
+  payments: {
+    createVendor: jest.fn().mockResolvedValue({ vendorId: 'vendor_TEST123', status: 'verified', raw: 'ACTIVE' }),
+    getVendorStatus: jest.fn().mockResolvedValue({ vendorId: 'vendor_TEST123', status: 'verified', raw: 'ACTIVE' }),
+  },
 }));
 
 const userId = new mongoose.Types.ObjectId().toString();
@@ -36,7 +38,8 @@ describe('POST /v1/payouts/account', () => {
     expect(res.body.data.bankLast4).toBe('9012');
 
     const doc = await UserPayoutAccount.findOne({ userId });
-    expect(doc?.linkedAccountId).toBe('acc_TEST123');
+    expect(doc?.linkedAccountId).toBe('vendor_TEST123');
+    expect(doc?.provider).toBe('cashfree');
     expect((doc as any).pan).toBeUndefined(); // raw PAN never persisted
   });
 

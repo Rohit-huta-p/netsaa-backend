@@ -22,7 +22,7 @@ import {
 import { reserveTickets, cancelReservation } from '../controllers/eventReservationController';
 import { createPaymentIntent, finalizeRegistration } from '../controllers/eventRegistrationController';
 import { getEventDiscussion, addEventComment } from '../controllers/eventDiscussionController';
-import { submitPayoutAccount, getMyPayoutAccount, updatePayoutAccount } from '../controllers/payouts';
+import { submitPayoutAccount, getMyPayoutAccount, updatePayoutAccount, verifyBankHandler, verifyUpiHandler } from '../controllers/payouts';
 import { cancelMyRegistration } from '../controllers/registrationCancel';
 import { approveRegistration, declineRegistration } from '../controllers/registrationApproval';
 import { cancelEvent } from '../controllers/eventCancel';
@@ -94,6 +94,9 @@ router.route('/waitlist/:id/confirm').post(protect, confirmPromotion);
 // Payout account routes
 router.route('/payouts/account').post(protect, submitPayoutAccount);
 router.route('/payouts/account/me').get(protect, getMyPayoutAccount).patch(protect, updatePayoutAccount);
+// Secure ID real-time verification (pre-submit): UPI-first, bank fallback.
+router.route('/payouts/verify-upi').post(protect, verifyUpiHandler);
+router.route('/payouts/verify-bank').post(protect, verifyBankHandler);
 
 // Discussion Routes
 router.route('/events/:eventId/discussion')

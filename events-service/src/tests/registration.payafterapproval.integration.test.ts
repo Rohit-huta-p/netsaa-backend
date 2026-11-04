@@ -13,9 +13,11 @@ process.env.JWT_SECRET = 'test-secret';
 process.env.RAZORPAY_WEBHOOK_SECRET = 'whsec_test';
 
 let orderSeq = 0;
-jest.mock('../services/razorpay', () => ({
-  ...jest.requireActual('../services/razorpay'),
-  createOrderWithTransfer: jest.fn().mockImplementation(() => Promise.resolve({ orderId: `order_e2e_${Date.now()}_${++orderSeq}` })),
+jest.mock('../services/payments', () => ({
+  ...jest.requireActual('../services/payments'),
+  payments: {
+    createOrderWithSplit: jest.fn().mockImplementation(() => Promise.resolve({ orderId: `order_e2e_${Date.now()}_${++orderSeq}`, paymentSessionId: `sess_${orderSeq}` })),
+  },
 }));
 
 const organizerId = new mongoose.Types.ObjectId();
