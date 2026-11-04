@@ -7,6 +7,7 @@ import searchRoutes from './routes/search';
 import internalRoutes from './routes/internal';
 import { startReservationExpiryWorker } from './workers/reservationExpiryWorker';
 import { startPayHoldExpiryWorker } from './workers/payHoldExpiryWorker';
+import { startRefundRetryWorker } from './workers/refundRetryWorker';
 import { handleWebhook } from './controllers/razorpayWebhook';
 import { handleCashfreeWebhook } from './controllers/cashfreeWebhook';
 import './models/User';
@@ -41,6 +42,7 @@ if (process.env.NODE_ENV !== 'test') {
         console.log(`Events service running on port ${PORT}`);
         startReservationExpiryWorker();
         startPayHoldExpiryWorker();
+        startRefundRetryWorker();
     });
 }
 

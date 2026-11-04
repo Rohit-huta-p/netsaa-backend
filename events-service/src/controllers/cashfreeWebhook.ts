@@ -47,12 +47,14 @@ export const handleCashfreeWebhook = async (req: Request, res: Response) => {
 
       case 'REFUND_STATUS_WEBHOOK': {
         const r = evt.data?.refund || {};
-        const cfRefundId = String(r.cf_refund_id ?? r.refund_id ?? '');
+        // Match either the provider's own id (cf_refund_id) or the merchant refund_id we sent at
+        // submission (stored on the Refund as razorpayRefundId). Cashfree echoes both on the webhook.
+        const ids = [r.cf_refund_id, r.refund_id].map((x: any) => String(x ?? '')).filter(Boolean);
         const status = String(r.refund_status ?? '').toUpperCase();
-        if (!cfRefundId) return ok(res, 'No refund id (ignored)');
+        if (ids.length === 0) return ok(res, 'No refund id (ignored)');
         if (status === 'SUCCESS') {
           const refund = await Refund.findOneAndUpdate(
-            { razorpayRefundId: cfRefundId },
+            { razorpayRefundId: { $in: ids } },
             { status: 'processed', processedAt: new Date() },
             { new: true },
           );
@@ -69,7 +71,7 @@ export const handleCashfreeWebhook = async (req: Request, res: Response) => {
         }
         if (status === 'FAILED' || status === 'CANCELLED' || status === 'REJECTED') {
           await Refund.findOneAndUpdate(
-            { razorpayRefundId: cfRefundId },
+            { razorpayRefundId: { $in: ids } },
             { status: 'failed', failedAt: new Date(), $inc: { retryCount: 1 } },
           );
           return ok(res, 'Refund failed');

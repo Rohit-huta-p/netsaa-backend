@@ -17,8 +17,9 @@ export interface IRefund extends Document {
     eventId: mongoose.Types.ObjectId;
     userId: mongoose.Types.ObjectId;
 
-    razorpayRefundId?: string;        // 'rfnd_xxx' from Razorpay
+    razorpayRefundId?: string;        // provider refund id — 'rfnd_xxx' (Razorpay) or the merchant refund_id we sent (Cashfree)
     razorpayPaymentId: string;        // the original payment being refunded
+    razorpayOrderId?: string;         // provider order id — Cashfree refunds by order_id (POST /orders/{order_id}/refunds)
 
     trigger: RefundTrigger;
     triggeredBy: mongoose.Types.ObjectId; // userId of who initiated
@@ -46,6 +47,7 @@ const refundSchema = new Schema<IRefund>(
 
         razorpayRefundId: { type: String },
         razorpayPaymentId: { type: String, required: true },
+        razorpayOrderId: { type: String },
 
         trigger: {
             type: String,
