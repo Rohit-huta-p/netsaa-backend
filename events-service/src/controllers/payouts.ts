@@ -3,6 +3,7 @@ import { AuthRequest } from '../middleware/auth';
 import UserPayoutAccount from '../models/UserPayoutAccount';
 import { maskPan } from '../services/razorpay';
 import { payments } from '../services/payments';
+import { verifyBankAccount, verifyVpa, isNameMatchAcceptable } from '../services/payments/cashfreeVerification';
 
 // @desc Submit payout account → create Cashfree Easy Split vendor (real KYC status)
 // @route POST /v1/payouts/account
@@ -65,4 +66,36 @@ export const updatePayoutAccount = async (req: AuthRequest, res: Response) => {
   // Re-verification path is Sprint 2.5; for now allow GST add without re-verify.
   if (req.body.gstin) { doc.gstin = req.body.gstin; await doc.save(); }
   return res.status(200).json({ meta: { status: 200, message: 'Updated' }, data: doc, errors: [] });
+};
+
+// @desc Verify a bank account (acct + IFSC) in real time via Cashfree Secure ID. Pre-submit
+//       check — stateless; the wizard uses the result to confirm before onboarding.
+// @route POST /v1/payouts/verify-bank
+export const verifyBankHandler = async (req: AuthRequest, res: Response) => {
+  try {
+    const { bankAccount, ifsc, accountHolderName } = req.body;
+    if (!bankAccount || !ifsc) {
+      return res.status(400).json({ meta: { status: 400, message: 'bankAccount and ifsc required' }, data: null, errors: [] });
+    }
+    const result = await verifyBankAccount({ bankAccount, ifsc, name: accountHolderName });
+    return res.status(200).json({ meta: { status: 200, message: 'OK' }, data: { ...result, nameMatchAcceptable: isNameMatchAcceptable(result) }, errors: [] });
+  } catch (err) {
+    // Secure ID not provisioned / provider hiccup → 502 so the FE shows "couldn't verify, retry".
+    return res.status(502).json({ meta: { status: 502, message: 'Verification unavailable' }, data: null, errors: [{ message: (err as Error).message }] });
+  }
+};
+
+// @desc Verify a UPI VPA in real time via Cashfree Secure ID. Pre-submit check (UPI-first).
+// @route POST /v1/payouts/verify-upi
+export const verifyUpiHandler = async (req: AuthRequest, res: Response) => {
+  try {
+    const { vpa, accountHolderName } = req.body;
+    if (!vpa) {
+      return res.status(400).json({ meta: { status: 400, message: 'vpa required' }, data: null, errors: [] });
+    }
+    const result = await verifyVpa({ vpa, name: accountHolderName });
+    return res.status(200).json({ meta: { status: 200, message: 'OK' }, data: { ...result, nameMatchAcceptable: isNameMatchAcceptable(result) }, errors: [] });
+  } catch (err) {
+    return res.status(502).json({ meta: { status: 502, message: 'Verification unavailable' }, data: null, errors: [{ message: (err as Error).message }] });
+  }
 };
