@@ -46,18 +46,26 @@ export const submitPayoutAccount = async (req: AuthRequest, res: Response) => {
 
     const status = vendor.status;
 
+    // Clear the OTHER method's destination fields so a bank↔UPI switch leaves no stale data.
+    const unset = method === 'upi'
+      ? { bankLast4: '', bankName: '', ifsc: '' }
+      : { upiVpaMasked: '' };
+
     const doc = await UserPayoutAccount.findOneAndUpdate(
       { userId },
       {
-        userId, provider: 'cashfree', linkedAccountId: vendor.vendorId, status, businessType,
-        panMasked: maskPan(pan), accountHolderName, payoutMethod: method,
-        ...(method === 'upi'
-          ? { upiVpaMasked: maskVpa(vpa as string) }
-          : { bankLast4: (bankAccount as string).slice(-4), bankName: 'Resolved from IFSC', ifsc }),
-        ...(gstin ? { gstin } : {}),
-        ...(status === 'rejected' && vendor.raw ? { rejectionReason: vendor.raw } : {}),
-        submittedAt: new Date(),
-        ...(status === 'verified' ? { verifiedAt: new Date() } : {}),
+        $set: {
+          userId, provider: 'cashfree', linkedAccountId: vendor.vendorId, status, businessType,
+          panMasked: maskPan(pan), accountHolderName, payoutMethod: method,
+          ...(method === 'upi'
+            ? { upiVpaMasked: maskVpa(vpa as string) }
+            : { bankLast4: (bankAccount as string).slice(-4), bankName: 'Resolved from IFSC', ifsc }),
+          ...(gstin ? { gstin } : {}),
+          ...(status === 'rejected' && vendor.raw ? { rejectionReason: vendor.raw } : {}),
+          submittedAt: new Date(),
+          ...(status === 'verified' ? { verifiedAt: new Date() } : {}),
+        },
+        $unset: unset,
       },
       { upsert: true, new: true, setDefaultsOnInsert: true },
     );

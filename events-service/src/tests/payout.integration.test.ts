@@ -80,6 +80,22 @@ describe('POST /v1/payouts/account', () => {
       .send({ businessType: 'individual', pan: 'ABCDE1234F', accountHolderName: 'No Dest', email: 'nd@example.com' });
     expect(res.status).toBe(400);
   });
+
+  it('switching bank -> UPI clears the stale bank fields', async () => {
+    const u = jwt.sign({ id: new mongoose.Types.ObjectId().toString(), role: 'organizer' }, process.env.JWT_SECRET!);
+    await request(app).post('/v1/payouts/account').set('Authorization', `Bearer ${u}`).send({
+      businessType: 'individual', pan: 'ABCDE1234F', accountHolderName: 'Switcher',
+      email: 'switch@example.com', bankAccount: '50123456789012', ifsc: 'SBIN0007613',
+    });
+    const res = await request(app).post('/v1/payouts/account').set('Authorization', `Bearer ${u}`).send({
+      businessType: 'individual', pan: 'ABCDE1234F', accountHolderName: 'Switcher',
+      email: 'switch@example.com', method: 'upi', vpa: 'switcher@okhdfc',
+    });
+    expect(res.status).toBe(201);
+    expect(res.body.data.payoutMethod).toBe('upi');
+    expect(res.body.data.upiVpaMasked).toBe('sw******@okhdfc');
+    expect(res.body.data.bankLast4).toBeFalsy(); // $unset on switch
+  });
 });
 
 describe('GET /v1/payouts/account/me', () => {
