@@ -186,6 +186,16 @@ export const registerForEvent = async (req: Request, res: Response, next: NextFu
 // @access  Private (Organizer)
 export const getEventRegistrations = async (req: Request, res: Response, next: NextFunction) => {
     try {
+        // Ownership gate — only the host may read this event's registrations (PII: name/email/phone).
+        const requesterId = (req as AuthRequest).user?.id || (req as AuthRequest).user?._id;
+        const event = await Event.findById(req.params.id).select('organizerId').lean();
+        if (!event) {
+            return res.status(404).json({ meta: { status: 404, message: 'Event not found' }, data: null, errors: [] });
+        }
+        if (!requesterId || event.organizerId.toString() !== String(requesterId)) {
+            return res.status(403).json({ meta: { status: 403, message: 'Not your event' }, data: null, errors: [] });
+        }
+
         const page = parseInt(req.query.page as string, 10) || 1;
         const limit = parseInt(req.query.limit as string, 10) || 20;
         const skip = (page - 1) * limit;
@@ -420,6 +430,15 @@ export const updateRegistrationStatus = async (req: AuthRequest, res: Response, 
 export const getEventRoster = async (req: Request, res: Response) => {
     try {
         const eventId = req.params.id;
+        // Ownership gate — only the host may read the roster (names + phones + answers/application).
+        const requesterId = (req as AuthRequest).user?.id || (req as AuthRequest).user?._id;
+        const event = await Event.findById(eventId).select('organizerId').lean();
+        if (!event) {
+            return res.status(404).json({ meta: { status: 404, message: 'Event not found' }, data: null, errors: [] });
+        }
+        if (!requesterId || event.organizerId.toString() !== String(requesterId)) {
+            return res.status(403).json({ meta: { status: 403, message: 'Not your event' }, data: null, errors: [] });
+        }
         // Confirmed + cancelled come from EventRegistration; the waitlist tab
         // is a separate collection. Host sees phone per the DPDP consent (A4).
         const [regs, waitlist] = await Promise.all([

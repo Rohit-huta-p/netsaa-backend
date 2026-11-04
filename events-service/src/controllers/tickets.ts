@@ -161,6 +161,16 @@ export const checkInByCode = async (req: AuthRequest, res: Response) => {
             return res.status(400).json({ meta: { status: 400, message: 'Code required' }, data: null, errors: [] });
         }
 
+        // Ownership gate — only the event's host may check attendees in.
+        const requestingUserId = req.user?.id || req.user?._id;
+        const event = await Event.findById(req.params.id).select('organizerId').lean();
+        if (!event) {
+            return res.status(404).json({ meta: { status: 404, message: 'Event not found' }, data: null, errors: [] });
+        }
+        if (!requestingUserId || event.organizerId.toString() !== requestingUserId.toString()) {
+            return res.status(403).json({ meta: { status: 403, message: 'Only the event organizer can check in attendees.' }, data: null, errors: [] });
+        }
+
         // Escape regex metacharacters in user-supplied code before interpolating
         const escapedCode = String(code).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
