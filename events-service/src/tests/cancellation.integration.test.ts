@@ -6,6 +6,7 @@ import Event from '../models/Event';
 import EventRegistration from '../models/EventRegistration';
 import Refund from '../models/Refund';
 import EventCancellation from '../models/EventCancellation';
+import EventTicket from '../models/EventTicket';
 
 process.env.JWT_SECRET = 'test-secret';
 
@@ -117,6 +118,110 @@ describe('POST /v1/events/:id/cancel (organizer)', () => {
   it('403s when a non-organizer tries to cancel', async () => {
     const event = await paidEventWithPolicy({});
     const res = await request(app).post(`/v1/events/${event._id}/cancel`).set('Authorization', `Bearer ${token}`).send({ reason: 'x' });
+    expect(res.status).toBe(403);
+  });
+});
+
+describe('POST /v1/events/:id/registrations/:registrationId/cancel (organizer, per-attendee)', () => {
+  async function orgEvent(organizerId: string) {
+    return Event.create({
+      title: 'Kathak', description: 'x', eventType: 'workshop', category: 'dance',
+      organizerId, organizerSnapshot: { name: 'Saswati', organizationName: 'Sawai' },
+      pricingMode: 'fixed', ticketPrice: 4500,
+      schedule: { startDate: new Date(Date.now() + 7 * 86400000), endDate: new Date(Date.now() + 8 * 86400000), totalDurationMinutes: 120, dayBreakdown: [] },
+      location: { type: 'physical', city: 'Pune', state: 'MH', country: 'IN' },
+      maxParticipants: 24, status: 'live',
+    });
+  }
+
+  it('cancels a paid attendee: reg→cancelled, ticket voided, pending full+fee Refund', async () => {
+    const organizerId = new mongoose.Types.ObjectId().toString();
+    const orgToken = jwt.sign({ id: organizerId, role: 'organizer' }, process.env.JWT_SECRET!);
+    const event = await orgEvent(organizerId);
+    const reg = await EventRegistration.create({
+      eventId: event._id, userId: new mongoose.Types.ObjectId(), quantity: 1, status: 'registered',
+      idempotencyKey: `b1-paid-${Date.now()}`, source: 'standard', visibility: 'public',
+      paymentRecord: { razorpayPaymentId: 'pay_b1', capturedAt: new Date(), amountPaise: 460620, serviceFeePaise: 10620, netsaFeePaise: 2250, organizerNetPaise: 447750 },
+    });
+    await EventTicket.create({ ticketId: `${reg._id}-0`, eventId: event._id, registrationId: reg._id, attendeeName: 'Aditi', qrCode: 'KF-AAA|123456', status: 'issued' });
+
+    const res = await request(app).post(`/v1/events/${event._id}/registrations/${reg._id}/cancel`)
+      .set('Authorization', `Bearer ${orgToken}`).send({ reason: 'Double booked' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.status).toBe('cancelled');
+    expect(res.body.data.seatFreed).toBe(true);
+    expect(res.body.data.refund.refundAmountPaise).toBe(460620); // ticket + service fee
+    expect(res.body.data.refund.netsaAbsorbedPaise).toBe(10620); // NETSA covers the fee
+
+    const updated = await EventRegistration.findById(reg._id);
+    expect(updated?.status).toBe('cancelled');
+    expect(updated?.cancelledBy).toBe('organizer');
+
+    const refund = await Refund.findOne({ registrationId: reg._id });
+    expect(refund?.trigger).toBe('organizer_cancel');
+    expect(String(refund?.triggeredBy)).toBe(organizerId);
+    expect(refund?.status).toBe('pending');
+
+    expect((await EventTicket.findOne({ registrationId: reg._id }))?.status).toBe('cancelled');
+  });
+
+  it('cancels a free attendee with no Refund row', async () => {
+    const organizerId = new mongoose.Types.ObjectId().toString();
+    const orgToken = jwt.sign({ id: organizerId, role: 'organizer' }, process.env.JWT_SECRET!);
+    const event = await orgEvent(organizerId);
+    const reg = await EventRegistration.create({
+      eventId: event._id, userId: new mongoose.Types.ObjectId(), quantity: 1, status: 'registered',
+      idempotencyKey: `b1-free-${Date.now()}`, source: 'standard', visibility: 'public',
+    });
+    await EventTicket.create({ ticketId: `${reg._id}-0`, eventId: event._id, registrationId: reg._id, attendeeName: 'Aditi', qrCode: 'KF-BBB|654321', status: 'issued' });
+
+    const res = await request(app).post(`/v1/events/${event._id}/registrations/${reg._id}/cancel`)
+      .set('Authorization', `Bearer ${orgToken}`).send({ reason: 'No longer coming' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.refund).toBeNull();
+    expect(await Refund.countDocuments({ registrationId: reg._id })).toBe(0);
+    expect((await EventTicket.findOne({ registrationId: reg._id }))?.status).toBe('cancelled');
+  });
+
+  it('409s when the registration is already cancelled', async () => {
+    const organizerId = new mongoose.Types.ObjectId().toString();
+    const orgToken = jwt.sign({ id: organizerId, role: 'organizer' }, process.env.JWT_SECRET!);
+    const event = await orgEvent(organizerId);
+    const reg = await EventRegistration.create({
+      eventId: event._id, userId: new mongoose.Types.ObjectId(), quantity: 1, status: 'cancelled',
+      idempotencyKey: `b1-cxl-${Date.now()}`, source: 'standard', visibility: 'public',
+    });
+    const res = await request(app).post(`/v1/events/${event._id}/registrations/${reg._id}/cancel`)
+      .set('Authorization', `Bearer ${orgToken}`).send({ reason: 'x' });
+    expect(res.status).toBe(409);
+  });
+
+  it('404s when the registration belongs to another event', async () => {
+    const organizerId = new mongoose.Types.ObjectId().toString();
+    const orgToken = jwt.sign({ id: organizerId, role: 'organizer' }, process.env.JWT_SECRET!);
+    const event = await orgEvent(organizerId);
+    const other = await orgEvent(organizerId);
+    const reg = await EventRegistration.create({
+      eventId: other._id, userId: new mongoose.Types.ObjectId(), quantity: 1, status: 'registered',
+      idempotencyKey: `b1-other-${Date.now()}`, source: 'standard', visibility: 'public',
+    });
+    const res = await request(app).post(`/v1/events/${event._id}/registrations/${reg._id}/cancel`)
+      .set('Authorization', `Bearer ${orgToken}`).send({ reason: 'x' });
+    expect(res.status).toBe(404);
+  });
+
+  it('403s for a non-host (ownership gate)', async () => {
+    const organizerId = new mongoose.Types.ObjectId().toString();
+    const event = await orgEvent(organizerId);
+    const reg = await EventRegistration.create({
+      eventId: event._id, userId: new mongoose.Types.ObjectId(), quantity: 1, status: 'registered',
+      idempotencyKey: `b1-403-${Date.now()}`, source: 'standard', visibility: 'public',
+    });
+    // `token` (top of file) is a different user — not the host.
+    const res = await request(app).post(`/v1/events/${event._id}/registrations/${reg._id}/cancel`)
+      .set('Authorization', `Bearer ${token}`).send({ reason: 'x' });
     expect(res.status).toBe(403);
   });
 });
