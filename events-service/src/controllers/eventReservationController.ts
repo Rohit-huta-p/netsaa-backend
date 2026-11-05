@@ -11,6 +11,7 @@ import { slotsLeftForEvent, seatsLeftForSpot } from '../services/waitlistService
 import { resolveSpot } from '../utils/eventSpots';
 import { buildRegistrationAnswers } from '../utils/registrationAnswers';
 import { consentFromRequest, recordEventRegistrationConsent } from '../utils/consent';
+import { confirmReservationPaid } from '../utils/confirmReservationPaid';
 
 const RESERVATION_TTL_MS = 10 * 60 * 1000;
 
@@ -114,6 +115,34 @@ export const reserveTickets = async (req: AuthRequest, res: Response) => {
     return res.status(201).json({ meta: { status: 201, message: 'Reserved' }, data: { reservationId: reservation._id, orderId, razorpayOrderId: orderId, paymentSessionId, amountPaise: fees.customerPaysPaise }, errors: [] });
   } catch (err) {
     return res.status(400).json({ meta: { status: 400, message: 'Reservation failed' }, data: null, errors: [{ message: (err as Error).message }] });
+  }
+};
+
+// @desc    DEV-ONLY: confirm a reserved hold as paid without a real Cashfree charge.
+// @route   POST /v1/reservations/:orderId/dev-confirm
+// @access  Private (attendee confirming their own hold)
+//
+// In CASHFREE_DEV_MODE the provider returns a fake `session_dev_…` payment session and no real
+// Cashfree order exists, so the checkout UI can't load and no webhook ever fires. This endpoint
+// stands in for that webhook: it runs the EXACT same confirmReservationPaid path (create-new and
+// pay-after-approval branches, ticket issue, price-locking) so the full registration completes
+// end-to-end. Gated on CASHFREE_DEV_MODE → a plain 404 in production, and it never touches money.
+export const devConfirmReservation = async (req: AuthRequest, res: Response) => {
+  if (process.env.CASHFREE_DEV_MODE !== '1') {
+    return res.status(404).json({ meta: { status: 404, message: 'Not found' }, data: null, errors: [] });
+  }
+  try {
+    const userId = req.user?.id || req.user?._id;
+    const orderId = req.params.orderId;
+    // Match the webhook's lookup key (razorpayOrderId) + scope to the caller's own hold.
+    const reservation = await EventReservation.findOne({ razorpayOrderId: orderId, userId });
+    if (!reservation) {
+      return res.status(404).json({ meta: { status: 404, message: 'Reservation not found' }, data: null, errors: [] });
+    }
+    const message = await confirmReservationPaid(reservation, { paymentId: `dev_pay_${Date.now()}`, orderId });
+    return res.status(200).json({ meta: { status: 200, message }, data: { reservationId: reservation._id, paymentStatus: 'completed' }, errors: [] });
+  } catch (err) {
+    return res.status(400).json({ meta: { status: 400, message: 'Dev confirm failed' }, data: null, errors: [{ message: (err as Error).message }] });
   }
 };
 
