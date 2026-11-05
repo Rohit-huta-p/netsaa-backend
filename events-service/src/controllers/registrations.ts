@@ -322,7 +322,9 @@ export const getMyRegistration = async (req: Request, res: Response) => {
         let pendingPayment;
         if (registration.status === 'approved') {
             const resv = await EventReservation.findOne({ registrationId: registration._id, status: 'reserved' }).lean();
-            if (resv) pendingPayment = { reservationId: String(resv._id), razorpayOrderId: resv.razorpayOrderId, paymentSessionId: resv.paymentSessionId, amountPaise: Math.round(resv.totalAmount * 100), payBy: resv.expiresAt };
+            // appliedOffer is the Early-bird/group discount LOCKED at approve time (already baked
+            // into amountPaise) — surfaced so the pay-after-approval CTA can show "<offer> · save ₹X".
+            if (resv) pendingPayment = { reservationId: String(resv._id), razorpayOrderId: resv.razorpayOrderId, paymentSessionId: resv.paymentSessionId, amountPaise: Math.round(resv.totalAmount * 100), payBy: resv.expiresAt, appliedOffer: resv.appliedOffer };
         }
 
         return res.status(200).json({
