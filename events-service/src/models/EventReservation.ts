@@ -21,6 +21,8 @@ export interface IEventReservation extends Document {
     quantity: number;
     answers?: IReservationAnswer[];
     totalAmount: number;             // in rupees (legacy)
+    unitPriceRupees?: number;        // per-ticket price charged — locks the applied offer through capture
+    appliedOffer?: { name: string; unitRupees: number; baseUnitRupees: number; audience: 'everyone' | 'group' };
     status: 'reserved' | 'paid' | 'expired' | 'released';
     expiresAt: Date;
     razorpayOrderId?: string;        // provider order id (Cashfree order_id / legacy Razorpay order) — webhook lookup key
@@ -50,6 +52,16 @@ const eventReservationSchema = new Schema<IEventReservation>(
         quantity: { type: Number, required: true },
         answers: { type: [reservationAnswerSchema], default: undefined },
         totalAmount: { type: Number, required: true },
+        unitPriceRupees: { type: Number },
+        appliedOffer: {
+            type: new Schema({
+                name: { type: String, required: true },
+                unitRupees: { type: Number, required: true },
+                baseUnitRupees: { type: Number, required: true },
+                audience: { type: String, enum: ['everyone', 'group'] },
+            }, { _id: false }),
+            default: undefined,
+        },
         status: {
             type: String,
             enum: ['reserved', 'paid', 'expired', 'released'],

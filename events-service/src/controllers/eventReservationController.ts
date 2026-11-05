@@ -5,6 +5,8 @@ import EventReservation from '../models/EventReservation';
 import UserPayoutAccount from '../models/UserPayoutAccount';
 import { payments, paiseToRupees, providerOrderId } from '../services/payments';
 import { computeFeesPaise } from '../utils/eventFees';
+import { resolveEffectivePrice } from '../services/offerPricing';
+import { seatsUsedByOffer } from '../services/offerAvailability';
 import { slotsLeftForEvent, seatsLeftForSpot } from '../services/waitlistService';
 import { resolveSpot } from '../utils/eventSpots';
 import { buildRegistrationAnswers } from '../utils/registrationAnswers';
@@ -50,8 +52,12 @@ export const reserveTickets = async (req: AuthRequest, res: Response) => {
     if (spotRes.error) {
       return res.status(400).json({ meta: { status: 400, message: 'Invalid spot' }, data: null, errors: [{ message: spotRes.error }] });
     }
-    // Per-tier price (falls back to event.ticketPrice for single-spot / spot-less events).
-    const unitPriceRupees = spotRes.spot ? (spotRes.spot.price || 0) : event.ticketPrice;
+    // Per-ticket price = the best active offer the buyer qualifies for (Early-bird / group),
+    // else the base spot/event price. Resolved authoritatively here and LOCKED on the
+    // reservation so an offer that later expires can't change what the webhook charges.
+    const offerUsage = await seatsUsedByOffer(event._id);
+    const effective = resolveEffectivePrice(event, { spotId: spotRes.spot?._id, seats: quantity, seatsUsedByOffer: offerUsage });
+    const unitPriceRupees = effective.unitRupees;
 
     // Capacity gate: per-spot when a spot is chosen, else event-level (held reservations
     // are a Sprint 8 hardening note either way).
@@ -90,6 +96,7 @@ export const reserveTickets = async (req: AuthRequest, res: Response) => {
     const reservation = await EventReservation.create({
       eventId: event._id, userId, quantity,
       spotId: spotRes.spot?._id,
+      unitPriceRupees, appliedOffer: effective.appliedOffer,
       answers: answers.length ? answers : undefined,
       totalAmount: fees.customerPaysPaise / 100,
       status: 'reserved',
