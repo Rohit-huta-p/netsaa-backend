@@ -42,6 +42,7 @@ export interface IEventRegistration extends Document {
     userId?: mongoose.Types.ObjectId;
     ticketTypeId?: mongoose.Types.ObjectId;
     spotId?: mongoose.Types.ObjectId;        // which embedded event spot/tier was chosen (§6a-b)
+    appliedOffer?: { name: string; unitRupees: number; baseUnitRupees: number; audience: 'everyone' | 'group' }; // Early-bird / group rate the attendee got
     // 'pending' = approval-gated request (guest_list / apply door) awaiting host decision;
     // 'declined' = host rejected the request. Both hold no ticket and consume no seat (§6a-c/d).
     // 'approved' = host approved a PAID request; holds a seat and awaits payment within 48h,
@@ -155,6 +156,15 @@ const eventRegistrationSchema = new Schema<IEventRegistration>(
         userId: { type: Schema.Types.ObjectId, ref: 'User', required: false },
         ticketTypeId: { type: Schema.Types.ObjectId, ref: 'EventTicketType' },
         spotId: { type: Schema.Types.ObjectId },        // embedded event spot/tier (§6a-b)
+        appliedOffer: {
+            type: new Schema({
+                name: { type: String, required: true },
+                unitRupees: { type: Number, required: true },
+                baseUnitRupees: { type: Number, required: true },
+                audience: { type: String, enum: ['everyone', 'group'] },
+            }, { _id: false }),
+            default: undefined,
+        },
 
         status: {
             type: String,
