@@ -82,6 +82,7 @@ export async function confirmReservationPaid(
     spotId: reservation.spotId,
     appliedOffer: reservation.appliedOffer,
     answers: reservation.answers?.length ? reservation.answers : undefined,
+    attendees: reservation.attendees?.length ? reservation.attendees : undefined,
     idempotencyKey: reservation.idempotencyKey, source: 'standard', visibility: 'public',
     paymentRecord: {
       razorpayPaymentId: payment.paymentId, razorpayOrderId: payment.orderId, capturedAt: new Date(),
@@ -92,7 +93,8 @@ export async function confirmReservationPaid(
 
   await EventTicket.insertMany(Array.from({ length: reservation.quantity }).map((_, i) => ({
     ticketId: `${registration._id}-${i}`, eventId: reservation.eventId, registrationId: registration._id,
-    userId: reservation.userId, attendeeName: 'Guest',
+    userId: reservation.userId,
+    attendeeName: reservation.attendees?.[i]?.fullName || reservation.attendees?.[0]?.fullName || 'Guest',
     qrCode: `${generateTicketCode(event?.title || 'NETSA')}|${generateBackupCode()}`, status: 'issued',
   })));
 

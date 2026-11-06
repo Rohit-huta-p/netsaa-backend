@@ -104,4 +104,21 @@ describe('POST /v1/reservations/:orderId/dev-confirm', () => {
     expect(res.status).toBe(404);
     expect(await EventRegistration.countDocuments({ eventId: event._id })).toBe(0);
   });
+
+  it('names the registration + ticket from reserve attendees (not "Guest")', async () => {
+    process.env.CASHFREE_DEV_MODE = '1';
+    const event = await makePaidEvent();
+    const r = await request(app).post(`/v1/events/${event._id}/reserve`)
+      .set('Authorization', `Bearer ${token}`).set('Idempotency-Key', 'dc-name')
+      .send({ quantity: 2, attendees: [{ fullName: 'Asha Rao', phone: '9876543210' }, { fullName: 'Dev Rao', phone: '9876543210' }] });
+    const orderId = r.body.data.razorpayOrderId;
+
+    await request(app).post(`/v1/reservations/${orderId}/dev-confirm`).set('Authorization', `Bearer ${token}`).send({});
+
+    const reg = await EventRegistration.findOne({ eventId: event._id });
+    expect(reg?.attendees?.map((a: any) => a.fullName)).toEqual(['Asha Rao', 'Dev Rao']);
+    const names = (await EventTicket.find({ registrationId: reg!._id }).sort({ ticketId: 1 })).map((t) => t.attendeeName);
+    expect(names).toEqual(['Asha Rao', 'Dev Rao']);
+    expect(names).not.toContain('Guest');
+  });
 });
