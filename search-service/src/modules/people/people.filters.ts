@@ -15,11 +15,17 @@ export const buildPeopleFilters = (filters: Record<string, any>) => {
 
     // --- User Filters ---
 
-    // Artist Type
-    if (filters.artistType) {
+    // Craft (artistType) — single value or multi-select. Accepts `artistTypes`
+    // (array, preferred) or `artistType` (string | array). A `text` query that
+    // is an array gives case-insensitive OR semantics across the crafts.
+    const craftRaw: any = (filters as any).artistTypes ?? filters.artistType;
+    const crafts: string[] = (Array.isArray(craftRaw) ? craftRaw : craftRaw != null ? [craftRaw] : [])
+        .map((c: any) => String(c).trim())
+        .filter(Boolean);
+    if (crafts.length > 0) {
         must.push({
             text: {
-                query: filters.artistType,
+                query: crafts,
                 path: 'artistType',
             },
         });

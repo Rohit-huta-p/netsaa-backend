@@ -12,6 +12,9 @@ interface BuildPeoplePipelineArgs {
         city?: string;
         role?: 'artist' | 'organizer' | 'creative_lead' | 'client';
         featuredOnly?: boolean;
+        /** Craft multi-select facet — array preferred; string accepted. */
+        artistTypes?: string[];
+        artistType?: string | string[];
     };
     limit: number;
     skip: number;
@@ -55,6 +58,24 @@ export function buildPeoplePipeline({
             text: {
                 path: 'role',
                 query: requestedRole
+            }
+        });
+    }
+
+    // Craft (artistType) multi-select facet — OPTIONAL. Accepts `artistTypes`
+    // (array, preferred) or `artistType` (string | array). Uses `text`, not
+    // `in`/`equals`: the people index maps strings as text (not tokens), so an
+    // `in` clause matches nothing, whereas a `text` clause with an array query
+    // gives case-insensitive OR semantics across the selected crafts.
+    const craftsRaw: any = filters?.artistTypes ?? filters?.artistType;
+    const crafts: string[] = (Array.isArray(craftsRaw) ? craftsRaw : craftsRaw != null ? [craftsRaw] : [])
+        .map((c: any) => String(c).trim())
+        .filter(Boolean);
+    if (crafts.length > 0) {
+        mustClauses.push({
+            text: {
+                path: 'artistType',
+                query: crafts
             }
         });
     }
@@ -132,15 +153,17 @@ export function buildPeoplePipeline({
      * Final pipeline
      * ------------------------------- */
 
+    // Atlas rejects `minimumShouldMatch` when `should` is empty, so only set it
+    // when there are should clauses (i.e. a text query). A facet-only search
+    // (craft/role/city selected, no text) has no should clauses and must omit it.
+    const compound: any = { must: mustClauses, should: shouldClauses };
+    if (shouldClauses.length > 0) compound.minimumShouldMatch = 1;
+
     return [
         {
             $search: {
                 index: 'people_search_index',
-                compound: {
-                    must: mustClauses,
-                    should: shouldClauses,
-                    minimumShouldMatch: shouldClauses.length > 0 ? 1 : 0
-                }
+                compound
             }
         },
 
@@ -204,21 +227,25 @@ export function buildPeoplePipelineV2(args: BuildPipelineV2Args) {
         selfExclusionStages.push({ $match: { _id: { $ne: valueForId } } });
     }
 
+    // Only set minimumShouldMatch when there are should clauses — Atlas rejects
+    // it on an empty `should` (e.g. a facet-only search with no text query).
+    const compoundV2: any = {
+        must: [
+            { equals: { path: 'blocked', value: false } },
+            ...roleClause,
+            ...must,
+        ],
+        should,
+        filter,
+        mustNot: finalMustNot,
+    };
+    if (should.length > 0) compoundV2.minimumShouldMatch = 1;
+
     return [
         {
             $search: {
                 index: 'people_search_index',
-                compound: {
-                    must: [
-                        { equals: { path: 'blocked', value: false } },
-                        ...roleClause,
-                        ...must,
-                    ],
-                    should,
-                    filter,
-                    mustNot: finalMustNot,
-                    minimumShouldMatch: should.length > 0 ? 1 : 0,
-                },
+                compound: compoundV2,
             },
         },
         ...selfExclusionStages,
