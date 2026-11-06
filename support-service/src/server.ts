@@ -19,6 +19,7 @@ app.use(
             'http://localhost:8081',
             'https://netsaa.onrender.com',
             'https://netsaa.com',
+            'https://www.netsaa.com',
         ],
         credentials: true,
         allowedHeaders: ['Content-Type', 'Authorization'],
