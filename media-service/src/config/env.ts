@@ -51,7 +51,7 @@ const envSchema = z.object({
     MAX_DOCUMENT_SIZE_BYTES: z.string().transform(Number).default('20971520'),   // 20 MB
 
     // CORS
-    CORS_ORIGINS: z.string().default('*'),
+    CORS_ORIGINS: z.string().default('http://localhost:8081,http://localhost:8085,https://netsaa.onrender.com,https://netsaa.com,https://www.netsaa.com'),
 });
 
 // ============================================================

@@ -10,7 +10,7 @@ import {
     saveEvent,
     getSavedEvents,
 } from '../controllers/events';
-import { createTicketType, getTicketTypesByEvent, checkinTicket, getRegistrationTicket, checkInByCode } from '../controllers/tickets';
+import { createTicketType, getTicketTypesByEvent, checkinTicket, getRegistrationTicket, checkInByCode, checkInByRegistration } from '../controllers/tickets';
 import {
     registerForEvent, // Keep backward compatibility if needed, or deprecate
     getEventRegistrations,
@@ -25,7 +25,7 @@ import { getEventDiscussion, addEventComment } from '../controllers/eventDiscuss
 import { submitPayoutAccount, getMyPayoutAccount, updatePayoutAccount, verifyBankHandler, verifyUpiHandler } from '../controllers/payouts';
 import { cancelMyRegistration } from '../controllers/registrationCancel';
 import { approveRegistration, declineRegistration } from '../controllers/registrationApproval';
-import { cancelEvent } from '../controllers/eventCancel';
+import { cancelEvent, cancelRegistrationByOrganizer } from '../controllers/eventCancel';
 import { joinWaitlist, leaveWaitlist, promoteWaitlist, confirmPromotion, getMyWaitlistEntry } from '../controllers/waitlist';
 import { getPreferences, updatePreferences, createAnnouncement } from '../controllers/notifications';
 import { getPublicRoster } from '../controllers/rosterPublic';
@@ -56,6 +56,8 @@ router.route('/registrations/:id/ticket').get(protect, getRegistrationTicket);
 
 // Check-in by ticket code or backup code
 router.route('/events/:id/check-in').post(protect, checkInByCode);
+// Manual check-in by registrationId (host taps a roster row — no QR). Owner-gated.
+router.route('/events/:id/registrations/:registrationId/check-in').post(protect, checkInByRegistration);
 
 // Organizer adds a walk-up at the door (guest, gated by walkupsAllowed + ownership)
 router.route('/events/:id/walkup').post(protect, addWalkup);
@@ -87,6 +89,8 @@ router.route('/registrations/:id/cancel').post(protect, cancelMyRegistration);
 
 // Organizer cancel event (fan-out refunds + audit)
 router.route('/events/:id/cancel').post(protect, cancelEvent);
+// Organizer cancel ONE attendee's registration (void tickets + paid refund). Owner-gated.
+router.route('/events/:id/registrations/:registrationId/cancel').post(protect, cancelRegistrationByOrganizer);
 
 // Waitlist routes
 router.route('/events/:id/waitlist/join').post(protect, joinWaitlist);

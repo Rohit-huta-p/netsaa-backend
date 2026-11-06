@@ -507,6 +507,16 @@ export const deleteEvent = async (req: Request, res: Response, next: NextFunctio
       });
     }
 
+    // Ownership gate — only the host may delete (and trigger the cascade below).
+    const userId = (req as AuthRequest).user?.id || (req as AuthRequest).user?._id;
+    if (String(event.organizerId) !== String(userId)) {
+      return res.status(403).json({
+        meta: { status: 403, message: 'Not authorized' },
+        data: null,
+        errors: [{ message: 'Only the host can delete this event' }],
+      });
+    }
+
     // Cascading delete
     await Promise.all([
       EventTicketType.deleteMany({ eventId: event._id }),
@@ -545,7 +555,16 @@ export const publishEvent = async (req: Request, res: Response, next: NextFuncti
         errors: [{ message: 'Event not found' }],
       });
     }
-    console.log("event publishing...: ", event);
+    // Ownership gate — only the host may publish.
+    const userId = (req as AuthRequest).user?.id || (req as AuthRequest).user?._id;
+    if (String(event.organizerId) !== String(userId)) {
+      return res.status(403).json({
+        meta: { status: 403, message: 'Not authorized' },
+        data: null,
+        errors: [{ message: 'Only the host can publish this event' }],
+      });
+    }
+
     event.status = 'live';
     event.publishedAt = new Date();
     await event.save();

@@ -24,7 +24,9 @@ class ConnectionsController {
                 data: connection,
             });
         } catch (error: any) {
-            return res.status(400).json({
+            // Honor a ConnectionError's status (404 gone / 409 already-resolved /
+            // 403 not yours); fall back to 400 for anything unclassified.
+            return res.status(error?.status ?? 400).json({
                 success: false,
                 message: error.message,
             });
@@ -50,7 +52,9 @@ class ConnectionsController {
                 data: result,
             });
         } catch (error: any) {
-            return res.status(400).json({
+            // Honor a ConnectionError's status (404 gone / 409 already-resolved /
+            // 403 not yours); fall back to 400 for anything unclassified.
+            return res.status(error?.status ?? 400).json({
                 success: false,
                 message: error.message,
             });
@@ -76,7 +80,9 @@ class ConnectionsController {
                 data: connection,
             });
         } catch (error: any) {
-            return res.status(400).json({
+            // Honor a ConnectionError's status (404 gone / 409 already-resolved /
+            // 403 not yours); fall back to 400 for anything unclassified.
+            return res.status(error?.status ?? 400).json({
                 success: false,
                 message: error.message,
             });
@@ -102,7 +108,9 @@ class ConnectionsController {
                 data: connection,
             });
         } catch (error: any) {
-            return res.status(400).json({
+            // Honor a ConnectionError's status (404 gone / 409 already-resolved /
+            // 403 not yours); fall back to 400 for anything unclassified.
+            return res.status(error?.status ?? 400).json({
                 success: false,
                 message: error.message,
             });
@@ -123,7 +131,9 @@ class ConnectionsController {
                 data: connections,
             });
         } catch (error: any) {
-            return res.status(400).json({
+            // Honor a ConnectionError's status (404 gone / 409 already-resolved /
+            // 403 not yours); fall back to 400 for anything unclassified.
+            return res.status(error?.status ?? 400).json({
                 success: false,
                 message: error.message,
             });
@@ -144,7 +154,9 @@ class ConnectionsController {
                 data: requests,
             });
         } catch (error: any) {
-            return res.status(400).json({
+            // Honor a ConnectionError's status (404 gone / 409 already-resolved /
+            // 403 not yours); fall back to 400 for anything unclassified.
+            return res.status(error?.status ?? 400).json({
                 success: false,
                 message: error.message,
             });
@@ -165,7 +177,9 @@ class ConnectionsController {
                 data: requests,
             });
         } catch (error: any) {
-            return res.status(400).json({
+            // Honor a ConnectionError's status (404 gone / 409 already-resolved /
+            // 403 not yours); fall back to 400 for anything unclassified.
+            return res.status(error?.status ?? 400).json({
                 success: false,
                 message: error.message,
             });
@@ -192,7 +206,9 @@ class ConnectionsController {
                 data: connection,
             });
         } catch (error: any) {
-            return res.status(400).json({
+            // Honor a ConnectionError's status (404 gone / 409 already-resolved /
+            // 403 not yours); fall back to 400 for anything unclassified.
+            return res.status(error?.status ?? 400).json({
                 success: false,
                 message: error.message,
             });

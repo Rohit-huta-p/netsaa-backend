@@ -161,6 +161,16 @@ export const checkInByCode = async (req: AuthRequest, res: Response) => {
             return res.status(400).json({ meta: { status: 400, message: 'Code required' }, data: null, errors: [] });
         }
 
+        // Ownership gate — only the event's host may check attendees in.
+        const requestingUserId = req.user?.id || req.user?._id;
+        const event = await Event.findById(req.params.id).select('organizerId').lean();
+        if (!event) {
+            return res.status(404).json({ meta: { status: 404, message: 'Event not found' }, data: null, errors: [] });
+        }
+        if (!requestingUserId || event.organizerId.toString() !== requestingUserId.toString()) {
+            return res.status(403).json({ meta: { status: 403, message: 'Only the event organizer can check in attendees.' }, data: null, errors: [] });
+        }
+
         // Escape regex metacharacters in user-supplied code before interpolating
         const escapedCode = String(code).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -185,6 +195,57 @@ export const checkInByCode = async (req: AuthRequest, res: Response) => {
         return res.status(200).json({
             meta: { status: 200, message: 'Checked in' },
             data: { ticketId: ticket.ticketId, attendeeName: ticket.attendeeName, status: 'checked_in', method, checkedInAt: ticket.checkedInAt },
+            errors: [],
+        });
+    } catch (err) {
+        return res.status(500).json({ meta: { status: 500, message: 'Server Error' }, data: null, errors: [{ message: (err as Error).message }] });
+    }
+};
+
+// @desc    Check in an attendee (and their whole group) by registrationId — the
+//          manual host path, no QR scan. Flips the registration → attended and every
+//          live ticket on it → checked_in, mirroring checkInByCode. Group bookings
+//          (quantity > 1) issue one ticket per seat, so all of them flip together.
+// @route   POST /v1/events/:id/registrations/:registrationId/check-in
+// @access  Private (organizer of this event only)
+export const checkInByRegistration = async (req: AuthRequest, res: Response) => {
+    try {
+        const { registrationId } = req.params;
+
+        // Ownership gate — only the event's host may check attendees in.
+        const requestingUserId = req.user?.id || req.user?._id;
+        const event = await Event.findById(req.params.id).select('organizerId').lean();
+        if (!event) {
+            return res.status(404).json({ meta: { status: 404, message: 'Event not found' }, data: null, errors: [] });
+        }
+        if (!requestingUserId || event.organizerId.toString() !== requestingUserId.toString()) {
+            return res.status(403).json({ meta: { status: 403, message: 'Only the event organizer can check in attendees.' }, data: null, errors: [] });
+        }
+
+        const registration = await EventRegistration.findById(registrationId);
+        if (!registration || registration.eventId.toString() !== String(req.params.id)) {
+            return res.status(404).json({ meta: { status: 404, message: 'Registration not found for this event' }, data: null, errors: [] });
+        }
+        if (registration.status === 'attended') {
+            return res.status(409).json({ meta: { status: 409, message: 'Already checked in' }, data: null, errors: [] });
+        }
+        // Only a confirmed, seat-holding attendee can be checked in — not a pending/approved
+        // request (no ticket yet) or a cancelled/declined/no-show registration.
+        if (registration.status !== 'registered') {
+            return res.status(409).json({ meta: { status: 409, message: `Cannot check in a ${registration.status} registration` }, data: null, errors: [] });
+        }
+
+        const checkedInAt = new Date();
+        await EventTicket.updateMany(
+            { registrationId: registration._id, status: { $ne: 'cancelled' } },
+            { $set: { status: 'checked_in', checkedInAt } },
+        );
+        registration.status = 'attended';
+        await registration.save();
+
+        return res.status(200).json({
+            meta: { status: 200, message: 'Checked in' },
+            data: { registrationId: registration._id, status: 'attended', method: 'manual', checkedInAt },
             errors: [],
         });
     } catch (err) {
