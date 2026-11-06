@@ -47,6 +47,14 @@ export const reserveTickets = async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ meta: { status: 400, message: 'Invalid answers' }, data: null, errors: [{ message: answersError }] });
     }
 
+    // Attendee names/phones (primary + any guests) so the paid ticket + roster carry the real name
+    // instead of "Guest". Kept to entries that have both fields (the schema requires them), capped at
+    // quantity. Mirrors the free-RSVP register path; absent for older clients → "Guest" fallback.
+    const attendees = (Array.isArray(req.body.attendees) ? req.body.attendees : [])
+      .filter((a: any) => a && typeof a.fullName === 'string' && a.fullName.trim() && a.phone)
+      .slice(0, quantity)
+      .map((a: any) => ({ fullName: String(a.fullName).trim().slice(0, 120), phone: String(a.phone).trim().slice(0, 20) }));
+
     // Spot/tier selection (gap §6a-b): resolve which spot to buy. A multi-spot event must
     // send a spotId; a single-spot / spot-less event keeps the event-level price.
     const spotRes = resolveSpot(event, req.body.spotId);
@@ -99,6 +107,7 @@ export const reserveTickets = async (req: AuthRequest, res: Response) => {
       spotId: spotRes.spot?._id,
       unitPriceRupees, appliedOffer: effective.appliedOffer,
       answers: answers.length ? answers : undefined,
+      attendees: attendees.length ? attendees : undefined,
       totalAmount: fees.customerPaysPaise / 100,
       status: 'reserved',
       expiresAt: new Date(Date.now() + RESERVATION_TTL_MS),
