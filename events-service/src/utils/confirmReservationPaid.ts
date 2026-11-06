@@ -38,9 +38,12 @@ export async function confirmReservationPaid(
     if (reg && reg.status !== 'registered') {
       const ev = await Event.findById(reservation.eventId);
       const paidSpot = reservation.spotId ? (ev?.spots ?? []).find((s: any) => String(s._id) === String(reservation.spotId)) : undefined;
-      const unit = paidSpot ? (paidSpot.price || 0) : (ev?.ticketPrice || 0);
+      // Honor the price LOCKED at reserve/approve (the applied offer), not a re-derivation — an
+      // offer may have expired between the hold and capture. Legacy holds fall back to base.
+      const unit = reservation.unitPriceRupees ?? (paidSpot ? (paidSpot.price || 0) : (ev?.ticketPrice || 0));
       const f = computeFeesPaise(unit * 100, reservation.quantity);
       reg.status = 'registered';
+      if (reservation.appliedOffer) reg.appliedOffer = reservation.appliedOffer;
       reg.paymentRecord = {
         razorpayPaymentId: payment.paymentId, razorpayOrderId: payment.orderId, capturedAt: new Date(),
         amountPaise: f.customerPaysPaise, serviceFeePaise: f.serviceFeePaise,
@@ -69,14 +72,17 @@ export async function confirmReservationPaid(
 
   const event = await Event.findById(reservation.eventId);
   const spot = reservation.spotId ? (event?.spots ?? []).find((s: any) => String(s._id) === String(reservation.spotId)) : undefined;
-  const unitPriceRupees = spot ? (spot.price || 0) : (event?.ticketPrice || 0);
+  // Honor the LOCKED per-ticket price (applied offer), falling back to the base derivation.
+  const unitPriceRupees = reservation.unitPriceRupees ?? (spot ? (spot.price || 0) : (event?.ticketPrice || 0));
   const fees = computeFeesPaise(unitPriceRupees * 100, reservation.quantity);
 
   const registration = await EventRegistration.create({
     eventId: reservation.eventId, userId: reservation.userId,
     quantity: reservation.quantity, status: 'registered',
     spotId: reservation.spotId,
+    appliedOffer: reservation.appliedOffer,
     answers: reservation.answers?.length ? reservation.answers : undefined,
+    attendees: reservation.attendees?.length ? reservation.attendees : undefined,
     idempotencyKey: reservation.idempotencyKey, source: 'standard', visibility: 'public',
     paymentRecord: {
       razorpayPaymentId: payment.paymentId, razorpayOrderId: payment.orderId, capturedAt: new Date(),
@@ -87,7 +93,8 @@ export async function confirmReservationPaid(
 
   await EventTicket.insertMany(Array.from({ length: reservation.quantity }).map((_, i) => ({
     ticketId: `${registration._id}-${i}`, eventId: reservation.eventId, registrationId: registration._id,
-    userId: reservation.userId, attendeeName: 'Guest',
+    userId: reservation.userId,
+    attendeeName: reservation.attendees?.[i]?.fullName || reservation.attendees?.[0]?.fullName || 'Guest',
     qrCode: `${generateTicketCode(event?.title || 'NETSA')}|${generateBackupCode()}`, status: 'issued',
   })));
 

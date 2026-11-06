@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import mongoose from 'mongoose';
 import app from '../server';
 import UserPayoutAccount from '../models/UserPayoutAccount';
+import { payments } from '../services/payments';
 
 process.env.JWT_SECRET = 'test-secret';
 process.env.RAZORPAY_WEBHOOK_SECRET = 'whsec_test';
@@ -47,6 +48,53 @@ describe('POST /v1/payouts/account', () => {
     await request(app).post('/v1/payouts/account').set('Authorization', `Bearer ${token}`).send(validBody);
     await request(app).post('/v1/payouts/account').set('Authorization', `Bearer ${token}`).send(validBody);
     expect(await UserPayoutAccount.countDocuments({ userId })).toBe(1);
+  });
+
+  it('accepts a UPI-only submission — vendor built from the VPA, no bank required', async () => {
+    const upiUser = new mongoose.Types.ObjectId().toString();
+    const upiToken = jwt.sign({ id: upiUser, role: 'organizer' }, process.env.JWT_SECRET!);
+    const createVendor = payments.createVendor as unknown as jest.Mock;
+    createVendor.mockClear();
+
+    const res = await request(app).post('/v1/payouts/account')
+      .set('Authorization', `Bearer ${upiToken}`)
+      .send({
+        businessType: 'individual', pan: 'ABCDE1234F', accountHolderName: 'Saswati Sen',
+        email: 'saswati@example.com', method: 'upi', vpa: 'saswati@okhdfc',
+      });
+
+    expect(res.status).toBe(201);
+    expect(res.body.data.payoutMethod).toBe('upi');
+    expect(res.body.data.upiVpaMasked).toBe('sa*****@okhdfc'); // masked at rest
+    expect(res.body.data.bankLast4).toBeUndefined();
+
+    // The Easy Split vendor was created from the VPA, not bank details.
+    expect(createVendor).toHaveBeenCalledWith(expect.objectContaining({ vpa: 'saswati@okhdfc' }));
+    expect(createVendor.mock.calls[0][0].bankAccount).toBeUndefined();
+  });
+
+  it('rejects a submission with neither UPI nor bank details', async () => {
+    const bareUser = jwt.sign({ id: new mongoose.Types.ObjectId().toString(), role: 'organizer' }, process.env.JWT_SECRET!);
+    const res = await request(app).post('/v1/payouts/account')
+      .set('Authorization', `Bearer ${bareUser}`)
+      .send({ businessType: 'individual', pan: 'ABCDE1234F', accountHolderName: 'No Dest', email: 'nd@example.com' });
+    expect(res.status).toBe(400);
+  });
+
+  it('switching bank -> UPI clears the stale bank fields', async () => {
+    const u = jwt.sign({ id: new mongoose.Types.ObjectId().toString(), role: 'organizer' }, process.env.JWT_SECRET!);
+    await request(app).post('/v1/payouts/account').set('Authorization', `Bearer ${u}`).send({
+      businessType: 'individual', pan: 'ABCDE1234F', accountHolderName: 'Switcher',
+      email: 'switch@example.com', bankAccount: '50123456789012', ifsc: 'SBIN0007613',
+    });
+    const res = await request(app).post('/v1/payouts/account').set('Authorization', `Bearer ${u}`).send({
+      businessType: 'individual', pan: 'ABCDE1234F', accountHolderName: 'Switcher',
+      email: 'switch@example.com', method: 'upi', vpa: 'switcher@okhdfc',
+    });
+    expect(res.status).toBe(201);
+    expect(res.body.data.payoutMethod).toBe('upi');
+    expect(res.body.data.upiVpaMasked).toBe('sw******@okhdfc');
+    expect(res.body.data.bankLast4).toBeFalsy(); // $unset on switch
   });
 });
 
