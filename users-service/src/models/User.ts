@@ -154,6 +154,7 @@ export interface IUser extends Document {
   bio?: string;
   location?: string;
   skills?: string[];
+  languages?: string[];
   experience?: Array<{
     title?: string;
     role?: string;
@@ -460,6 +461,7 @@ const UserSchema = new Schema<IUser>(
     bio: { type: String },
     location: { type: String },
     skills: { type: [String], default: [] },
+    languages: { type: [String], default: [] },
     experience: { type: [ExperienceSubSchema], default: [] },
     artistType: { type: [String], default: [] }, // Multi-select
     instagramHandle: { type: String },
