@@ -64,12 +64,16 @@ export const buildEventsPipeline = (
         });
     }
 
-    // eligibleArtistTypes (Array -> terms)
+    // eligibleArtistTypes (craft facet). Uses `text`, NOT `in`: the events index
+    // maps eligibleArtistTypes as text (not tokens), so an `in` clause silently
+    // matched nothing. A `text` clause with an array query gives case-insensitive
+    // OR semantics — and also matches coarse craft labels (e.g. "Actor") against
+    // granular/variant data values (e.g. "actor", "theatre_artist").
     if (hardFilters.eligibleArtistTypes && hardFilters.eligibleArtistTypes.length > 0) {
         filterClauses.push({
-            in: {
+            text: {
                 path: 'eligibleArtistTypes',
-                value: hardFilters.eligibleArtistTypes
+                query: hardFilters.eligibleArtistTypes
             }
         });
     }
