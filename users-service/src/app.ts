@@ -18,7 +18,7 @@ dotenv.config();
 const app: Application = express();
 app.set('trust proxy', 1); // Render/ALB terminate TLS in front of us — req.ip must be the client, not the proxy
 
-app.use(cors({ origin: ['http://localhost:8081', 'http://localhost:8085', 'https://netsaa.onrender.com', 'https://netsaa.com', 'https://www.netsaa.com'], credentials: true, allowedHeaders: ['Content-Type', 'Authorization'], exposedHeaders: ['Content-Type', 'Authorization'], methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'], optionsSuccessStatus: 200 }));
+app.use(cors({ origin: ['http://localhost:8081', 'http://localhost:8085', 'localhost:8086', 'https://netsaa.onrender.com', 'https://netsaa.com', 'https://www.netsaa.com'], credentials: true, allowedHeaders: ['Content-Type', 'Authorization'], exposedHeaders: ['Content-Type', 'Authorization'], methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'], optionsSuccessStatus: 200 }));
 app.use(express.json());
 
 app.use('/api/auth', authRoutes);
