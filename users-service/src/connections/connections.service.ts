@@ -2,11 +2,12 @@ import mongoose from 'mongoose';
 import Connection from './connections.model';
 import Conversation from './conversations.model';
 import { notificationEvents } from '../notifications';
+import { ConnectionError } from './connections.errors';
 
 class ConnectionsService {
     async sendRequest(requesterId: string, recipientId: string, message?: string) {
         if (requesterId === recipientId) {
-            throw new Error('Cannot send connection request to self.');
+            throw new ConnectionError('Cannot send connection request to self.', 400);
         }
 
         const existingConnection = await Connection.findOne({
@@ -18,9 +19,9 @@ class ConnectionsService {
 
         if (existingConnection) {
             if (existingConnection.status === 'blocked') {
-                throw new Error('Unable to send request. You are blocked.'); // Generic message for privacy/safety
+                throw new ConnectionError('Unable to send request. You are blocked.', 403); // Generic message for privacy/safety
             }
-            throw new Error('Connection request already exists or you are already connected.');
+            throw new ConnectionError('Connection request already exists or you are already connected.', 409);
         }
 
         const newConnection = await Connection.create({
@@ -49,15 +50,27 @@ class ConnectionsService {
             const connection = await Connection.findById(connectionId).session(session);
 
             if (!connection) {
-                throw new Error('Connection request not found.');
+                throw new ConnectionError('Connection request not found.', 404);
             }
 
             if (connection.recipientId.toString() !== currentUserId) {
-                throw new Error('You are not authorized to accept this request.');
+                throw new ConnectionError('You are not authorized to accept this request.', 403);
             }
 
+            // Idempotent: already accepted → return the existing connection and its
+            // conversation without re-transitioning or re-notifying, so a stale
+            // client that retries accept just succeeds.
+            if (connection.status === 'accepted') {
+                const existing = await Conversation.findOne({
+                    participants: { $all: [connection.requesterId, connection.recipientId] },
+                }).session(session);
+                await session.commitTransaction();
+                return { connection, conversation: existing };
+            }
+
+            // Anything else non-pending (rejected / blocked) can't be accepted.
             if (connection.status !== 'pending') {
-                throw new Error(`Connection request is already ${connection.status}.`);
+                throw new ConnectionError(`Connection request is already ${connection.status}.`, 409);
             }
 
             connection.status = 'accepted';
@@ -105,15 +118,21 @@ class ConnectionsService {
         const connection = await Connection.findById(connectionId);
 
         if (!connection) {
-            throw new Error('Connection request not found.');
+            throw new ConnectionError('Connection request not found.', 404);
         }
 
         if (connection.recipientId.toString() !== currentUserId) {
-            throw new Error('You are not authorized to reject this request.');
+            throw new ConnectionError('You are not authorized to reject this request.', 403);
         }
 
+        // Idempotent: already rejected → return as-is so a stale client retry succeeds.
+        if (connection.status === 'rejected') {
+            return connection;
+        }
+
+        // A request that's moved on (accepted / blocked) can't be rejected.
         if (connection.status !== 'pending') {
-            throw new Error(`Connection request is already ${connection.status}.`);
+            throw new ConnectionError(`Connection request is already ${connection.status}.`, 409);
         }
 
         connection.status = 'rejected';
@@ -126,7 +145,7 @@ class ConnectionsService {
         const connection = await Connection.findById(connectionId);
 
         if (!connection) {
-            throw new Error('Connection not found.');
+            throw new ConnectionError('Connection not found.', 404);
         }
 
         const isParticipant =
@@ -134,7 +153,7 @@ class ConnectionsService {
             connection.requesterId.toString() === currentUserId;
 
         if (!isParticipant) {
-            throw new Error('You are not authorized to block this connection.');
+            throw new ConnectionError('You are not authorized to block this connection.', 403);
         }
 
         connection.status = 'blocked';
@@ -147,7 +166,7 @@ class ConnectionsService {
         const connection = await Connection.findById(connectionId);
 
         if (!connection) {
-            throw new Error('Connection not found.');
+            throw new ConnectionError('Connection not found.', 404);
         }
 
         const isParticipant =
@@ -155,7 +174,7 @@ class ConnectionsService {
             connection.requesterId.toString() === currentUserId;
 
         if (!isParticipant) {
-            throw new Error('You are not authorized to remove this connection.');
+            throw new ConnectionError('You are not authorized to remove this connection.', 403);
         }
 
         await Connection.findByIdAndDelete(connectionId);
