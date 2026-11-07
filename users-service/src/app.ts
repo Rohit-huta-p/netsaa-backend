@@ -12,6 +12,7 @@ import settingsRoutes from './settings/settings.routes';
 import securityRoutes from './routes/security.routes';
 import roleRoutes from './routes/role.routes';
 import dangerRoutes from './routes/danger.routes';
+import internalRoutes from './routes/internal.routes';
 
 dotenv.config();
 
@@ -32,5 +33,6 @@ app.use('/api/users/me', securityRoutes);
 app.use('/api/users/me', roleRoutes);
 app.use('/api/users/me', dangerRoutes);
 app.use('/api/users', usersRoutes);
+app.use('/internal', internalRoutes);
 
 export default app;
