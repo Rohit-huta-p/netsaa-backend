@@ -311,6 +311,7 @@ export const updateMe = async (req: AuthRequest, res: Response) => {
       bio,
       location,
       skills,
+      languages,
       experience,
       artistType,
       instagramHandle,
@@ -340,6 +341,7 @@ export const updateMe = async (req: AuthRequest, res: Response) => {
     if (bio !== undefined) updateFields.bio = bio;
     if (location !== undefined) updateFields.location = location;
     if (skills !== undefined) updateFields.skills = skills;
+    if (languages !== undefined) updateFields.languages = languages;
     if (experience !== undefined) updateFields.experience = experience;
     if (artistType !== undefined) updateFields.artistType = artistType;
     if (instagramHandle !== undefined) updateFields.instagramHandle = instagramHandle;
