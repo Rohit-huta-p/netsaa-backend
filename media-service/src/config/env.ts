@@ -38,6 +38,8 @@ const envSchema = z.object({
     // Local events-service runs on :5010 (see netsa-frontend/.env EXPO_PUBLIC_API_EVENT_URL);
     // :5003 is search-service. Set explicitly per environment (Render URL in prod).
     EVENTS_SERVICE_URL: z.string().url().default('http://localhost:5010'),
+    // users-service runs on :5001. Set explicitly per environment (Render URL in prod).
+    USERS_SERVICE_URL: z.string().url().default('http://localhost:5001'),
 
     // CDN (optional)
     CDN_BASE_URL: z.string().optional().default(''),
@@ -107,6 +109,7 @@ export const env = {
     // Service-to-service
     internalServiceToken: parsedEnv.INTERNAL_SERVICE_TOKEN,
     eventsServiceUrl: parsedEnv.EVENTS_SERVICE_URL,
+    usersServiceUrl: parsedEnv.USERS_SERVICE_URL,
 
     // CDN
     cdnBaseUrl: parsedEnv.CDN_BASE_URL,

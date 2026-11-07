@@ -5,6 +5,7 @@ import { checkUploadPermission } from './permission.service';
 import { Purpose } from '../utils/mime';
 import { EntityType } from '../utils/fileKey';
 import { attachToEvent } from './attach.client';
+import { attachToUser } from './attach.user.client';
 
 export interface CreateVideoUploadInput {
   entityType: EntityType;
@@ -103,6 +104,7 @@ export async function applyMuxEvent(event: { type: string; data: any }): Promise
       rec.error = `Video too long (${Math.round(duration)}s > ${MAX_VIDEO_DURATION_SECONDS}s)`;
       await rec.save();
       if (rec.entityType === 'event') await attachToEvent({ eventId: rec.entityId, uploadId: rec.uploadId, status: 'errored' });
+      if (rec.entityType === 'user') await attachToUser({ userId: rec.entityId, uploadId: rec.uploadId, status: 'errored' });
       return;
     }
 
@@ -113,6 +115,7 @@ export async function applyMuxEvent(event: { type: string; data: any }): Promise
     rec.status = 'ready';
     await rec.save();
     if (rec.entityType === 'event') await attachToEvent({ eventId: rec.entityId, uploadId: rec.uploadId, playbackId, duration, aspectRatio: data.aspect_ratio, status: 'ready' });
+    if (rec.entityType === 'user') await attachToUser({ userId: rec.entityId, uploadId: rec.uploadId, playbackId, duration, aspectRatio: data.aspect_ratio, status: 'ready' });
     return;
   }
 
@@ -123,5 +126,6 @@ export async function applyMuxEvent(event: { type: string; data: any }): Promise
     rec.error = data.errors?.messages?.join('; ') || 'Mux asset errored';
     await rec.save();
     if (rec.entityType === 'event') await attachToEvent({ eventId: rec.entityId, uploadId: rec.uploadId, status: 'errored' });
+    if (rec.entityType === 'user') await attachToUser({ userId: rec.entityId, uploadId: rec.uploadId, status: 'errored' });
   }
 }
