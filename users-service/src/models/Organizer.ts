@@ -73,6 +73,7 @@ export interface IOrganizer extends Document {
     photos?: string[];
     yearsInBusiness?: number;
     teamSize?: number;
+    instagramHandle?: string;
     billingDetails?: IBillingDetails;
     organizerStats?: IOrganizerStats;
     verification: IVerification;
@@ -144,6 +145,7 @@ const OrganizerSchema = new Schema<IOrganizer>(
         photos: { type: [String], default: [] },
         yearsInBusiness: { type: Number },
         teamSize: { type: Number },
+        instagramHandle: { type: String },
         billingDetails: { type: BillingDetailsSchema, default: {} },
         organizerStats: { type: OrganizerStatsSchema, default: {} },
         verification: { type: VerificationSchema, default: () => ({}) }

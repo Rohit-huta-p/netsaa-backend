@@ -37,6 +37,7 @@ export const updateOrganizerSchema = z.object({
     photos: z.array(z.string().url()).max(12).optional(),
     yearsInBusiness: z.number().int().min(0).max(100).optional(),
     teamSize: z.number().int().min(1).max(10000).optional(),
+    instagramHandle: z.string().max(60).optional(),
     billingDetails: billingDetailsSchema,
 }).strict()
     .superRefine((data, ctx) => {
