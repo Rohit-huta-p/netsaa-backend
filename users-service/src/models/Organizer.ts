@@ -67,6 +67,7 @@ export interface IOrganizer extends Document {
     organizerTypeCategory: OrganizerTypeCategory;
     logoUrl?: string;
     // Public showcase fields (Part D, 2026-06) — surfaced on the agency public profile.
+    tagline?: string;
     bio?: string;
     services?: string[];
     photos?: string[];
@@ -137,6 +138,7 @@ const OrganizerSchema = new Schema<IOrganizer>(
         },
         logoUrl: { type: String },
         // Public showcase fields (Part D, 2026-06) — agency public profile.
+        tagline: { type: String, maxlength: 160, trim: true },
         bio: { type: String },
         services: { type: [String], default: [] },
         photos: { type: [String], default: [] },
