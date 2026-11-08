@@ -26,7 +26,7 @@ const PURPOSE_ENTITY_MATRIX: Record<Purpose, EntityType[]> = {
     avatar: ['user', 'artist'],
     portfolio: ['user', 'artist'],
     audition: ['artist'],
-    banner: ['gig'],
+    banner: ['gig', 'user', 'artist'],
     gallery: ['user', 'gig', 'event'],
     thumbnail: ['event'],
     promo: ['event'],
