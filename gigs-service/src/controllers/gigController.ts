@@ -109,10 +109,15 @@ export const getGigs = async (req: Request, res: Response, next: NextFunction) =
 // @access  Private (Organizer)
 export const getOrganizerGigs = async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
-        const { organizerId } = req.query; // Or req.user.id if using auth middleware
+        // "me" route (behind `protect`) — resolve the organizer from the authed
+        // user, never a client-supplied query param. Reading req.query.organizerId
+        // both 400s the legitimate no-param call AND lets any authed user read
+        // another organizer's gigs, including drafts (an IDOR). req.user is always
+        // set here because `protect` runs first.
+        const organizerId = req.user?.id || req.user?._id;
 
         if (!organizerId) {
-            return sendResponse(res, 400, null, 'Organizer ID required');
+            return sendResponse(res, 401, null, 'Not authorized');
         }
 
         const gigs = await Gig.find({ organizerId }).sort({ createdAt: -1 });
