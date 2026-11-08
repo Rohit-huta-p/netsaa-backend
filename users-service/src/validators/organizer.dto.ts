@@ -31,6 +31,7 @@ export const updateOrganizerSchema = z.object({
     organizationWebsite: z.string().optional(),
     logoUrl: z.string().optional(),
     // Public showcase fields (Part D, 2026-06) — agency public profile.
+    tagline: z.string().max(160).optional(),
     bio: z.string().max(2000).optional(),
     services: z.array(z.string()).max(20).optional(),
     photos: z.array(z.string().url()).max(12).optional(),

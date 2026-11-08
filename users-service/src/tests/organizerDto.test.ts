@@ -3,6 +3,7 @@ import { updateOrganizerSchema, containsForbiddenKeys } from '../validators/orga
 describe('updateOrganizerSchema — Part D showcase fields', () => {
     it('accepts the new showcase fields', () => {
         const parsed = updateOrganizerSchema.safeParse({
+            tagline: 'Weddings & corporate shows, done right.',
             bio: 'Full-service events agency.',
             services: ['Live Music', 'Decor'],
             photos: ['https://x/1.jpg', 'https://x/2.jpg'],
@@ -13,6 +14,7 @@ describe('updateOrganizerSchema — Part D showcase fields', () => {
         });
         expect(parsed.success).toBe(true);
         if (parsed.success) {
+            expect(parsed.data.tagline).toBe('Weddings & corporate shows, done right.');
             expect(parsed.data.bio).toBe('Full-service events agency.');
             expect(parsed.data.services).toEqual(['Live Music', 'Decor']);
             expect(parsed.data.photos).toHaveLength(2);
@@ -23,6 +25,7 @@ describe('updateOrganizerSchema — Part D showcase fields', () => {
 
     it('enforces showcase bounds (photos must be URLs, teamSize >= 1, yearsInBusiness <= 100)', () => {
         expect(updateOrganizerSchema.safeParse({ photos: ['not-a-url'] }).success).toBe(false);
+        expect(updateOrganizerSchema.safeParse({ tagline: 'x'.repeat(161) }).success).toBe(false);
         expect(updateOrganizerSchema.safeParse({ teamSize: 0 }).success).toBe(false);
         expect(updateOrganizerSchema.safeParse({ yearsInBusiness: 101 }).success).toBe(false);
         expect(updateOrganizerSchema.safeParse({ services: new Array(21).fill('x') }).success).toBe(false);
