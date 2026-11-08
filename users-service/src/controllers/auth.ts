@@ -87,7 +87,7 @@ export const registerWithEmail = async (req: Request, res: Response) => {
           {
             displayName: userInput.displayName,
             email: userInput.email,
-            phoneNumber: userInput.phoneNumber || null,
+            ...(userInput.phoneNumber ? { phoneNumber: userInput.phoneNumber } : {}),
             passwordHash,
             role,
             roleChangedAt: new Date(),
@@ -322,7 +322,8 @@ export const updateMe = async (req: AuthRequest, res: Response) => {
       gender,
       height,
       skinTone,
-      headline
+      headline,
+      dateOfBirth,
     } = req.body;
 
     // Build update object
@@ -353,6 +354,7 @@ export const updateMe = async (req: AuthRequest, res: Response) => {
     if (height !== undefined) updateFields.height = height;
     if (skinTone !== undefined) updateFields.skinTone = skinTone;
     if (headline !== undefined) updateFields.headline = headline;
+    if (dateOfBirth !== undefined) updateFields.dateOfBirth = dateOfBirth;
 
     console.log("AUTH CONTROLLER: updating fields:", updateFields);
 
