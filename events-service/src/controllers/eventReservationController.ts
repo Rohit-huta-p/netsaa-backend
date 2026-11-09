@@ -5,10 +5,13 @@ import EventReservation from '../models/EventReservation';
 import UserPayoutAccount from '../models/UserPayoutAccount';
 import { payments, paiseToRupees, providerOrderId } from '../services/payments';
 import { computeFeesPaise } from '../utils/eventFees';
+import { resolveEffectivePrice } from '../services/offerPricing';
+import { seatsUsedByOffer } from '../services/offerAvailability';
 import { slotsLeftForEvent, seatsLeftForSpot } from '../services/waitlistService';
 import { resolveSpot } from '../utils/eventSpots';
 import { buildRegistrationAnswers } from '../utils/registrationAnswers';
 import { consentFromRequest, recordEventRegistrationConsent } from '../utils/consent';
+import { confirmReservationPaid } from '../utils/confirmReservationPaid';
 
 const RESERVATION_TTL_MS = 10 * 60 * 1000;
 
@@ -44,14 +47,26 @@ export const reserveTickets = async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ meta: { status: 400, message: 'Invalid answers' }, data: null, errors: [{ message: answersError }] });
     }
 
+    // Attendee names/phones (primary + any guests) so the paid ticket + roster carry the real name
+    // instead of "Guest". Kept to entries that have both fields (the schema requires them), capped at
+    // quantity. Mirrors the free-RSVP register path; absent for older clients → "Guest" fallback.
+    const attendees = (Array.isArray(req.body.attendees) ? req.body.attendees : [])
+      .filter((a: any) => a && typeof a.fullName === 'string' && a.fullName.trim() && a.phone)
+      .slice(0, quantity)
+      .map((a: any) => ({ fullName: String(a.fullName).trim().slice(0, 120), phone: String(a.phone).trim().slice(0, 20) }));
+
     // Spot/tier selection (gap §6a-b): resolve which spot to buy. A multi-spot event must
     // send a spotId; a single-spot / spot-less event keeps the event-level price.
     const spotRes = resolveSpot(event, req.body.spotId);
     if (spotRes.error) {
       return res.status(400).json({ meta: { status: 400, message: 'Invalid spot' }, data: null, errors: [{ message: spotRes.error }] });
     }
-    // Per-tier price (falls back to event.ticketPrice for single-spot / spot-less events).
-    const unitPriceRupees = spotRes.spot ? (spotRes.spot.price || 0) : event.ticketPrice;
+    // Per-ticket price = the best active offer the buyer qualifies for (Early-bird / group),
+    // else the base spot/event price. Resolved authoritatively here and LOCKED on the
+    // reservation so an offer that later expires can't change what the webhook charges.
+    const offerUsage = await seatsUsedByOffer(event._id);
+    const effective = resolveEffectivePrice(event, { spotId: spotRes.spot?._id, seats: quantity, seatsUsedByOffer: offerUsage });
+    const unitPriceRupees = effective.unitRupees;
 
     // Capacity gate: per-spot when a spot is chosen, else event-level (held reservations
     // are a Sprint 8 hardening note either way).
@@ -90,7 +105,9 @@ export const reserveTickets = async (req: AuthRequest, res: Response) => {
     const reservation = await EventReservation.create({
       eventId: event._id, userId, quantity,
       spotId: spotRes.spot?._id,
+      unitPriceRupees, appliedOffer: effective.appliedOffer,
       answers: answers.length ? answers : undefined,
+      attendees: attendees.length ? attendees : undefined,
       totalAmount: fees.customerPaysPaise / 100,
       status: 'reserved',
       expiresAt: new Date(Date.now() + RESERVATION_TTL_MS),
@@ -107,6 +124,34 @@ export const reserveTickets = async (req: AuthRequest, res: Response) => {
     return res.status(201).json({ meta: { status: 201, message: 'Reserved' }, data: { reservationId: reservation._id, orderId, razorpayOrderId: orderId, paymentSessionId, amountPaise: fees.customerPaysPaise }, errors: [] });
   } catch (err) {
     return res.status(400).json({ meta: { status: 400, message: 'Reservation failed' }, data: null, errors: [{ message: (err as Error).message }] });
+  }
+};
+
+// @desc    DEV-ONLY: confirm a reserved hold as paid without a real Cashfree charge.
+// @route   POST /v1/reservations/:orderId/dev-confirm
+// @access  Private (attendee confirming their own hold)
+//
+// In CASHFREE_DEV_MODE the provider returns a fake `session_dev_…` payment session and no real
+// Cashfree order exists, so the checkout UI can't load and no webhook ever fires. This endpoint
+// stands in for that webhook: it runs the EXACT same confirmReservationPaid path (create-new and
+// pay-after-approval branches, ticket issue, price-locking) so the full registration completes
+// end-to-end. Gated on CASHFREE_DEV_MODE → a plain 404 in production, and it never touches money.
+export const devConfirmReservation = async (req: AuthRequest, res: Response) => {
+  if (process.env.CASHFREE_DEV_MODE !== '1') {
+    return res.status(404).json({ meta: { status: 404, message: 'Not found' }, data: null, errors: [] });
+  }
+  try {
+    const userId = req.user?.id || req.user?._id;
+    const orderId = req.params.orderId;
+    // Match the webhook's lookup key (razorpayOrderId) + scope to the caller's own hold.
+    const reservation = await EventReservation.findOne({ razorpayOrderId: orderId, userId });
+    if (!reservation) {
+      return res.status(404).json({ meta: { status: 404, message: 'Reservation not found' }, data: null, errors: [] });
+    }
+    const message = await confirmReservationPaid(reservation, { paymentId: `dev_pay_${Date.now()}`, orderId });
+    return res.status(200).json({ meta: { status: 200, message }, data: { reservationId: reservation._id, paymentStatus: 'completed' }, errors: [] });
+  } catch (err) {
+    return res.status(400).json({ meta: { status: 400, message: 'Dev confirm failed' }, data: null, errors: [{ message: (err as Error).message }] });
   }
 };
 
