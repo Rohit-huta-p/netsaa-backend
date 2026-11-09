@@ -1,349 +1,213 @@
 /**
  * Notification Worker
- * 
- * Consumes notification events from Redis and processes them.
- * This is the bridge between domain events and user-facing notifications.
- * 
- * Responsibilities:
- * - Subscribe to Redis notification events channel
- * - Transform events to notifications using NotificationFactory
- * - Persist notifications using NotificationService
- * - Deliver notifications via Socket.IO (if user online)
- * - Queue push notifications (if user offline)
- * - Handle failures with retry logic
- * 
+ *
+ * Consumes notification events from the durable BullMQ queue (notification.queue.ts)
+ * and turns them into user-facing notifications.
+ *
+ * Pipeline per job:
+ *   1. Transform the event into notification payload(s) via NotificationFactory
+ *   2. Persist each notification via NotificationService (idempotent on the event key)
+ *   3. Deliver via Socket.IO if the user is online
+ *   4. Best-effort push / email for offline users
+ *
  * Design principles:
- * - Stateless: no in-memory state, can be horizontally scaled
- * - Idempotent: duplicate events don't create duplicate notifications
- * - Resilient: failures are logged and retried, never crash the worker
- * - At-least-once delivery: events may be processed multiple times
+ * - Durable: jobs survive worker downtime (deploy/restart) — at-least-once delivery
+ * - Idempotent: a retried job can't create a duplicate (createNotification dedups
+ *   on the event's idempotency key)
+ * - Resilient: a thrown error fails the job so BullMQ retries it; the worker process
+ *   never crashes
  */
 
-import { Redis } from 'ioredis';
-import { subClient } from '../sockets/socket.redis';
+import { Worker, Job } from 'bullmq';
 import { getIO } from '../sockets/socket.instance';
 import { NotificationEvent } from './notification.events';
 import { notificationFactory } from './notification.factory';
 import { notificationService } from './notification.service';
+import { notificationRedisConnection, NOTIFICATION_QUEUE_NAME } from './notification.queue';
 
-/**
- * Redis channel for notification events
- */
-const NOTIFICATION_EVENTS_CHANNEL = 'notification:events';
+/* ══════════════════════════════════════════
+ *  PROCESSING PIPELINE
+ * ══════════════════════════════════════════ */
 
-/**
- * Notification Worker Class
- */
-class NotificationWorker {
-    private redis: Redis | undefined;
-    private isRunning: boolean = false;
+/** Transform one event into notification(s) and process each. Throwing bubbles to
+ *  BullMQ, which retries the job per the queue's defaultJobOptions. */
+async function handleEvent(event: NotificationEvent): Promise<void> {
+    const payloads = notificationFactory.createFromEvent(event);
 
-    constructor() {
-        this.redis = subClient;
+    if (payloads.length === 0) {
+        console.warn('[NotificationWorker] No payloads generated for event:', event.eventName);
+        return;
     }
 
-    /**
-     * Start the worker
-     * Subscribes to Redis channel and begins processing events
-     */
-    async start(): Promise<void> {
-        if (this.isRunning) {
-            console.log('[NotificationWorker] Already running');
-            return;
-        }
-
-        if (!this.redis) {
-            console.warn(
-                '[NotificationWorker] Redis not available. Worker will not start. ' +
-                'This is acceptable for local development but should be enabled in production.'
-            );
-            return;
-        }
-
-        try {
-            // Subscribe to notification events channel
-            await this.redis.subscribe(NOTIFICATION_EVENTS_CHANNEL);
-            this.isRunning = true;
-
-            console.log(`[NotificationWorker] Started and subscribed to ${NOTIFICATION_EVENTS_CHANNEL}`);
-
-            // Listen for messages
-            this.redis.on('message', (channel, message) => {
-                if (channel === NOTIFICATION_EVENTS_CHANNEL) {
-                    this.handleEvent(message).catch((error) => {
-                        // Log error but don't crash the worker
-                        console.error('[NotificationWorker] Failed to handle event:', error);
-                    });
-                }
-            });
-
-            // Handle Redis errors gracefully
-            this.redis.on('error', (error) => {
-                console.error('[NotificationWorker] Redis error:', error);
-                // Don't crash, just log
-            });
-
-        } catch (error) {
-            console.error('[NotificationWorker] Failed to start:', error);
-            this.isRunning = false;
-            throw error;
-        }
-    }
-
-    /**
-     * Stop the worker
-     * Unsubscribes from Redis channel
-     */
-    async stop(): Promise<void> {
-        if (!this.isRunning || !this.redis) {
-            return;
-        }
-
-        try {
-            await this.redis.unsubscribe(NOTIFICATION_EVENTS_CHANNEL);
-            this.isRunning = false;
-            console.log('[NotificationWorker] Stopped');
-        } catch (error) {
-            console.error('[NotificationWorker] Error stopping:', error);
-        }
-    }
-
-    /**
-     * Handle a single notification event
-     * This is the main processing pipeline
-     */
-    private async handleEvent(message: string): Promise<void> {
-        try {
-            // 1. Parse event
-            const event: NotificationEvent = JSON.parse(message);
-
-            console.log('[NotificationWorker] Processing event:', {
-                eventName: event.eventName,
-                idempotencyKey: event.idempotencyKey,
-            });
-
-            // 2. Transform event to notification payload(s)
-            const payloads = notificationFactory.createFromEvent(event);
-
-            if (payloads.length === 0) {
-                console.warn('[NotificationWorker] No payloads generated for event:', event.eventName);
-                return;
-            }
-
-            // 3. Process each payload (some events create multiple notifications)
-            for (const payload of payloads) {
-                await this.processNotification(payload, event.idempotencyKey);
-            }
-
-            console.log('[NotificationWorker] Successfully processed event:', event.eventName);
-
-        } catch (error) {
-            // Log error with context but don't crash
-            console.error('[NotificationWorker] Error handling event:', {
-                error: error instanceof Error ? error.message : error,
-                message: message.substring(0, 200), // Log first 200 chars
-            });
-
-            // In production, you might want to:
-            // - Send to dead letter queue
-            // - Alert monitoring system
-            // - Retry with exponential backoff
-            throw error; // Re-throw for potential retry mechanism
-        }
-    }
-
-    /**
-     * Process a single notification payload
-     * Persists to DB and delivers via Socket.IO
-     */
-    private async processNotification(
-        payload: any,
-        idempotencyKey: string
-    ): Promise<void> {
-        try {
-            // 1. Persist notification to database (idempotent)
-            const notification = await notificationService.createNotification(
-                payload,
-                idempotencyKey
-            );
-
-            console.log('[NotificationWorker] Notification persisted:', {
-                notificationId: notification._id,
-                userId: notification.userId,
-                type: notification.type,
-                subtype: notification.subtype,
-            });
-
-            // 2. Deliver via Socket.IO if user is online
-            const delivered = await this.deliverViaSocket(notification);
-
-            // 3. Queue push notification if user is offline
-            if (!delivered && payload.channel.push) {
-                await this.queuePushNotification(notification);
-            }
-
-            // 4. Queue email if configured
-            if (payload.channel.email) {
-                await this.queueEmailNotification(notification);
-            }
-
-        } catch (error) {
-            console.error('[NotificationWorker] Error processing notification:', {
-                error: error instanceof Error ? error.message : error,
-                userId: payload.userId,
-                type: payload.type,
-            });
-            throw error;
-        }
-    }
-
-    /**
-     * Deliver notification via Socket.IO
-     * Returns true if user is online and notification was delivered
-     */
-    private async deliverViaSocket(notification: any): Promise<boolean> {
-        try {
-            const io = getIO();
-            const userId = notification.userId.toString();
-
-            // Emit to user's room (user must join this room on connection)
-            // Room name format: `user:${userId}`
-            const roomName = `user:${userId}`;
-
-            // Check if user is in the room (i.e., online)
-            const sockets = await io.in(roomName).fetchSockets();
-
-            if (sockets.length === 0) {
-                // User is offline
-                return false;
-            }
-
-            // User is online, emit notification
-            io.to(roomName).emit('notification:new', {
-                id: notification._id,
-                type: notification.type,
-                subtype: notification.subtype,
-                title: notification.title,
-                body: notification.body,
-                data: notification.data,
-                createdAt: notification.createdAt,
-            });
-
-            console.log('[NotificationWorker] Delivered via Socket.IO:', {
-                userId,
-                notificationId: notification._id,
-                connectedSockets: sockets.length,
-            });
-
-            return true;
-
-        } catch (error) {
-            // Socket.IO not initialized or other error
-            // This is not critical, just log and continue
-            console.warn('[NotificationWorker] Socket.IO delivery failed:', error);
-            return false;
-        }
-    }
-
-    /**
-     * Queue push notification for offline user
-     * In production, this would use a service like Firebase Cloud Messaging
-     */
-    private async queuePushNotification(notification: any): Promise<void> {
-        try {
-            // TODO: Implement push notification queuing
-            // Options:
-            // 1. Use BullMQ to queue jobs for push notification service
-            // 2. Call Firebase Cloud Messaging API directly
-            // 3. Use a third-party service like OneSignal
-
-            console.log('[NotificationWorker] Push notification queued:', {
-                userId: notification.userId,
-                notificationId: notification._id,
-                title: notification.title,
-            });
-
-            // Placeholder: In production, you would:
-            // await pushQueue.add('send-push', {
-            //     userId: notification.userId,
-            //     title: notification.title,
-            //     body: notification.body,
-            //     data: notification.data,
-            // });
-
-        } catch (error) {
-            console.error('[NotificationWorker] Failed to queue push notification:', error);
-            // Don't throw - push is best-effort
-        }
-    }
-
-    /**
-     * Queue email notification
-     * In production, this would use a service like SendGrid or AWS SES
-     */
-    private async queueEmailNotification(notification: any): Promise<void> {
-        try {
-            // TODO: Implement email notification queuing
-            // Options:
-            // 1. Use BullMQ to queue jobs for email service
-            // 2. Call SendGrid/AWS SES API directly
-            // 3. Use a transactional email service
-
-            console.log('[NotificationWorker] Email notification queued:', {
-                userId: notification.userId,
-                notificationId: notification._id,
-                title: notification.title,
-            });
-
-            // Placeholder: In production, you would:
-            // await emailQueue.add('send-email', {
-            //     userId: notification.userId,
-            //     subject: notification.title,
-            //     body: notification.body,
-            //     template: 'notification',
-            // });
-
-        } catch (error) {
-            console.error('[NotificationWorker] Failed to queue email notification:', error);
-            // Don't throw - email is best-effort
-        }
-    }
-
-    /**
-     * Get worker status
-     */
-    getStatus(): { isRunning: boolean; hasRedis: boolean } {
-        return {
-            isRunning: this.isRunning,
-            hasRedis: !!this.redis,
-        };
+    for (const payload of payloads) {
+        await processNotification(payload, event.idempotencyKey);
     }
 }
 
-// Export singleton instance
-export const notificationWorker = new NotificationWorker();
+/** Persist one notification payload and deliver it. */
+async function processNotification(payload: any, idempotencyKey: string): Promise<void> {
+    // 1. Persist (idempotent on idempotencyKey — safe to re-run on retry)
+    const notification = await notificationService.createNotification(payload, idempotencyKey);
+
+    console.log('[NotificationWorker] Notification persisted:', {
+        notificationId: notification._id,
+        userId: notification.userId,
+        type: notification.type,
+        subtype: notification.subtype,
+    });
+
+    // 2. Deliver via Socket.IO if the user is online
+    const delivered = await deliverViaSocket(notification);
+
+    // 3. Queue push for offline users (best-effort)
+    if (!delivered && payload.channel?.push) {
+        await queuePushNotification(notification);
+    }
+
+    // 4. Queue email if configured (best-effort)
+    if (payload.channel?.email) {
+        await queueEmailNotification(notification);
+    }
+}
+
+/** Deliver via Socket.IO. Returns true if the user was online and received it. */
+async function deliverViaSocket(notification: any): Promise<boolean> {
+    try {
+        const io = getIO();
+        const userId = notification.userId.toString();
+        const roomName = `user:${userId}`;
+
+        const sockets = await io.in(roomName).fetchSockets();
+        if (sockets.length === 0) {
+            return false; // offline
+        }
+
+        io.to(roomName).emit('notification:new', {
+            id: notification._id,
+            type: notification.type,
+            subtype: notification.subtype,
+            title: notification.title,
+            body: notification.body,
+            data: notification.data,
+            createdAt: notification.createdAt,
+        });
+
+        console.log('[NotificationWorker] Delivered via Socket.IO:', {
+            userId,
+            notificationId: notification._id,
+            connectedSockets: sockets.length,
+        });
+        return true;
+    } catch (error) {
+        // Socket.IO not initialised or other non-critical error — just log
+        console.warn('[NotificationWorker] Socket.IO delivery failed:', error);
+        return false;
+    }
+}
+
+/** Queue a push notification for an offline user. Best-effort — never throws. */
+async function queuePushNotification(notification: any): Promise<void> {
+    try {
+        // TODO: wire to FCM / push provider.
+        console.log('[NotificationWorker] Push notification queued:', {
+            userId: notification.userId,
+            notificationId: notification._id,
+            title: notification.title,
+        });
+    } catch (error) {
+        console.error('[NotificationWorker] Failed to queue push notification:', error);
+    }
+}
+
+/** Queue an email notification. Best-effort — never throws. */
+async function queueEmailNotification(notification: any): Promise<void> {
+    try {
+        // TODO: wire to the email queue / provider.
+        console.log('[NotificationWorker] Email notification queued:', {
+            userId: notification.userId,
+            notificationId: notification._id,
+            title: notification.title,
+        });
+    } catch (error) {
+        console.error('[NotificationWorker] Failed to queue email notification:', error);
+    }
+}
+
+/* ══════════════════════════════════════════
+ *  WORKER SINGLETON
+ * ══════════════════════════════════════════ */
+
+let worker: Worker<NotificationEvent, void, string> | null = null;
 
 /**
- * Initialize and start the notification worker
- * Call this from your server startup
+ * Initialise and start the notification worker. Call once from server startup.
+ * Kept async (resolves when the worker's Redis connection is ready) so existing
+ * callers that `.then()` on it keep working.
  */
 export async function startNotificationWorker(): Promise<void> {
+    if (worker) {
+        console.log('[NotificationWorker] Already running');
+        return;
+    }
+
+    worker = new Worker<NotificationEvent, void, string>(
+        NOTIFICATION_QUEUE_NAME,
+        async (job: Job<NotificationEvent, void, string>) => {
+            console.log('[NotificationWorker] Processing event:', {
+                eventName: job.data.eventName,
+                idempotencyKey: job.data.idempotencyKey,
+                attempt: job.attemptsMade + 1,
+            });
+            await handleEvent(job.data);
+        },
+        {
+            connection: notificationRedisConnection,
+            concurrency: 10,
+            stalledInterval: 30_000,
+        }
+    );
+
+    worker.on('completed', (job) => {
+        console.log('[NotificationWorker] ✓ Processed event:', job.data?.eventName);
+    });
+
+    worker.on('failed', (job, err) => {
+        const attemptsLeft = (job?.opts?.attempts ?? 3) - (job?.attemptsMade ?? 0);
+        console.error(
+            `[NotificationWorker] ✗ Failed event "${job?.data?.eventName}" id=${job?.id} ` +
+            `| attemptsLeft=${attemptsLeft} | reason: ${err.message}`
+        );
+    });
+
+    // Worker-level Redis/BullMQ errors — log, never crash the process.
+    worker.on('error', (err) => {
+        console.error('[NotificationWorker] Worker error (non-fatal):', err.message);
+    });
+
     try {
-        await notificationWorker.start();
-    } catch (error) {
-        console.error('[NotificationWorker] Failed to start worker:', error);
-        // Don't crash the server, just log the error
+        await worker.waitUntilReady();
+        console.log(`[NotificationWorker] Started — listening on "${NOTIFICATION_QUEUE_NAME}" (concurrency=10)`);
+    } catch (err: any) {
+        // Don't crash the server if Redis isn't reachable; the worker will keep
+        // retrying the connection in the background.
+        console.error('[NotificationWorker] Failed to become ready:', err?.message);
     }
 }
 
-/**
- * Stop the notification worker
- * Call this during graceful shutdown
- */
+/** Stop the notification worker (graceful shutdown). */
 export async function stopNotificationWorker(): Promise<void> {
+    if (!worker) return;
     try {
-        await notificationWorker.stop();
-    } catch (error) {
-        console.error('[NotificationWorker] Failed to stop worker:', error);
+        await worker.close();
+        console.log('[NotificationWorker] Stopped');
+    } catch (error: any) {
+        console.error('[NotificationWorker] Error stopping:', error?.message);
+    } finally {
+        worker = null;
     }
+}
+
+/** Current worker status (used by health checks / tests). */
+export function getNotificationWorkerStatus(): { isRunning: boolean } {
+    return { isRunning: !!worker };
 }

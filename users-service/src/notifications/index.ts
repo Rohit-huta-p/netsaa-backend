@@ -63,8 +63,11 @@ export type { NotificationPayload } from './notification.factory';
 export { notificationService } from './notification.service';
 export type { NotificationQueryOptions, PaginatedNotifications } from './notification.service';
 
+// Notification Queue (durable BullMQ producer)
+export { notificationQueue, enqueueNotificationEvent, NOTIFICATION_QUEUE_NAME } from './notification.queue';
+
 // Notification Worker
-export { notificationWorker, startNotificationWorker, stopNotificationWorker } from './notification.worker';
+export { startNotificationWorker, stopNotificationWorker, getNotificationWorkerStatus } from './notification.worker';
 
 // Push Notification Service
 export { pushNotificationService } from './push.service';
