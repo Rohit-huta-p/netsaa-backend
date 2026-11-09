@@ -13,16 +13,32 @@ const privacySchema = z.object({
     showEmail: z.boolean().optional(),
     showPhone: z.boolean().optional(),
     showLocation: z.boolean().optional(),
+    showInDiscovery: z.boolean().optional(),
+}).strict().optional();
+
+/* ── Availability settings ── */
+const availabilitySchema = z.object({
+    isAvailableForWork: z.boolean().optional(),
 }).strict().optional();
 
 /* ── Notification settings ── */
 const notificationsSchema = z.object({
     emailNotifications: z.boolean().optional(),
     pushNotifications: z.boolean().optional(),
+    smsNotifications: z.boolean().optional(),
     allowConnectionRequests: z.boolean().optional(),
     messages: z.boolean().optional(),
+    profileViews: z.boolean().optional(),
     gigUpdates: z.boolean().optional(),
+    gigShortlisted: z.boolean().optional(),
+    gigHired: z.boolean().optional(),
+    gigNotSelected: z.boolean().optional(),
+    gigCancelled: z.boolean().optional(),
+    gigDeadline: z.boolean().optional(),
     eventUpdates: z.boolean().optional(),
+    paymentReceived: z.boolean().optional(),
+    paymentSent: z.boolean().optional(),
+    paymentRefunds: z.boolean().optional(),
     marketing: z.boolean().optional(),
 }).strict().optional();
 
@@ -50,6 +66,7 @@ export const updateSettingsSchema = z.object({
     notifications: notificationsSchema,
     messaging: messagingSchema,
     account: accountSchema,
+    availability: availabilitySchema,
 }).strict()
     .superRefine((data, ctx) => {
         // ── Logical constraint ──

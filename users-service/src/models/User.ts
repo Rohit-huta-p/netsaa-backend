@@ -52,15 +52,30 @@ export interface IPrivacySettings {
   showEmail: boolean;
   showPhone: boolean;
   showLocation: boolean;
+  showInDiscovery: boolean;
+}
+
+export interface IAvailabilitySettings {
+  isAvailableForWork: boolean;
 }
 
 export interface INotificationSettings {
   emailNotifications: boolean;
   pushNotifications: boolean;
+  smsNotifications: boolean;
   allowConnectionRequests: boolean;
   messages: boolean;
+  profileViews: boolean;
   gigUpdates: boolean;
+  gigShortlisted: boolean;
+  gigHired: boolean;
+  gigNotSelected: boolean;
+  gigCancelled: boolean;
+  gigDeadline: boolean;
   eventUpdates: boolean;
+  paymentReceived: boolean;
+  paymentSent: boolean;
+  paymentRefunds: boolean;
   marketing: boolean;
 }
 
@@ -80,6 +95,7 @@ export interface IUserSettings {
   notifications: INotificationSettings;
   messaging: IMessagingSettings;
   account: IAccountSettings;
+  availability: IAvailabilitySettings;
 }
 
 export interface IUserContext {
@@ -267,6 +283,14 @@ const PrivacySettingsSchema = new Schema(
     showEmail: { type: Boolean, default: false },
     showPhone: { type: Boolean, default: false },
     showLocation: { type: Boolean, default: true },
+    showInDiscovery: { type: Boolean, default: true },
+  },
+  { _id: false }
+);
+
+const AvailabilitySettingsSchema = new Schema(
+  {
+    isAvailableForWork: { type: Boolean, default: false },
   },
   { _id: false }
 );
@@ -275,10 +299,20 @@ const NotificationSettingsSchema = new Schema(
   {
     emailNotifications: { type: Boolean, default: true },
     pushNotifications: { type: Boolean, default: true },
+    smsNotifications: { type: Boolean, default: false },
     allowConnectionRequests: { type: Boolean, default: true },
     messages: { type: Boolean, default: true },
+    profileViews: { type: Boolean, default: true },
     gigUpdates: { type: Boolean, default: true },
+    gigShortlisted: { type: Boolean, default: true },
+    gigHired: { type: Boolean, default: true },
+    gigNotSelected: { type: Boolean, default: true },
+    gigCancelled: { type: Boolean, default: true },
+    gigDeadline: { type: Boolean, default: true },
     eventUpdates: { type: Boolean, default: true },
+    paymentReceived: { type: Boolean, default: true },
+    paymentSent: { type: Boolean, default: true },
+    paymentRefunds: { type: Boolean, default: true },
     marketing: { type: Boolean, default: false },
   },
   { _id: false }
@@ -307,6 +341,7 @@ const UserSettingsSchema = new Schema(
     notifications: { type: NotificationSettingsSchema, default: () => ({}) },
     messaging: { type: MessagingSettingsSchema, default: () => ({}) },
     account: { type: AccountSettingsSchema, default: () => ({}) },
+    availability: { type: AvailabilitySettingsSchema, default: () => ({}) },
   },
   { _id: false }
 );

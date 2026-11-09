@@ -13,14 +13,25 @@ const DEFAULT_SETTINGS = {
         showEmail: false,
         showPhone: false,
         showLocation: true,
+        showInDiscovery: true,
     },
     notifications: {
         emailNotifications: true,
         pushNotifications: true,
+        smsNotifications: false,
         allowConnectionRequests: true,
         messages: true,
+        profileViews: true,
         gigUpdates: true,
+        gigShortlisted: true,
+        gigHired: true,
+        gigNotSelected: true,
+        gigCancelled: true,
+        gigDeadline: true,
         eventUpdates: true,
+        paymentReceived: true,
+        paymentSent: true,
+        paymentRefunds: true,
         marketing: false,
     },
     messaging: {
@@ -31,6 +42,9 @@ const DEFAULT_SETTINGS = {
         language: 'en',
         timezone: 'Asia/Kolkata',
         currency: 'INR',
+    },
+    availability: {
+        isAvailableForWork: false,
     },
 };
 
@@ -45,6 +59,7 @@ const mergeSettings = (raw: any) => {
         notifications: { ...DEFAULT_SETTINGS.notifications, ...(persisted.notifications || {}) },
         messaging: { ...DEFAULT_SETTINGS.messaging, ...(persisted.messaging || {}) },
         account: { ...DEFAULT_SETTINGS.account, ...(persisted.account || {}) },
+        availability: { ...DEFAULT_SETTINGS.availability, ...(persisted.availability || {}) },
     };
 };
 
@@ -153,7 +168,7 @@ export const updateSettings = async (req: AuthRequest, res: Response) => {
         // ── Build dot-notation $set for partial deep merge ──
         const updateFields: Record<string, any> = {};
 
-        const sections = ['privacy', 'notifications', 'messaging', 'account'] as const;
+        const sections = ['privacy', 'notifications', 'messaging', 'account', 'availability'] as const;
         for (const section of sections) {
             const sectionData = data[section];
             if (sectionData) {
