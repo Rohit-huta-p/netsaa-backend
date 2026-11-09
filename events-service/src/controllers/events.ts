@@ -54,7 +54,19 @@ export const getEvents = async (req: Request, res: Response, next: NextFunction)
     // filters across ALL pages, not just the loaded one. A single value still
     // matches exactly (split yields a one-element $in).
     if (eventType) query.eventType = { $in: String(eventType).split(',').filter(Boolean) };
-    if (city) query['location.city'] = city;
+    // City — comma-separated → any-of match (multi-select location filter). Stored
+    // city is free-text Title Case (e.g. "Pune") while the board sends lowercase
+    // slugs, so an exact match missed everything — use a case-insensitive regex,
+    // mirroring the `category` approach below. A single value still matches (a
+    // one-element $in).
+    if (city) {
+      const cityPatterns = String(city)
+        .split(',')
+        .map((c) => c.trim())
+        .filter(Boolean)
+        .map((c) => new RegExp(`^${escapeRegex(c)}$`, 'i'));
+      if (cityPatterns.length) query['location.city'] = { $in: cityPatterns };
+    }
     if (status) query.status = status;
     else query.status = 'live'; // Default to live (published) events only
     if (skillLevel) query.skillLevel = skillLevel;
