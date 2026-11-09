@@ -377,9 +377,10 @@ export const createGig = async (req: AuthRequest, res: Response, next: NextFunct
             gigId: newGig._id
         });
 
-        // Notify the organizer's followers when a gig is published on creation.
-        // Fire-and-forget; never blocks or fails the create.
-        if (newGig.status === 'published') {
+        // Notify the organizer's followers when a Creative Lead publishes a gig
+        // on creation. Client-posted gigs don't fan out (the Follow feature is
+        // Creative-Lead-only). Fire-and-forget; never blocks or fails the create.
+        if (newGig.status === 'published' && newGig.posterRole === 'creative_lead') {
             notifyFollowersOfPost({
                 organizerId: String(organizerId),
                 kind: 'gig',
@@ -837,8 +838,9 @@ export const updateGig = async (req: AuthRequest, res: Response, next: NextFunct
             runValidators: true
         });
 
-        // Notify the organizer's followers when a draft gig is published via update.
-        if (updatedGig && !wasPublished && updatedGig.status === 'published') {
+        // Notify the organizer's followers when a Creative Lead's draft gig is
+        // published via update (client-posted gigs don't fan out).
+        if (updatedGig && !wasPublished && updatedGig.status === 'published' && updatedGig.posterRole === 'creative_lead') {
             notifyFollowersOfPost({
                 organizerId: String(organizerId),
                 kind: 'gig',

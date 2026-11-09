@@ -13,6 +13,7 @@ import { shouldRevealMeetingLink } from '../utils/meetingLinkReveal';
 import { scheduleEventReminders } from '../services/reminderScheduler';
 import { mapComposerToEventDoc, buildComposerUpdate, isComposerPatch } from '../services/composerMapping';
 import { notifyFollowersOfPost } from '../services/followNotify.client';
+import { isCreativeLeadRole } from '../utils/posterRole';
 import { escapeRegex } from '../utils/escapeRegex';
 
 // Best display name for the "X just posted an event" follower notification —
@@ -390,8 +391,9 @@ export const createEvent = async (req: Request, res: Response, next: NextFunctio
         throw new Error('Invalid pricingMode. Must be "fixed" or "ticketed".');
       }
 
-      // Legacy callers may create an event already published ('live') → notify followers.
-      if (event.status === 'live') {
+      // Legacy callers may create an event already published ('live') → notify
+      // the host's followers, but only when the host is a Creative Lead.
+      if (event.status === 'live' && isCreativeLeadRole(user?.role)) {
         notifyFollowersOfPost({
           organizerId: String(event.organizerId),
           kind: 'event',
@@ -426,9 +428,9 @@ export const createEvent = async (req: Request, res: Response, next: NextFunctio
       await scheduleEventReminders(event._id);
     }
 
-    // Notify the host's followers when the event is published live on creation.
-    // Fire-and-forget; never blocks or fails the create.
-    if (event.status === 'live') {
+    // Notify the host's followers when a Creative Lead publishes an event live
+    // on creation. Fire-and-forget; never blocks or fails the create.
+    if (event.status === 'live' && isCreativeLeadRole(user?.role)) {
       notifyFollowersOfPost({
         organizerId: String(userId),
         kind: 'event',
@@ -611,8 +613,8 @@ export const publishEvent = async (req: Request, res: Response, next: NextFuncti
     // Enqueue reminder notifications for this newly-published event (idempotent).
     await scheduleEventReminders(event._id);
 
-    // Notify the host's followers that a new event is live.
-    if (!wasLive) {
+    // Notify the host's followers that a new event is live (Creative Leads only).
+    if (!wasLive && isCreativeLeadRole((req as AuthRequest).user?.role)) {
       notifyFollowersOfPost({
         organizerId: String(event.organizerId),
         kind: 'event',
