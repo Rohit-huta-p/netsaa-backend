@@ -12,7 +12,16 @@ import EventStats from '../models/EventStats';
 import { shouldRevealMeetingLink } from '../utils/meetingLinkReveal';
 import { scheduleEventReminders } from '../services/reminderScheduler';
 import { mapComposerToEventDoc, buildComposerUpdate, isComposerPatch } from '../services/composerMapping';
+import { notifyFollowersOfPost } from '../services/followNotify.client';
+import { isCreativeLeadRole } from '../utils/posterRole';
 import { escapeRegex } from '../utils/escapeRegex';
+
+// Best display name for the "X just posted an event" follower notification —
+// prefer the organization/brand name, fall back to the host's display name.
+const followActorNameFromUser = (u: any): string | undefined => {
+  if (!u) return undefined;
+  return u.organizationName || u.displayName || u.name || undefined;
+};
 
 // @desc    Get all events with filters
 // @route   GET /api/grow/events
@@ -382,6 +391,18 @@ export const createEvent = async (req: Request, res: Response, next: NextFunctio
         throw new Error('Invalid pricingMode. Must be "fixed" or "ticketed".');
       }
 
+      // Legacy callers may create an event already published ('live') → notify
+      // the host's followers, but only when the host is a Creative Lead.
+      if (event.status === 'live' && isCreativeLeadRole(user?.role)) {
+        notifyFollowersOfPost({
+          organizerId: String(event.organizerId),
+          kind: 'event',
+          entityId: String(event._id),
+          title: event.title,
+          actorName: followActorNameFromUser(user),
+        });
+      }
+
       return res.status(201).json({ meta: { status: 201, message: 'Event created' }, data: event, errors: [] });
     }
 
@@ -405,6 +426,18 @@ export const createEvent = async (req: Request, res: Response, next: NextFunctio
     // Composer publishes immediately as 'live' — schedule reminders when it has a real date.
     if (scheduleReminders) {
       await scheduleEventReminders(event._id);
+    }
+
+    // Notify the host's followers when a Creative Lead publishes an event live
+    // on creation. Fire-and-forget; never blocks or fails the create.
+    if (event.status === 'live' && isCreativeLeadRole(user?.role)) {
+      notifyFollowersOfPost({
+        organizerId: String(userId),
+        kind: 'event',
+        entityId: String(event._id),
+        title: event.title,
+        actorName: followActorNameFromUser(user),
+      });
     }
 
     return res.status(201).json({ meta: { status: 201, message: 'Event created' }, data: event, errors: [] });
@@ -569,12 +602,27 @@ export const publishEvent = async (req: Request, res: Response, next: NextFuncti
       });
     }
 
+    // Only fan out on the first publish (draft→live), not on a re-publish of an
+    // already-live event.
+    const wasLive = event.status === 'live';
+
     event.status = 'live';
     event.publishedAt = new Date();
     await event.save();
 
     // Enqueue reminder notifications for this newly-published event (idempotent).
     await scheduleEventReminders(event._id);
+
+    // Notify the host's followers that a new event is live (Creative Leads only).
+    if (!wasLive && isCreativeLeadRole((req as AuthRequest).user?.role)) {
+      notifyFollowersOfPost({
+        organizerId: String(event.organizerId),
+        kind: 'event',
+        entityId: String(event._id),
+        title: event.title,
+        actorName: followActorNameFromUser((req as AuthRequest).user),
+      });
+    }
 
     res.status(200).json({
       meta: { status: 200, message: 'Event published' },

@@ -18,6 +18,7 @@ export {
     EventSubtype,
     PaymentSubtype,
     ContractSubtype,
+    FollowSubtype,
     SystemSubtype,
     ALL_NOTIFICATION_SUBTYPES,
     getNotificationTypeFromSubtype,
@@ -47,6 +48,8 @@ export type {
     PaymentFailedEvent,
     ContractSentEvent,
     ContractSignedEvent,
+    FolloweePostedEvent,
+    FollowStartedEvent,
 } from './notification.events';
 
 // Event Emitter

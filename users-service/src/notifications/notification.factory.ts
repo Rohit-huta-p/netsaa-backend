@@ -33,6 +33,8 @@ import {
     PaymentFailedEvent,
     ContractSentEvent,
     ContractSignedEvent,
+    FolloweePostedEvent,
+    FollowStartedEvent,
 } from './notification.events';
 import {
     NotificationType,
@@ -42,6 +44,7 @@ import {
     EventSubtype,
     PaymentSubtype,
     ContractSubtype,
+    FollowSubtype,
 } from './notification.types';
 import { INotificationChannel, INotificationData } from './notification.model';
 
@@ -100,6 +103,10 @@ class NotificationFactory {
                 return this.createContractSent(event);
             case 'contract.signed':
                 return this.createContractSigned(event);
+            case 'followee.posted':
+                return this.createFolloweePosted(event);
+            case 'follow.started':
+                return this.createFollowStarted(event);
             default:
                 console.warn('[NotificationFactory] Unknown event type:', (event as any).eventName);
                 return [];
@@ -516,6 +523,82 @@ class NotificationFactory {
                 inApp: true,
                 push: true,
                 email: true, // Important legal document, send email
+                sms: false,
+            },
+        }];
+    }
+
+    // ============================================================================
+    // FOLLOW NOTIFICATIONS
+    // ============================================================================
+
+    /**
+     * A followed user/org posted a gig or event → notify each follower.
+     * One notification per follower (mirrors the message.sent / event.cancelled
+     * fan-out pattern). The gig vs event kind decides subtype, type, entityType
+     * and deep-link route. The server-side body is a sensible fallback for
+     * push/email; the in-app client renders name-led copy from the populated actor.
+     */
+    private createFolloweePosted(event: FolloweePostedEvent): NotificationPayload[] {
+        const { kind, title, entityId, actorId, actorName, followerIds } = event.payload;
+        const isGig = kind === 'gig';
+        const actor = actorName && actorName.trim() ? actorName.trim() : 'Someone you follow';
+        const article = isGig ? 'a gig' : 'an event';
+
+        const subtype = isGig ? GigSubtype.POSTED_BY_FOLLOWED : EventSubtype.POSTED_BY_FOLLOWED;
+        const type = isGig ? NotificationType.GIG : NotificationType.EVENT;
+        const entityType: 'gig' | 'event' = isGig ? 'gig' : 'event';
+        const route = isGig ? 'gig-details' : 'event-details';
+        const idParam = isGig ? 'gigId' : 'eventId';
+
+        return followerIds.map((followerId) => ({
+            userId: followerId,
+            actorId,
+            type,
+            subtype,
+            title: isGig ? 'New gig posted' : 'New event posted',
+            body: `${actor} just posted ${article}: "${title}"`,
+            entityType,
+            entityId,
+            data: {
+                route,
+                params: {
+                    [idParam]: entityId.toString(),
+                },
+            },
+            channel: {
+                inApp: true,
+                push: true,
+                email: false,
+                sms: false,
+            },
+        }));
+    }
+
+    /**
+     * Someone started following a user/org → notify the followee.
+     * Deep-links to the new follower's profile (follow back / view).
+     */
+    private createFollowStarted(event: FollowStartedEvent): NotificationPayload[] {
+        return [{
+            userId: event.payload.recipientId,
+            actorId: event.payload.actorId,
+            type: NotificationType.FOLLOW,
+            subtype: FollowSubtype.STARTED,
+            title: 'New follower',
+            body: 'Someone started following you',
+            entityType: undefined,
+            entityId: undefined,
+            data: {
+                route: 'profile',
+                params: {
+                    userId: event.payload.actorId.toString(),
+                },
+            },
+            channel: {
+                inApp: true,
+                push: true,
+                email: false,
                 sms: false,
             },
         }];
