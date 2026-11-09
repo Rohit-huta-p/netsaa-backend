@@ -1,5 +1,6 @@
 import Follow from './follows.model';
 import { FollowError } from './follows.errors';
+import { notificationEvents } from '../notifications';
 
 export interface FollowState {
     isFollowing: boolean;
@@ -16,18 +17,38 @@ class FollowsService {
         if (followerId === followeeId) {
             throw new FollowError('You cannot follow yourself.', 400);
         }
+        // Whether THIS call created the follow (vs. it already existing). Only a
+        // brand-new follow should notify the followee — re-follows are no-ops.
+        let isNewFollow = false;
         try {
-            await Follow.updateOne(
+            const result = await Follow.updateOne(
                 { followerId, followeeId },
                 { $setOnInsert: { followerId, followeeId } },
                 { upsert: true }
             );
+            isNewFollow = (result.upsertedCount ?? 0) > 0;
         } catch (err: any) {
             // 11000 = duplicate key from a concurrent follow → already following, fine.
             if (err?.code !== 11000) throw err;
         }
+
+        // Fire-and-forget: tell the followee they have a new follower.
+        if (isNewFollow) {
+            notificationEvents.emitFollowStarted({ recipientId: followeeId, actorId: followerId });
+        }
+
         const followerCount = await Follow.countDocuments({ followeeId });
         return { isFollowing: true, followerCount };
+    }
+
+    /**
+     * All follower user-ids for `followeeId`. Used by the internal fan-out
+     * endpoint when the followee publishes a gig/event. Returns a plain string[]
+     * (ids only) — the notification pipeline resolves display data on read.
+     */
+    async getFollowerIds(followeeId: string): Promise<string[]> {
+        const docs = await Follow.find({ followeeId }).select('followerId').lean();
+        return docs.map((d: any) => d.followerId.toString());
     }
 
     /**

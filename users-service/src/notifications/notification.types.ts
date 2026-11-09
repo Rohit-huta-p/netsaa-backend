@@ -21,6 +21,7 @@ export enum NotificationType {
     EVENT = 'event',
     PAYMENT = 'payment',
     CONTRACT = 'contract',
+    FOLLOW = 'follow',
     SYSTEM = 'system',
 }
 
@@ -50,6 +51,7 @@ export const GigSubtype = {
     APPLICATION_REJECTED: 'gig.application.rejected',     // Applicant: Application rejected (optional)
     DEADLINE_APPROACHING: 'gig.deadline.approaching',     // Gig owner: Application deadline approaching
     GIG_CANCELLED: 'gig.cancelled',                       // Applicants: Gig was cancelled
+    POSTED_BY_FOLLOWED: 'gig.posted.by_followed',         // Follower: someone you follow posted a gig
 } as const;
 
 // Event-related notifications
@@ -60,6 +62,7 @@ export const EventSubtype = {
     CANCELLED: 'event.cancelled',                         // Event was cancelled
     REMINDER: 'event.reminder',                           // Event is coming up soon
     UPDATED: 'event.updated',                             // Event details changed
+    POSTED_BY_FOLLOWED: 'event.posted.by_followed',       // Follower: someone you follow posted an event
 } as const;
 
 // Payment-related notifications
@@ -76,6 +79,11 @@ export const ContractSubtype = {
     SIGNED: 'contract.signed',               // Contract was signed by other party
     EXPIRED: 'contract.expired',             // Contract expired without signing
     CANCELLED: 'contract.cancelled',         // Contract was cancelled
+} as const;
+
+// Follow-related notifications
+export const FollowSubtype = {
+    STARTED: 'follow.started',               // Someone started following you
 } as const;
 
 // System-related notifications
@@ -97,6 +105,7 @@ export type NotificationSubtype =
     | typeof EventSubtype[keyof typeof EventSubtype]
     | typeof PaymentSubtype[keyof typeof PaymentSubtype]
     | typeof ContractSubtype[keyof typeof ContractSubtype]
+    | typeof FollowSubtype[keyof typeof FollowSubtype]
     | typeof SystemSubtype[keyof typeof SystemSubtype];
 
 /**
@@ -109,6 +118,7 @@ export const ALL_NOTIFICATION_SUBTYPES = [
     ...Object.values(EventSubtype),
     ...Object.values(PaymentSubtype),
     ...Object.values(ContractSubtype),
+    ...Object.values(FollowSubtype),
     ...Object.values(SystemSubtype),
 ] as const;
 
@@ -123,6 +133,7 @@ export function getNotificationTypeFromSubtype(subtype: NotificationSubtype): No
     if (subtype.startsWith('event.')) return NotificationType.EVENT;
     if (subtype.startsWith('payment.')) return NotificationType.PAYMENT;
     if (subtype.startsWith('contract.')) return NotificationType.CONTRACT;
+    if (subtype.startsWith('follow.')) return NotificationType.FOLLOW;
     if (subtype.startsWith('system.')) return NotificationType.SYSTEM;
 
     throw new Error(`Unknown notification subtype: ${subtype}`);
