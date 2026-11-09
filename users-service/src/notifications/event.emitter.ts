@@ -11,89 +11,36 @@
  * - Idempotent: Automatic idempotency key generation
  */
 
-import { Redis } from 'ioredis';
-import { pubClient } from '../sockets/socket.redis';
 import {
     NotificationEvent,
     NotificationEventName,
     generateIdempotencyKey
 } from './notification.events';
-
-/**
- * Redis channel for notification events
- * All notification events are published to this channel
- */
-const NOTIFICATION_EVENTS_CHANNEL = 'notification:events';
+import { enqueueNotificationEvent } from './notification.queue';
 
 /**
  * Event Emitter Class
- * Handles publishing notification events to Redis
+ * Enqueues notification events onto a durable BullMQ queue (notification.queue.ts).
+ * The Worker (notification.worker.ts) consumes them at-least-once, so an event is
+ * never lost if the worker is briefly down (deploy / restart / crash) — unlike the
+ * old Redis pub/sub, which only reached subscribers connected at publish time.
  */
 class NotificationEventEmitter {
-    private redis: Redis | undefined;
-
-    constructor() {
-        this.redis = pubClient;
-
-        if (!this.redis) {
-            console.warn(
-                '[NotificationEventEmitter] Redis not available. Events will be logged but not published. ' +
-                'This is acceptable for local development but should be enabled in production.'
-            );
-        }
-    }
-
     /**
-     * Emit a notification event
-     * 
-     * This is a fire-and-forget operation. It will:
-     * - Generate an idempotency key if not provided
-     * - Publish the event to Redis
-     * - Log errors but never throw
-     * - Return immediately without waiting for Redis
-     * 
-     * @param event - The notification event to emit
+     * Emit a notification event.
+     *
+     * Fire-and-forget: enqueues the event for durable processing and returns
+     * immediately. Errors are logged, never thrown, so notifications can never
+     * disrupt the business logic that triggered them.
      */
     emit(event: NotificationEvent): void {
-        // Fire-and-forget: Don't await, don't block
-        this.publishEvent(event).catch((error) => {
-            // Log error but never throw to prevent disrupting business logic
-            console.error('[NotificationEventEmitter] Failed to publish event:', {
+        enqueueNotificationEvent(event).catch((error) => {
+            console.error('[NotificationEventEmitter] Failed to enqueue event:', {
                 eventName: event.eventName,
-                error: error.message,
+                idempotencyKey: event.idempotencyKey,
+                error: error?.message,
             });
         });
-    }
-
-    /**
-     * Internal method to publish event to Redis
-     * This is async but should never be awaited by callers
-     */
-    private async publishEvent(event: NotificationEvent): Promise<void> {
-        if (!this.redis) {
-            // Redis not available - log event for debugging
-            console.log('[NotificationEventEmitter] Event (not published):', {
-                eventName: event.eventName,
-                idempotencyKey: event.idempotencyKey,
-            });
-            return;
-        }
-
-        try {
-            // Serialize event to JSON
-            const eventPayload = JSON.stringify(event);
-
-            // Publish to Redis channel
-            await this.redis.publish(NOTIFICATION_EVENTS_CHANNEL, eventPayload);
-
-            console.log('[NotificationEventEmitter] Event published:', {
-                eventName: event.eventName,
-                idempotencyKey: event.idempotencyKey,
-            });
-        } catch (error) {
-            // Re-throw to be caught by emit() wrapper
-            throw error;
-        }
     }
 
     /**
