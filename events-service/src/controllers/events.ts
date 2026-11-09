@@ -387,7 +387,11 @@ export const createEvent = async (req: Request, res: Response, next: NextFunctio
 
     // ── NEW composer shape (v3 + v4 "one form") → map to model ──
     // A date is required unless the host explicitly left the time to be announced.
-    if (!b.startsAt && !b.timeTbd) {
+    // Drafts are exempt: a half-finished event saved on leave may not have a date
+    // yet (computeSchedule falls back to a placeholder, and the host picks the real
+    // date before publishing via POST /events/:id/publish).
+    const isDraft = b.status === 'draft';
+    if (!isDraft && !b.startsAt && !b.timeTbd) {
       return res.status(400).json({ meta: { status: 400, message: 'Start time required' }, data: null, errors: [] });
     }
 
