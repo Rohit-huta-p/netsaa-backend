@@ -302,6 +302,47 @@ export interface ContractSignedEvent extends BaseNotificationEvent {
 }
 
 // ============================================================================
+// FOLLOW EVENTS
+// ============================================================================
+
+/**
+ * Emitted when a user/organization that has followers publishes a gig or event.
+ *
+ * Fanned out by the notification worker: one notification per follower.
+ * Recipients (`followerIds`) are resolved by users-service (which owns the
+ * Follow collection) before the event is emitted — the posting service
+ * (gigs/events) only ever pings the internal endpoint with the poster + entity.
+ *
+ * Triggers notification to: every follower of the poster
+ * Notification subtype: gig.posted.by_followed | event.posted.by_followed
+ */
+export interface FolloweePostedEvent extends BaseNotificationEvent {
+    eventName: 'followee.posted';
+    payload: {
+        actorId: Types.ObjectId;          // The followed user/org that posted (shown as actor)
+        actorName?: string;               // Poster's display name, for push/email body fallback
+        followerIds: Types.ObjectId[];    // Followers who should receive a notification
+        kind: 'gig' | 'event';            // What was posted
+        entityId: Types.ObjectId;         // Gig/Event document ID (deep-link target)
+        title: string;                    // Gig/Event title for notification text
+    };
+}
+
+/**
+ * Emitted when a user starts following another user/organization.
+ *
+ * Triggers notification to: the followee (the user being followed)
+ * Notification subtype: follow.started
+ */
+export interface FollowStartedEvent extends BaseNotificationEvent {
+    eventName: 'follow.started';
+    payload: {
+        recipientId: Types.ObjectId;      // The followee (receives notification)
+        actorId: Types.ObjectId;          // The follower (who started following)
+    };
+}
+
+// ============================================================================
 // UNION TYPE FOR ALL EVENTS
 // ============================================================================
 
@@ -323,7 +364,9 @@ export type NotificationEvent =
     | PaymentCompletedEvent
     | PaymentFailedEvent
     | ContractSentEvent
-    | ContractSignedEvent;
+    | ContractSignedEvent
+    | FolloweePostedEvent
+    | FollowStartedEvent;
 
 /**
  * Event names as a union type for validation
@@ -360,4 +403,6 @@ export const NotificationEventNames = {
     PAYMENT_FAILED: 'payment.failed' as const,
     CONTRACT_SENT: 'contract.sent' as const,
     CONTRACT_SIGNED: 'contract.signed' as const,
+    FOLLOWEE_POSTED: 'followee.posted' as const,
+    FOLLOW_STARTED: 'follow.started' as const,
 } as const;

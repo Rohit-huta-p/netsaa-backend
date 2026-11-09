@@ -299,6 +299,61 @@ class NotificationEventEmitter {
 
         this.emit(event);
     }
+
+    /**
+     * Helper to emit followee.posted event (a followed user/org published a
+     * gig or event). `followerIds` are the recipients — the caller (the internal
+     * endpoint) resolves them from the Follow collection and chunks large sets,
+     * emitting one event per chunk.
+     */
+    emitFolloweePosted(payload: {
+        actorId: string;
+        actorName?: string;
+        followerIds: string[];
+        kind: 'gig' | 'event';
+        entityId: string;
+        title: string;
+    }): void {
+        const event: NotificationEvent = {
+            eventName: 'followee.posted',
+            idempotencyKey: generateIdempotencyKey(
+                'followee.posted',
+                `${payload.kind}:${payload.entityId}`
+            ),
+            payload: {
+                actorId: payload.actorId as any,
+                actorName: payload.actorName,
+                followerIds: payload.followerIds as any,
+                kind: payload.kind,
+                entityId: payload.entityId as any,
+                title: payload.title,
+            },
+        };
+
+        this.emit(event);
+    }
+
+    /**
+     * Helper to emit follow.started event (someone started following a user/org).
+     */
+    emitFollowStarted(payload: {
+        recipientId: string;
+        actorId: string;
+    }): void {
+        const event: NotificationEvent = {
+            eventName: 'follow.started',
+            idempotencyKey: generateIdempotencyKey(
+                'follow.started',
+                `${payload.actorId}:${payload.recipientId}`
+            ),
+            payload: {
+                recipientId: payload.recipientId as any,
+                actorId: payload.actorId as any,
+            },
+        };
+
+        this.emit(event);
+    }
 }
 
 // Export singleton instance

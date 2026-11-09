@@ -6,6 +6,7 @@ import GigApplication from '../models/GigApplication';
 import SavedGig from '../models/SavedGig';
 import User from '../models/User';
 import { notificationEvents } from '../notifications/event.emitter';
+import { notifyFollowersOfPost } from '../services/followNotify.client';
 import { geocodeLocation } from '../utils/geocode';
 import { normalizeRole, visiblePosterRolesFor, canApply, posterRoleFor } from '../utils/roleVisibility';
 import { artistSnapshotExtras } from '../utils/artistSnapshot';
@@ -22,6 +23,14 @@ const sendResponse = (res: Response, status: number, data: any = null, message: 
 export interface AuthRequest extends Request {
     user?: any; // To be typed properly with Auth middleware definition
 }
+
+// Best display name for the "X just posted a gig" follower notification — prefer
+// the brand/organization name, fall back to the poster's display name.
+const followActorName = (snap: any): string | undefined => {
+    if (!snap) return undefined;
+    if (snap.organizationName && snap.organizationName !== 'TBD') return snap.organizationName;
+    return snap.displayName || undefined;
+};
 
 // @desc    Get all gigs
 // @route   GET /v1/gigs
@@ -367,6 +376,18 @@ export const createGig = async (req: AuthRequest, res: Response, next: NextFunct
         await GigStats.create({
             gigId: newGig._id
         });
+
+        // Notify the organizer's followers when a gig is published on creation.
+        // Fire-and-forget; never blocks or fails the create.
+        if (newGig.status === 'published') {
+            notifyFollowersOfPost({
+                organizerId: String(organizerId),
+                kind: 'gig',
+                entityId: String(newGig._id),
+                title: newGig.title,
+                actorName: followActorName(organizerSnapshot),
+            });
+        }
 
         sendResponse(res, 201, newGig, 'Gig created successfully');
     } catch (err: any) {
@@ -807,10 +828,25 @@ export const updateGig = async (req: AuthRequest, res: Response, next: NextFunct
             if (geo) req.body.location.geo = geo;
         }
 
+        // Capture the pre-update status so we only fan out on the draft→published
+        // transition (first publish), not on edits to an already-published gig.
+        const wasPublished = gig.status === 'published';
+
         const updatedGig = await Gig.findByIdAndUpdate(gigId, req.body, {
             new: true,
             runValidators: true
         });
+
+        // Notify the organizer's followers when a draft gig is published via update.
+        if (updatedGig && !wasPublished && updatedGig.status === 'published') {
+            notifyFollowersOfPost({
+                organizerId: String(organizerId),
+                kind: 'gig',
+                entityId: String(updatedGig._id),
+                title: updatedGig.title,
+                actorName: followActorName(updatedGig.organizerSnapshot),
+            });
+        }
 
         sendResponse(res, 200, updatedGig, 'Gig updated successfully');
     } catch (err: any) {
