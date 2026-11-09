@@ -205,11 +205,21 @@ export function mapComposerToEventDoc(b: any, user: any, userId: string): Compos
 
   const languages = Array.isArray(b.languages) ? b.languages.filter(Boolean) : [];
   const status = b.status || 'live';
+  const isDraft = status === 'draft';
   const locType = b.location?.kind === 'online' ? 'online' : 'physical';
 
+  // Drafts may be saved mid-flow, before the host has typed a title or description.
+  // Both are required:true on the schema, so fall back to a placeholder for DRAFTS
+  // ONLY — a live (published) event is untouched and still fails validation without
+  // real values, exactly as before. The host overwrites these when they resume.
+  const draftTitle = isDraft ? ((b.title && String(b.title).trim()) || 'Untitled event') : b.title;
+  const draftDescription = isDraft
+    ? ((b.about && String(b.about).trim()) || (String(b.title || '').trim() || 'Untitled event'))
+    : b.about;
+
   const doc: Record<string, any> = {
-    title: b.title,
-    description: b.about,            // legacy name (feed/search read this)
+    title: draftTitle,
+    description: draftDescription,   // legacy name (feed/search read this)
     about: b.about,                  // new name (detail UI reads this)
     tagline: b.tagline,
     whatToExpect: b.whatToExpect,
