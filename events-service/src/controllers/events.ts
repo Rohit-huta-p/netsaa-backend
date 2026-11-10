@@ -15,6 +15,7 @@ import { mapComposerToEventDoc, buildComposerUpdate, isComposerPatch } from '../
 import { notifyFollowersOfPost } from '../services/followNotify.client';
 import { isCreativeLeadRole } from '../utils/posterRole';
 import { escapeRegex } from '../utils/escapeRegex';
+import { expandCityAliases } from '../utils/cityAliases';
 
 // Best display name for the "X just posted an event" follower notification —
 // prefer the organization/brand name, fall back to the host's display name.
@@ -56,14 +57,15 @@ export const getEvents = async (req: Request, res: Response, next: NextFunction)
     if (eventType) query.eventType = { $in: String(eventType).split(',').filter(Boolean) };
     // City — comma-separated → any-of match (multi-select location filter). Stored
     // city is free-text Title Case (e.g. "Pune") while the board sends lowercase
-    // slugs, so an exact match missed everything — use a case-insensitive regex,
-    // mirroring the `category` approach below. A single value still matches (a
-    // one-element $in).
+    // slugs, so an exact match missed everything — use a case-insensitive regex.
+    // expandCityAliases also maps a slug to its alternate spellings (e.g.
+    // 'bangalore' → ['bangalore','bengaluru']), so a record stored under either
+    // name matches; it trims and drops blanks, so a single value still matches
+    // (a one-element $in).
     if (city) {
       const cityPatterns = String(city)
         .split(',')
-        .map((c) => c.trim())
-        .filter(Boolean)
+        .flatMap((c) => expandCityAliases(c))
         .map((c) => new RegExp(`^${escapeRegex(c)}$`, 'i'));
       if (cityPatterns.length) query['location.city'] = { $in: cityPatterns };
     }
