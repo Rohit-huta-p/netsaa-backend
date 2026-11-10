@@ -1,4 +1,3 @@
-import { buildGigsVisibility } from '../../permissions/gigs.visibility';
 import {
     GigSearchFilters,
     GigSearchHardFilters,
@@ -41,9 +40,17 @@ export function normalizeGigFilters(rawFilters: any): GigSearchFilters {
         hardFilters.gigType = rawFilters.gigType;
     }
 
-    // City (ignore if 'any')
-    if (rawFilters.city && rawFilters.city !== 'any') {
-        hardFilters.city = rawFilters.city;
+    // City — accept a comma-separated multi-city string ("pune,mumbai") or an
+    // array. Split → trimmed, non-empty, dropping the 'any'/'remote' sentinels.
+    // Stored as cities[] and applied downstream as a case-insensitive any-of
+    // match on location.city (mirrors the events getEvents fix). 'remote' is
+    // handled via remoteOnly, not here.
+    const rawCity = rawFilters.cities ?? rawFilters.city;
+    if (rawCity != null && rawCity !== 'any') {
+        const cities = (Array.isArray(rawCity) ? rawCity : String(rawCity).split(','))
+            .map((c: any) => String(c).trim())
+            .filter((c: string) => c && c.toLowerCase() !== 'any' && c.toLowerCase() !== 'remote');
+        if (cities.length) hardFilters.cities = cities;
     }
 
     // Remote Only
@@ -138,39 +145,9 @@ export function normalizeGigFilters(rawFilters: any): GigSearchFilters {
     };
 }
 
-/**
- * Builds the Atlas Search filter clauses for Gigs.
- * Enforces mandatory permissions via helper.
- */
-export const buildGigsFilters = (filters: Record<string, any>) => {
-    const must: any[] = [];
-    const should: any[] = [];
-
-    // Mandatory Permissions via Helper
-    const { filter: visibilityFilter } = buildGigsVisibility();
-    const filter = [...visibilityFilter];
-
-    // --- User Filters ---
-
-    // City
-    if (filters.city) {
-        must.push({
-            text: {
-                query: filters.city,
-                path: 'city',
-            },
-        });
-    }
-
-    // Artist Type
-    if (filters.artistType) {
-        must.push({
-            text: {
-                query: filters.artistType,
-                path: 'artistType',
-            },
-        });
-    }
-
-    return { must, should, filter };
-};
+// NOTE: a second, dead `buildGigsFilters` once lived here (it applied only city
+// as a top-level `text` path:'city' plus artistType). It was never imported —
+// the live filter builder is `buildGigsFilterClauses` in
+// infra/search/pipelines/gigs.pipeline.ts. Removed to kill the trap of "fixing"
+// the wrong builder (which already reads location.city / experienceLevel /
+// minCompensation / remoteOnly).

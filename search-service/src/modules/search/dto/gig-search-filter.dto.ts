@@ -14,6 +14,10 @@ export interface GigSearchHardFilters {
     experienceLevel?: string[];
     gigType?: string[];
     city?: string;
+    // Multi-city (any-of). The board sends a comma-separated `city` string;
+    // normalizeGigFilters splits it into cities[], applied as a case-insensitive
+    // regex $in on location.city downstream.
+    cities?: string[];
     remoteOnly?: boolean;
     minCompensation?: number;
     compensationModel?: string[];
