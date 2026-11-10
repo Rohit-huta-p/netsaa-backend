@@ -230,12 +230,29 @@ export const buildGigsPipeline = (
         {
             $addFields: {
                 score: { $meta: 'searchScore' },
+                // Computed sort keys (consumed by buildGigsSortStage, spliced in
+                // before $facet). _sortPay = the gig's top stated figure so range
+                // gigs sort by their ceiling; _sortDate = publishedAt or, when a
+                // published gig has none, createdAt. Both are optional on the Gig
+                // model, so they're derived here rather than sorted on raw paths
+                // that the $project below would drop. $max/$ifNull yield null when
+                // nothing is set → those gigs sink to the bottom under DESC.
+                _sortPay: {
+                    $max: [
+                        '$compensation.amount',
+                        '$compensation.maxAmount',
+                        '$compensation.minAmount',
+                    ],
+                },
+                _sortDate: { $ifNull: ['$publishedAt', '$createdAt'] },
             },
         },
         {
             $project: {
                 _id: 1,
                 score: 1,
+                _sortPay: 1,
+                _sortDate: 1,
             },
         },
         {
