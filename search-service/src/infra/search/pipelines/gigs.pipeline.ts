@@ -1,6 +1,7 @@
 import { buildGigsRankingClauses } from '../../../ranking/gigs.rank';
 import { GigSearchHardFilters } from '../../../modules/search/dto/gig-search-filter.dto';
 import { escapeRegex } from '../../../utils/escapeRegex';
+import { expandCityAliases } from '../../../utils/cityAliases';
 
 /**
  * Builds the compound.filter clauses for Gigs Atlas Search.
@@ -173,11 +174,16 @@ export const buildGigsPipeline = (
     // so it mirrors the events getEvents regex-$in fix and is robust to the
     // slug-vs-stored-case mismatch. The $facet $count below runs AFTER this stage,
     // so totals stay correct.
+    // Expand each slug to its city-alias set (e.g. 'bangalore' -> ['bangalore',
+    // 'bengaluru']) so the anchored, case-insensitive match finds records stored
+    // under either spelling — the board sends the old slug while data is stored
+    // under the modern name. See utils/cityAliases.
     const cities = hardFilters?.cities ?? [];
+    const cityRegexes = cities
+        .flatMap((c) => expandCityAliases(c))
+        .map((c) => new RegExp(`^${escapeRegex(c)}$`, 'i'));
     const cityMatchStages =
-        cities.length > 0
-            ? [{ $match: { 'location.city': { $in: cities.map((c) => new RegExp(`^${escapeRegex(c)}$`, 'i')) } } }]
-            : [];
+        cityRegexes.length > 0 ? [{ $match: { 'location.city': { $in: cityRegexes } } }] : [];
 
     // Three-role wall (gigs only). Plain $match after $search — posterRole is
     // not in the Atlas index (same reason accountStatus was dropped from the
