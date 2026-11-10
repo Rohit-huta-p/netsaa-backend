@@ -166,17 +166,23 @@ export const buildGigsBoostClauses = (boostSignals?: GigSearchBoostSignals): any
  *
  * Sorting modes:
  * - relevance: Use search score (default, no override needed)
- * - newest: Sort by publishedAt DESC
- * - highestPay: Sort by compensation.amount DESC
+ * - newest: Sort by _sortDate DESC (publishedAt, falling back to createdAt)
+ * - highestPay: Sort by _sortPay DESC (max of amount / maxAmount / minAmount)
  *
- * Returns the sort stage to be added AFTER $search if needed
+ * Sorts on the computed keys that buildGigsPipeline adds in $addFields and keeps
+ * through the $project — NOT the raw paths. publishedAt and compensation.amount
+ * are both optional on the Gig model (range gigs carry min/maxAmount instead, and
+ * a gig may have no publishedAt), and the $project drops every field except the
+ * ones named, so sorting on the raw paths was a silent no-op. gigs.search.ts
+ * splices this stage in right before $facet (after the $project), so the keys are
+ * present. Missing keys sort last under DESC (negotiable/undated gigs sink).
  */
 export const buildGigsSortStage = (sortMode?: GigSearchSortMode): any | null => {
     switch (sortMode) {
         case 'newest':
             return {
                 $sort: {
-                    publishedAt: -1,
+                    _sortDate: -1,
                     score: -1, // Secondary sort by relevance
                 },
             };
@@ -184,7 +190,7 @@ export const buildGigsSortStage = (sortMode?: GigSearchSortMode): any | null => 
         case 'highestPay':
             return {
                 $sort: {
-                    'compensation.amount': -1,
+                    _sortPay: -1,
                     score: -1, // Secondary sort by relevance
                 },
             };
