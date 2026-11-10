@@ -1,5 +1,6 @@
 import { buildGigsRankingClauses } from '../../../ranking/gigs.rank';
 import { GigSearchHardFilters } from '../../../modules/search/dto/gig-search-filter.dto';
+import { escapeRegex } from '../../../utils/escapeRegex';
 
 /**
  * Builds the compound.filter clauses for Gigs Atlas Search.
@@ -76,33 +77,37 @@ export function buildGigsFilterClauses(hardFilters?: GigSearchHardFilters): any[
         });
     }
 
-    // city (text match - single value). Gig stores the city at location.city,
-    // not a top-level `city`, so filtering path 'city' never matched.
-    if (hardFilters.city) {
-        filterClauses.push({
-            text: {
-                path: 'location.city',
-                query: hardFilters.city,
-            },
-        });
-    }
+    // city — handled as a post-$search $match (case-insensitive any-of regex on
+    // location.city) in buildGigsPipeline, mirroring the events getEvents fix.
+    // Not an Atlas filter clause here: stored city is Title-Case while the board
+    // sends lowercase slugs, and multi-city needs anchored case-insensitive OR.
 
-    // remoteOnly (equals - boolean)
+    // remoteOnly (equals - boolean). The Gig model stores the flag at
+    // location.isRemote (NOT a top-level remoteOnly), so the old path matched
+    // nothing. FE keeps remote mutually exclusive with city.
     if (hardFilters.remoteOnly === true) {
         filterClauses.push({
             equals: {
-                path: 'remoteOnly',
+                path: 'location.isRemote',
                 value: true,
             },
         });
     }
 
-    // compensation.amount >= minCompensation (range)
+    // Minimum compensation. A gig qualifies if ANY stated figure reaches the
+    // floor: fixed `amount`, or a range's `maxAmount`/`minAmount`. The old clause
+    // used only compensation.amount, so range gigs (amount unset) were dropped.
+    // Purely-negotiable gigs with no figures still fall out (no number to compare).
     if (typeof hardFilters.minCompensation === 'number' && hardFilters.minCompensation > 0) {
+        const floor = hardFilters.minCompensation;
         filterClauses.push({
-            range: {
-                path: 'compensation.amount',
-                gte: hardFilters.minCompensation,
+            compound: {
+                should: [
+                    { range: { path: 'compensation.amount', gte: floor } },
+                    { range: { path: 'compensation.maxAmount', gte: floor } },
+                    { range: { path: 'compensation.minAmount', gte: floor } },
+                ],
+                minimumShouldMatch: 1,
             },
         });
     }
@@ -163,6 +168,17 @@ export const buildGigsPipeline = (
     const rankingClauses = buildGigsRankingClauses(query);
     const filterClauses = buildGigsFilterClauses(hardFilters);
 
+    // City — case-insensitive any-of match on the stored (Title-Case)
+    // location.city. Applied as a post-$search $match (not an Atlas filter clause)
+    // so it mirrors the events getEvents regex-$in fix and is robust to the
+    // slug-vs-stored-case mismatch. The $facet $count below runs AFTER this stage,
+    // so totals stay correct.
+    const cities = hardFilters?.cities ?? [];
+    const cityMatchStages =
+        cities.length > 0
+            ? [{ $match: { 'location.city': { $in: cities.map((c) => new RegExp(`^${escapeRegex(c)}$`, 'i')) } } }]
+            : [];
+
     // Three-role wall (gigs only). Plain $match after $search — posterRole is
     // not in the Atlas index (same reason accountStatus was dropped from the
     // search MUST in 28455eb). Legacy unstamped gigs count as creative_lead posts.
@@ -197,6 +213,7 @@ export const buildGigsPipeline = (
     return [
         searchStage,
         ...wallStages,
+        ...cityMatchStages,
         {
             $lookup: {
                 from: 'users',
