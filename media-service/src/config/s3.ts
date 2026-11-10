@@ -19,6 +19,12 @@ export const s3Client = new S3Client({
         accessKeyId: env.aws.accessKeyId,
         secretAccessKey: env.aws.secretAccessKey,
     },
+    // AWS SDK ≥3.729 enables flexible checksums by default (WHEN_SUPPORTED). For a
+    // presigned PutObject that bakes an `x-amz-checksum-crc32` into the URL computed
+    // over the (empty) body at sign time (= AAAAAA==), so the real upload's bytes
+    // never match and S3 rejects the PUT with a CRC32 mismatch. Only add a checksum
+    // when the operation requires one → presigned PUT URLs stay checksum-free.
+    requestChecksumCalculation: 'WHEN_REQUIRED',
 });
 
 // ============================================================
