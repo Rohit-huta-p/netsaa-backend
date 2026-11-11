@@ -18,7 +18,6 @@
  */
 
 import mongoose from 'mongoose';
-import crypto from 'crypto';
 import Notification, { INotification } from './notification.model';
 import { NotificationPayload } from './notification.factory';
 
@@ -65,29 +64,7 @@ class NotificationService {
         payload: NotificationPayload,
         idempotencyKey: string
     ): Promise<INotification> {
-        // Generate a deterministic hash from the idempotency key
-        // This ensures the same event never creates duplicate notifications
-        const idempotencyHash = this.generateIdempotencyHash(idempotencyKey);
-
-        // Check if notification already exists
-        const existing = await Notification.findOne({
-            userId: payload.userId,
-            type: payload.type,
-            subtype: payload.subtype,
-            entityId: payload.entityId,
-            createdAt: {
-                // Only check recent notifications (last 7 days) for performance
-                $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
-            },
-        });
-
-        if (existing) {
-            // Idempotency: return existing notification without creating duplicate
-            return existing;
-        }
-
-        // Create new notification
-        const notification = await Notification.create({
+        const doc = {
             userId: payload.userId,
             actorId: payload.actorId,
             type: payload.type,
@@ -98,10 +75,33 @@ class NotificationService {
             entityId: payload.entityId,
             data: payload.data,
             channel: payload.channel,
-            readAt: undefined, // Unread by default
-        });
+            idempotencyKey,
+        };
 
-        return notification;
+        try {
+            // Atomic upsert on the unique idempotencyKey.
+            // $setOnInsert means: if the doc already exists, do nothing (return it);
+            // if it doesn't exist, insert it. new:false returns the pre-update doc
+            // (null when just inserted).
+            const existing = await Notification.findOneAndUpdate(
+                { idempotencyKey },
+                { $setOnInsert: doc },
+                { upsert: true, new: false }
+            );
+
+            if (existing) return existing;
+
+            // Just inserted — fetch to get the timestamped document.
+            const created = await Notification.findOne({ idempotencyKey });
+            return created!;
+        } catch (err: any) {
+            // E11000: concurrent upsert race; return whichever doc won.
+            if (err.code === 11000) {
+                const existing = await Notification.findOne({ idempotencyKey });
+                if (existing) return existing;
+            }
+            throw err;
+        }
     }
 
     /**
@@ -332,17 +332,6 @@ class NotificationService {
         return counts;
     }
 
-    // ============================================================================
-    // PRIVATE HELPER METHODS
-    // ============================================================================
-
-    /**
-     * Generate a deterministic hash from an idempotency key
-     * This is used to prevent duplicate notifications
-     */
-    private generateIdempotencyHash(key: string): string {
-        return crypto.createHash('sha256').update(key).digest('hex');
-    }
 }
 
 // Export singleton instance

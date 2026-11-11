@@ -4,6 +4,52 @@ import { joinConversation, leaveConversation } from './socket.rooms';
 import { getIO } from './socket.instance';
 import Conversation from '../connections/conversations.model';
 
+// ─── Discussion access check ─────────────────────────────────────────────────
+// Calls the owning service to validate whether a given user may join a
+// discussion room. Best-effort: deny on timeout or service-down (safe default).
+
+const gigsServiceUrl  = () => process.env.GIGS_SERVICE_URL  || 'http://localhost:5002';
+const eventsServiceUrl = () => process.env.EVENTS_SERVICE_URL || 'http://localhost:5010';
+
+async function checkDiscussionAccess(
+    collectionType: string,
+    topicId: string,
+    userId: string
+): Promise<boolean> {
+    const token = process.env.INTERNAL_SERVICE_TOKEN || '';
+    if (!token) {
+        console.warn('[discussion] INTERNAL_SERVICE_TOKEN not set — allowing discussion join');
+        return true;
+    }
+
+    let url: string;
+    if (collectionType === 'gig') {
+        url = `${gigsServiceUrl()}/internal/discussion/gig/${topicId}?userId=${userId}`;
+    } else if (collectionType === 'event') {
+        url = `${eventsServiceUrl()}/internal/discussion/event/${topicId}?userId=${userId}`;
+    } else {
+        return true; // unknown type: allow
+    }
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 3000);
+    try {
+        const res = await fetch(url, {
+            headers: { Authorization: `Bearer ${token}` },
+            signal: controller.signal,
+        });
+        if (!res.ok) return false;
+        const data = await res.json() as { canJoin: boolean };
+        return data.canJoin === true;
+    } catch {
+        console.warn(`[discussion] access check timed out or failed for ${collectionType}:${topicId} — denying`);
+        return false;
+    } finally {
+        clearTimeout(timer);
+    }
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 export const handleMessagingEvents = (socket: Socket, io: Server) => {
     const user = (socket.data as SocketData).user;
     if (!user) return;
@@ -30,14 +76,23 @@ export const handleMessagingEvents = (socket: Socket, io: Server) => {
         socket.to(`conversation:${conversationId}`).emit(SOCKET_EVENTS.TYPING.STOP, conversationId, user._id);
     });
 
-    // Discussion Support
-    socket.on(SOCKET_EVENTS.DISCUSSION.JOIN, (payload: { collectionType: string, topicId: string }) => {
+    // Discussion Support — gate on content visibility before joining the room.
+    socket.on(SOCKET_EVENTS.DISCUSSION.JOIN, async (payload: { collectionType: string, topicId: string }) => {
         const { collectionType, topicId } = payload;
-        if (collectionType && topicId) {
-            const roomName = `discussion:${collectionType}:${topicId}`;
-            // console.log(`Joining discussion room: ${roomName}`);
-            socket.join(roomName);
+        if (!collectionType || !topicId) return;
+
+        const canJoin = await checkDiscussionAccess(
+            collectionType,
+            topicId,
+            String(user._id)
+        );
+
+        if (!canJoin) {
+            socket.emit(SOCKET_EVENTS.ERROR, { message: 'Not authorized to join this discussion' });
+            return;
         }
+
+        socket.join(`discussion:${collectionType}:${topicId}`);
     });
 };
 

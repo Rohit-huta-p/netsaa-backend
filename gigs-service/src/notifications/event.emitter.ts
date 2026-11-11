@@ -1,60 +1,32 @@
 /**
- * Event Emitter for Gigs Service Notifications
- * 
- * Simplified event emitter for gigs-service that logs events.
- * In production, this should publish to a message queue (Redis, RabbitMQ, etc.)
- * 
+ * Gigs-service notification event emitter
+ *
+ * Builds typed notification events and delivers them to the users-service
+ * BullMQ queue via the internal HTTP API. Replaces the old console.log stub.
+ *
  * Design principles:
- * - Fire-and-forget: Never block business logic
- * - Fail-safe: Errors are logged but never thrown
- * - Type-safe: Uses strict payload shapes
+ * - Fire-and-forget: callers never await; failures are logged, never thrown
+ * - Type-safe: payload shapes match what notification.factory.ts expects
+ * - Idempotent: idempotency key format mirrors users-service convention
+ *   (`${eventName}:${primaryEntityId}:${timestamp}`)
  */
 
-import { Types } from 'mongoose';
+import { enqueueNotificationEvent } from './notification.client';
 
-/**
- * Event Emitter Class
- * Currently logs events - should be connected to message queue in production
- */
 class NotificationEventEmitter {
-    /**
-     * Emit a notification event
-     * Fire-and-forget operation that never blocks
-     */
-    private emit(eventName: string, payload: any, idempotencyKey: string): void {
-        // Fire-and-forget: Don't await, don't block
-        this.publishEvent(eventName, payload, idempotencyKey).catch((error) => {
-            console.error('[NotificationEventEmitter] Failed to publish event:', {
+    private emit(eventName: string, payload: Record<string, unknown>, idempotencyKey: string): void {
+        enqueueNotificationEvent({ eventName, idempotencyKey, payload }).catch((err) => {
+            console.error('[NotificationEventEmitter] Failed to enqueue event:', {
                 eventName,
-                error: error.message,
+                error: err?.message || err,
             });
         });
     }
 
-    /**
-     * Internal method to publish event
-     * This is async but should never be awaited by callers
-     */
-    private async publishEvent(eventName: string, payload: any, idempotencyKey: string): Promise<void> {
-        // TODO: In production, publish to Redis/RabbitMQ/etc
-        // For now, just log the event
-        console.log('[NotificationEventEmitter] Event:', {
-            eventName,
-            idempotencyKey,
-            payload,
-        });
+    private key(eventName: string, entityId: string): string {
+        return `${eventName}:${entityId}:${Date.now()}`;
     }
 
-    /**
-     * Helper to generate idempotency keys
-     */
-    private generateIdempotencyKey(eventName: string, primaryEntityId: string): string {
-        return `${eventName}:${primaryEntityId}:${Date.now()}`;
-    }
-
-    /**
-     * Emit gig.application.received event
-     */
     emitGigApplicationReceived(payload: {
         gigId: string;
         applicationId: string;
@@ -64,14 +36,11 @@ class NotificationEventEmitter {
     }): void {
         this.emit(
             'gig.application.received',
-            payload,
-            this.generateIdempotencyKey('gig.application.received', payload.applicationId)
+            payload as unknown as Record<string, unknown>,
+            this.key('gig.application.received', payload.applicationId)
         );
     }
 
-    /**
-     * Emit gig.application.status.changed event
-     */
     emitGigApplicationStatusChanged(payload: {
         gigId: string;
         applicationId: string;
@@ -83,17 +52,11 @@ class NotificationEventEmitter {
     }): void {
         this.emit(
             'gig.application.status.changed',
-            payload,
-            this.generateIdempotencyKey(
-                'gig.application.status.changed',
-                `${payload.applicationId}:${payload.newStatus}`
-            )
+            payload as unknown as Record<string, unknown>,
+            this.key('gig.application.status.changed', `${payload.applicationId}:${payload.newStatus}`)
         );
     }
 
-    /**
-     * Emit gig.cancelled event
-     */
     emitGigCancelled(payload: {
         gigId: string;
         gigOwnerId: string;
@@ -103,11 +66,10 @@ class NotificationEventEmitter {
     }): void {
         this.emit(
             'gig.cancelled',
-            payload,
-            this.generateIdempotencyKey('gig.cancelled', payload.gigId)
+            payload as unknown as Record<string, unknown>,
+            this.key('gig.cancelled', payload.gigId)
         );
     }
 }
 
-// Export singleton instance
 export const notificationEvents = new NotificationEventEmitter();

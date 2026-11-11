@@ -26,8 +26,7 @@ export const getNotifications = async (
     next: NextFunction
 ) => {
     try {
-        console.log("User: ", req.user);
-        const userId = req.user?._id;
+        const userId = req.user?.id;
 
         if (!userId) {
             return res.status(401).json({

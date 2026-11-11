@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import FollowsService from '../follows/follows.service';
-import { notificationEvents } from '../notifications';
+import { notificationEvents, enqueueNotificationEvent } from '../notifications';
 
 // Followers are notified in chunks so a single fan-out never builds an unbounded
 // number of notification payloads in one worker job (a popular organizer could
@@ -57,6 +57,33 @@ export async function notifyFolloweePosted(req: Request, res: Response): Promise
     } catch (err: any) {
         // Non-fatal for the caller (notifications are best-effort). Log and 500.
         console.error('[internalNotifications] notifyFolloweePosted failed:', err?.message || err);
+        res.status(500).json({ error: 'INTERNAL_ERROR' });
+    }
+}
+
+/**
+ * Generic enqueue endpoint. Called by gigs-service (and future services) to push
+ * a NotificationEvent directly onto the BullMQ queue in users-service.
+ *
+ * Contract (POST /internal/notifications/enqueue, requireServiceToken):
+ *   Full NotificationEvent shape: { eventName, idempotencyKey, payload: {...} }
+ */
+export async function enqueueEvent(req: Request, res: Response): Promise<void> {
+    try {
+        const event = req.body;
+
+        if (!event?.eventName || !event?.idempotencyKey) {
+            res.status(400).json({
+                error: 'BAD_REQUEST',
+                message: 'eventName and idempotencyKey are required',
+            });
+            return;
+        }
+
+        await enqueueNotificationEvent(event);
+        res.status(202).json({ ok: true });
+    } catch (err: any) {
+        console.error('[internalNotifications] enqueueEvent failed:', err?.message || err);
         res.status(500).json({ error: 'INTERNAL_ERROR' });
     }
 }

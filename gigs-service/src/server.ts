@@ -5,6 +5,7 @@ import connectDB from './config/db';
 import gigsRoutes from './routes/gigs';
 import requirementRoutes from './routes/requirements';
 import inviteRoutes from './routes/invites';
+import internalRoutes from './routes/internal';
 
 dotenv.config();
 
@@ -14,6 +15,9 @@ const app: Application = express();
 
 app.use(cors({ origin: ['http://localhost:8081', 'http://localhost:8085', 'https://netsaa.onrender.com', 'https://netsaa.com', 'https://www.netsaa.com'], credentials: true, allowedHeaders: ['Content-Type', 'Authorization'], exposedHeaders: ['Content-Type', 'Authorization'], methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', "PATCH"], optionsSuccessStatus: 200 }));
 app.use(express.json());
+
+// Internal service-to-service routes (no CORS, token-gated)
+app.use('/internal', internalRoutes);
 
 // API Versioning
 app.use('/v1', gigsRoutes);

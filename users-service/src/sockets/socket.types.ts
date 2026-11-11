@@ -60,6 +60,8 @@ export interface ClientToServerEvents {
     [SOCKET_EVENTS.CONVERSATION.LEAVE]: (conversationId: string) => void;
     [SOCKET_EVENTS.TYPING.START]: (conversationId: string) => void;
     [SOCKET_EVENTS.TYPING.STOP]: (conversationId: string) => void;
+    [SOCKET_EVENTS.PRESENCE.CHECK]: (payload: { userIds: string[] }) => void;
+    [SOCKET_EVENTS.DISCUSSION.JOIN]: (payload: { collectionType: string; topicId: string }) => void;
 }
 
 export interface InterServerEvents {

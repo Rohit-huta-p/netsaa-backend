@@ -51,6 +51,7 @@ export interface INotification extends Document {
     entityId?: mongoose.Types.ObjectId;
     data?: INotificationData;
     channel: INotificationChannel;
+    idempotencyKey?: string;
     readAt?: Date;
     createdAt: Date;
     updatedAt: Date;
@@ -142,6 +143,12 @@ const NotificationSchema: Schema = new Schema(
             type: Date,
             required: false,
         },
+        // Dedup key: set on insert, never updated. Sparse so older docs without it
+        // don't collide on the unique index.
+        idempotencyKey: {
+            type: String,
+            required: false,
+        },
     },
     {
         timestamps: true,
@@ -155,6 +162,10 @@ NotificationSchema.index({ userId: 1, createdAt: -1 });
 // Compound index for efficiently querying unread notifications
 // Used for unread count calculations and filtering unread notifications
 NotificationSchema.index({ userId: 1, readAt: 1 });
+
+// Sparse unique index for idempotent upserts.
+// Sparse means documents with no idempotencyKey (older records) are excluded.
+NotificationSchema.index({ idempotencyKey: 1 }, { unique: true, sparse: true });
 
 const Notification = mongoose.model<INotification>('Notification', NotificationSchema);
 
