@@ -2,6 +2,7 @@ import { Server, Socket } from 'socket.io';
 import { SocketData, SOCKET_EVENTS } from './socket.types';
 import { joinConversation, leaveConversation } from './socket.rooms';
 import { getIO } from './socket.instance';
+import Conversation from '../connections/conversations.model';
 
 export const handleMessagingEvents = (socket: Socket, io: Server) => {
     const user = (socket.data as SocketData).user;
@@ -53,10 +54,32 @@ export const emitNewMessage = (conversationId: string, message: any) => {
             // and emit it to their local sockets in the target room.
             // This ensures horizontal scaling works seamlessly.
             io.to(`conversation:${conversationId}`).emit(SOCKET_EVENTS.MESSAGE.NEW, message);
+
+            // Also nudge every participant's personal `user:<id>` room so a client sitting
+            // on the inbox LIST (which only joins `conversation:<id>` rooms for OPEN threads)
+            // can invalidate + refetch and move the row live. Fire-and-forget: a background
+            // lookup that never blocks or fails the message delivery above.
+            notifyConversationUpdated(io, conversationId);
         }
     } catch (err) {
         console.warn('Socket IO not initialized yet, skipping message emission');
     }
+};
+
+// Fire-and-forget fan-out of `conversation:updated` to each participant's `user:<id>` room.
+// `message:new` only reaches the `conversation:<id>` room (OPEN threads); this reaches
+// participants who are connected but not viewing the thread (e.g. sitting on the inbox list).
+const notifyConversationUpdated = (io: Server, conversationId: string) => {
+    Conversation.findById(conversationId)
+        .select('participants')
+        .lean()
+        .then((convo: any) => {
+            if (!convo?.participants) return;
+            for (const pid of convo.participants) {
+                io.to(`user:${pid.toString()}`).emit(SOCKET_EVENTS.CONVERSATION.UPDATED, { conversationId });
+            }
+        })
+        .catch((err: any) => console.warn('notifyConversationUpdated skipped:', err?.message));
 };
 
 export const emitMessageSeen = (conversationId: string, userId: string) => {
