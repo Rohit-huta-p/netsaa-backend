@@ -4,6 +4,10 @@ export const SOCKET_EVENTS = {
     CONVERSATION: {
         JOIN: 'conversation:join',
         LEAVE: 'conversation:leave',
+        // Emitted to each participant's `user:<id>` room when a conversation changes
+        // (e.g. a new message). Lets a client sitting on the inbox LIST — which only
+        // joins `conversation:<id>` rooms for OPEN threads — refresh the list live.
+        UPDATED: 'conversation:updated',
     },
     MESSAGE: {
         NEW: 'message:new',
@@ -32,6 +36,7 @@ export const SOCKET_EVENTS = {
 export interface ServerToClientEvents {
     [SOCKET_EVENTS.MESSAGE.NEW]: (message: any) => void;
     [SOCKET_EVENTS.MESSAGE.SEEN]: (payload: { conversationId: string, userId: string, seenAt: Date }) => void;
+    [SOCKET_EVENTS.CONVERSATION.UPDATED]: (payload: { conversationId: string }) => void;
     [SOCKET_EVENTS.TYPING.START]: (conversationId: string, userId: string) => void;
     [SOCKET_EVENTS.TYPING.STOP]: (conversationId: string, userId: string) => void;
     [SOCKET_EVENTS.PRESENCE.CHECK]: (payload: { userIds: string[] }) => void;
