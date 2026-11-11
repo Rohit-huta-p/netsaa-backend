@@ -55,12 +55,20 @@ export const handlePresenceConnection = (socket: Socket) => {
     });
 
     socket.on('disconnect', () => {
-        getConversationPartnerIds(userId)
-            .then(partnerIds => {
-                for (const pid of partnerIds) {
-                    socket.to(`user:${pid}`).emit(SOCKET_EVENTS.PRESENCE.OFFLINE, { userId });
-                }
-            })
-            .catch(err => console.warn('[presence] offline broadcast skipped:', err?.message));
+        // 5s grace period before broadcasting offline:
+        // - covers mobile reconnects (background → foreground typically < 2s)
+        // - covers multi-tab: if another socket still holds user:<userId>, skip entirely
+        setTimeout(() => {
+            const room = socket.nsp.adapter.rooms.get(`user:${userId}`);
+            if (room && room.size > 0) return; // still connected elsewhere
+
+            getConversationPartnerIds(userId)
+                .then(partnerIds => {
+                    for (const pid of partnerIds) {
+                        socket.nsp.to(`user:${pid}`).emit(SOCKET_EVENTS.PRESENCE.OFFLINE, { userId });
+                    }
+                })
+                .catch(err => console.warn('[presence] offline broadcast skipped:', err?.message));
+        }, 5000);
     });
 };
