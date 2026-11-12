@@ -157,17 +157,24 @@ export const getEvents = async (req: Request, res: Response, next: NextFunction)
     const total = await Event.countDocuments(query);
 
     const seatsMap = await seatsByEvent(events.map((e) => e._id));
-    // viewerContext for the signed-in user (route uses optionalAuth) — lets list cards show "you're going".
+    // viewerContext for the signed-in user (route uses optionalAuth) — lets list
+    // cards show "you're going" + hydrate the saved (bookmark) state.
     const viewerId = (req as AuthRequest).user?.id || (req as AuthRequest).user?._id;
     const regByEvent: Record<string, string> = {};
+    const savedSet = new Set<string>();
     if (viewerId) {
-      const myRegs = await EventRegistration.find({ userId: viewerId, eventId: { $in: events.map((e) => e._id) }, status: { $ne: 'cancelled' } }).select('eventId status').lean();
+      const eventIds = events.map((e) => e._id);
+      const myRegs = await EventRegistration.find({ userId: viewerId, eventId: { $in: eventIds }, status: { $ne: 'cancelled' } }).select('eventId status').lean();
       for (const r of myRegs as any[]) regByEvent[String(r.eventId)] = r.status;
+      // Which of these events the viewer has saved — so list bookmarks render filled
+      // and a save persists across refetches (previously always came back unsaved).
+      const mySaves = await SavedEvent.find({ userId: viewerId, eventId: { $in: eventIds } }).select('eventId').lean();
+      for (const sv of mySaves as any[]) savedSet.add(String(sv.eventId));
     }
     const data = events.map((e) => {
       const o = withLiveCapacity(e.toObject(), seatsMap[String(e._id)] ?? 0);
       const regStatus = regByEvent[String(e._id)];
-      o.viewerContext = { hasRegistered: !!regStatus, registrationStatus: regStatus ?? null };
+      o.viewerContext = { hasRegistered: !!regStatus, registrationStatus: regStatus ?? null, saved: savedSet.has(String(e._id)) };
       return o;
     });
 
