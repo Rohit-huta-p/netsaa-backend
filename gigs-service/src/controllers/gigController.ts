@@ -98,8 +98,26 @@ export const getGigs = async (req: Request, res: Response, next: NextFunction) =
 
         const total = await Gig.countDocuments(query);
 
+        // Per-viewer context: which of these gigs the signed-in viewer has saved, so
+        // the board's save bookmark loads filled and persists across refetches. Route
+        // is optionalAuth → guests get saved:false. Mirrors the SavedEvent hydration in
+        // the events list (viewerContext.saved).
+        const viewerId = (req as any).user?.id;
+        const savedSet = new Set<string>();
+        if (viewerId) {
+            const gigIds = gigs.map((g) => g._id);
+            const mySaves = await SavedGig.find({ userId: viewerId, gigId: { $in: gigIds } })
+                .select('gigId')
+                .lean();
+            for (const sv of mySaves as any[]) savedSet.add(String(sv.gigId));
+        }
+        const data = gigs.map((g) => ({
+            ...g.toObject(),
+            viewerContext: { saved: viewerId ? savedSet.has(String(g._id)) : false },
+        }));
+
         sendResponse(res, 200, {
-            gigs,
+            gigs: data,
             pagination: {
                 page: Number(page),
                 pageSize: limit,
