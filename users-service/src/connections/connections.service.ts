@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 import Connection from './connections.model';
 import Conversation from './conversations.model';
-import { notificationEvents } from '../notifications';
+import { notificationEvents, Notification, ConnectionSubtype } from '../notifications';
 import { ConnectionError } from './connections.errors';
 
 class ConnectionsService {
@@ -42,6 +42,32 @@ class ConnectionsService {
         return newConnection;
     }
 
+    /**
+     * Stamp the recipient's original "connection request" notification with its
+     * final outcome ('accepted' | 'rejected'). The notification card reads this
+     * off the row it already fetched, so the Accept/Decline CTAs clear on every
+     * surface — and after an app reload — with no extra lookup. Best-effort: a
+     * failure here must never block the accept/reject itself.
+     */
+    private async stampRequestNotification(
+        recipientId: mongoose.Types.ObjectId | string,
+        connectionId: string,
+        outcome: 'accepted' | 'rejected'
+    ) {
+        try {
+            await Notification.updateOne(
+                {
+                    userId: recipientId,
+                    subtype: ConnectionSubtype.REQUEST,
+                    'data.params.connectionId': connectionId,
+                },
+                { $set: { 'data.params.status': outcome } }
+            );
+        } catch (err) {
+            console.warn('[ConnectionsService] failed to stamp request notification', err);
+        }
+    }
+
     async acceptRequest(connectionId: string, currentUserId: string) {
         const session = await mongoose.startSession();
         session.startTransaction();
@@ -65,6 +91,7 @@ class ConnectionsService {
                     participants: { $all: [connection.requesterId, connection.recipientId] },
                 }).session(session);
                 await session.commitTransaction();
+                await this.stampRequestNotification(connection.recipientId, connectionId, 'accepted');
                 return { connection, conversation: existing };
             }
 
@@ -105,6 +132,9 @@ class ConnectionsService {
                 conversationId: conversation._id.toString(),
             });
 
+            // Resolve the recipient's original request row so its CTAs clear.
+            await this.stampRequestNotification(connection.recipientId, connectionId, 'accepted');
+
             return { connection, conversation };
         } catch (error) {
             await session.abortTransaction();
@@ -127,6 +157,7 @@ class ConnectionsService {
 
         // Idempotent: already rejected → return as-is so a stale client retry succeeds.
         if (connection.status === 'rejected') {
+            await this.stampRequestNotification(connection.recipientId, connectionId, 'rejected');
             return connection;
         }
 
@@ -137,6 +168,9 @@ class ConnectionsService {
 
         connection.status = 'rejected';
         await connection.save();
+
+        // Resolve the recipient's original request row so its CTAs clear.
+        await this.stampRequestNotification(connection.recipientId, connectionId, 'rejected');
 
         return connection;
     }
