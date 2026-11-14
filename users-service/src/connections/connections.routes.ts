@@ -7,6 +7,7 @@ const router = express.Router();
 router.post('/request', protect, ConnectionsController.sendConnectionRequest);
 router.patch('/:connectionId/accept', protect, ConnectionsController.acceptConnection);
 router.patch('/:connectionId/reject', protect, ConnectionsController.rejectConnection);
+router.patch('/:connectionId/withdraw', protect, ConnectionsController.withdrawConnection);
 router.patch('/:connectionId/block', protect, ConnectionsController.blockConnection);
 router.get('/requests/sent', protect, ConnectionsController.listSentRequests);
 router.get('/requests', protect, ConnectionsController.listRequests);
