@@ -19,6 +19,7 @@
  */
 
 import { Worker, Job } from 'bullmq';
+import User from '../models/User';
 import { getIO } from '../sockets/socket.instance';
 import { NotificationEvent } from './notification.events';
 import { notificationFactory } from './notification.factory';
@@ -82,6 +83,16 @@ async function deliverViaSocket(notification: any): Promise<boolean> {
             return false; // offline
         }
 
+        // Include the actor so the live card can render "{name} wants to connect"
+        // + avatar immediately, instead of the factory's name-less fallback until
+        // the next fetch. Mirrors the populate() the REST list uses.
+        const actorDoc = notification.actorId
+            ? await User.findById(notification.actorId).select('displayName profileImageUrl').lean()
+            : null;
+        const actor = actorDoc
+            ? { _id: actorDoc._id.toString(), displayName: actorDoc.displayName, profileImageUrl: actorDoc.profileImageUrl }
+            : null;
+
         io.to(roomName).emit('notification:new', {
             id: notification._id,
             type: notification.type,
@@ -89,6 +100,7 @@ async function deliverViaSocket(notification: any): Promise<boolean> {
             title: notification.title,
             body: notification.body,
             data: notification.data,
+            actor,
             createdAt: notification.createdAt,
         });
 
