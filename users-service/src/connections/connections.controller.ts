@@ -89,6 +89,34 @@ class ConnectionsController {
         }
     }
 
+    async withdrawConnection(req: AuthRequest, res: Response) {
+        try {
+            if (!req.user) {
+                return res.status(401).json({ success: false, message: 'Not authorized' });
+            }
+
+            const { connectionId } = req.params;
+            const currentUserId = req.user._id.toString();
+
+            const connection = await ConnectionsService.withdrawRequest(
+                connectionId,
+                currentUserId
+            );
+
+            return res.status(200).json({
+                success: true,
+                data: connection,
+            });
+        } catch (error: any) {
+            // Honor a ConnectionError's status (404 gone / 409 already-resolved /
+            // 403 not yours); fall back to 400 for anything unclassified.
+            return res.status(error?.status ?? 400).json({
+                success: false,
+                message: error.message,
+            });
+        }
+    }
+
     async blockConnection(req: AuthRequest, res: Response) {
         try {
             if (!req.user) {

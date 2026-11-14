@@ -21,6 +21,32 @@ class ConnectionsService {
             if (existingConnection.status === 'blocked') {
                 throw new ConnectionError('Unable to send request. You are blocked.', 403); // Generic message for privacy/safety
             }
+
+            // A previously DECLINED request must be re-sendable. reject() leaves the
+            // row in place as status:'rejected', and the {requesterId, recipientId}
+            // unique index means we can't just create a second doc — so revive THIS
+            // row into a fresh pending request (in whichever direction it's now being
+            // sent) and emit a new notification so the recipient actually sees it.
+            // Without this, a declined pair is permanently stuck: every re-send 409s
+            // and the recipient is never notified.
+            if (existingConnection.status === 'rejected') {
+                existingConnection.requesterId = requesterId as any;
+                existingConnection.recipientId = recipientId as any;
+                existingConnection.status = 'pending';
+                existingConnection.message = message; // undefined clears any stale declined note
+                await existingConnection.save();
+
+                notificationEvents.emitConnectionRequested({
+                    recipientId,
+                    actorId: requesterId,
+                    connectionId: existingConnection._id.toString(),
+                    message,
+                });
+
+                return existingConnection;
+            }
+
+            // pending → a live request already exists; accepted → already connected.
             throw new ConnectionError('Connection request already exists or you are already connected.', 409);
         }
 
@@ -171,6 +197,50 @@ class ConnectionsService {
 
         // Resolve the recipient's original request row so its CTAs clear.
         await this.stampRequestNotification(connection.recipientId, connectionId, 'rejected');
+
+        return connection;
+    }
+
+    /**
+     * The requester cancels their own still-pending outgoing request. Deletes the
+     * row entirely (so the pair is immediately re-sendable — no lingering doc to
+     * trip the {requesterId, recipientId} unique index) and clears the recipient's
+     * pending request notification. Only the requester may withdraw, and only while
+     * the request hasn't been accepted/blocked.
+     */
+    async withdrawRequest(connectionId: string, currentUserId: string) {
+        const connection = await Connection.findById(connectionId);
+
+        if (!connection) {
+            throw new ConnectionError('Connection request not found.', 404);
+        }
+
+        if (connection.requesterId.toString() !== currentUserId) {
+            throw new ConnectionError('You are not authorized to withdraw this request.', 403);
+        }
+
+        // Already connected → nothing to withdraw (remove the connection instead).
+        if (connection.status === 'accepted') {
+            throw new ConnectionError('You are already connected.', 409);
+        }
+        if (connection.status === 'blocked') {
+            throw new ConnectionError('This request can no longer be withdrawn.', 409);
+        }
+
+        // pending (normal) or rejected (defensive) → remove the row so a fresh
+        // request can be sent later with no leftover state.
+        await Connection.findByIdAndDelete(connectionId);
+
+        // Best-effort: drop the recipient's pending "connection request" notification
+        // so it doesn't linger as an actionable card for a request that's gone.
+        try {
+            await Notification.deleteMany({
+                subtype: ConnectionSubtype.REQUEST,
+                'data.params.connectionId': connectionId,
+            });
+        } catch (err) {
+            console.warn('[ConnectionsService] failed to clear request notification on withdraw', err);
+        }
 
         return connection;
     }
