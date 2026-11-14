@@ -13,6 +13,7 @@ import { shouldRevealMeetingLink } from '../utils/meetingLinkReveal';
 import { scheduleEventReminders } from '../services/reminderScheduler';
 import { mapComposerToEventDoc, buildComposerUpdate, isComposerPatch } from '../services/composerMapping';
 import { notifyFollowersOfPost } from '../services/followNotify.client';
+import { requestMediaCleanup, diffRemovedEventMedia, mediaRefs } from '../services/mediaCleanup.client';
 import { isCreativeLeadRole } from '../utils/posterRole';
 import { escapeRegex } from '../utils/escapeRegex';
 import { expandCityAliases } from '../utils/cityAliases';
@@ -531,6 +532,11 @@ export const updateEvent = async (req: Request, res: Response, next: NextFunctio
       { new: true, runValidators: true },
     );
 
+    // Fire-and-forget: delete S3/Mux media this edit removed or replaced.
+    if ('media' in update) {
+      requestMediaCleanup(diffRemovedEventMedia((event.media as any[]) || [], ((update as any).media as any[]) || []));
+    }
+
     res.status(200).json({
       meta: { status: 200, message: 'OK' },
       data: updated,
@@ -574,6 +580,9 @@ export const deleteEvent = async (req: Request, res: Response, next: NextFunctio
         errors: [{ message: 'Only the host can delete this event' }],
       });
     }
+
+    // Fire-and-forget: delete all of this event's media (S3 photos + Mux videos).
+    requestMediaCleanup(mediaRefs((event.media as any[]) || []));
 
     // Cascading delete
     await Promise.all([
