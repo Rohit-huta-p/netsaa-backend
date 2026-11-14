@@ -36,6 +36,14 @@ class ConnectionsService {
                 existingConnection.message = message; // undefined clears any stale declined note
                 await existingConnection.save();
 
+                // A re-send supersedes the old request: drop any prior request
+                // notification for this connection (the declined one, or a stale
+                // pending) so the recipient sees ONE fresh row, not a growing stack.
+                await Notification.deleteMany({
+                    subtype: ConnectionSubtype.REQUEST,
+                    'data.params.connectionId': existingConnection._id.toString(),
+                });
+
                 notificationEvents.emitConnectionRequested({
                     recipientId,
                     actorId: requesterId,
@@ -81,7 +89,7 @@ class ConnectionsService {
         outcome: 'accepted' | 'rejected'
     ) {
         try {
-            await Notification.updateOne(
+            await Notification.updateMany(
                 {
                     userId: recipientId,
                     subtype: ConnectionSubtype.REQUEST,

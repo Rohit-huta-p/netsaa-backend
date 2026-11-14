@@ -50,6 +50,7 @@ export interface ServerToClientEvents {
         title: string;
         body: string;
         data?: any;
+        actor?: { _id: string; displayName?: string; profileImageUrl?: string } | null;
         createdAt: Date;
     }) => void;
     [SOCKET_EVENTS.ERROR]: (error: { message: string }) => void;
