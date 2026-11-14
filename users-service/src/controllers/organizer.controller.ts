@@ -2,6 +2,7 @@ import { Response } from 'express';
 import Organizer from '../models/Organizer';
 import { AuthRequest } from '../middleware/auth';
 import { updateOrganizerSchema, containsForbiddenKeys } from '../validators/organizer.dto';
+import { diffRemovedOrganizerMedia, requestMediaCleanup } from '../media/mediaCleanup';
 
 /**
  * PATCH /api/organizers/me
@@ -94,6 +95,9 @@ export const patchMe = async (req: AuthRequest, res: Response) => {
             { $set: setFields },
             { new: true, runValidators: true }
         );
+
+        // Fire-and-forget: delete the S3 objects for any logo/photos removed or replaced.
+        requestMediaCleanup(diffRemovedOrganizerMedia(existing, setFields));
 
         // ── Rule 3: Audit log for category changes ──
         if (isCategoryChange) {

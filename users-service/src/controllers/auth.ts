@@ -10,6 +10,7 @@ import PasswordResetSession from '../models/PasswordResetSession';
 import { AuthRequest } from '../middleware/auth';
 import { registerSchema } from '../validators/register.dto';
 import { emailQueue } from '../email/email.queue';
+import { diffRemovedUserMedia, requestMediaCleanup } from '../media/mediaCleanup';
 
 export const checkEmail = async (req: Request, res: Response) => {
   try {
@@ -358,11 +359,22 @@ export const updateMe = async (req: AuthRequest, res: Response) => {
 
     console.log("AUTH CONTROLLER: updating fields:", updateFields);
 
+    // Snapshot the pre-update media so we can delete anything this save removes or
+    // replaces (only when the PATCH actually touches a media field).
+    const MEDIA_KEYS = ['profileImageUrl', 'coverImageUrl', 'galleryUrls', 'gallery', 'videoUrls', 'videoReels', 'featured'];
+    const touchesMedia = MEDIA_KEYS.some((k) => k in updateFields);
+    const beforeMedia = touchesMedia
+      ? await User.findById(req.user._id).select(MEDIA_KEYS.join(' ')).lean()
+      : null;
+
     const user = await User.findByIdAndUpdate(
       req.user._id,
       { $set: updateFields },
       { new: true, runValidators: true }
     ).select('-passwordHash');
+
+    // Fire-and-forget: delete the S3/Mux objects for media no longer referenced.
+    if (beforeMedia) requestMediaCleanup(diffRemovedUserMedia(beforeMedia, updateFields));
 
     console.log("AUTH CONTROLLER: updated user successfully");
     res.json(user);
