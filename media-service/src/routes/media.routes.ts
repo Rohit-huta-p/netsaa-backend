@@ -1,8 +1,10 @@
 import { Router } from 'express';
 import { requireAuth } from '../middleware/auth';
+import { requireInternal } from '../middleware/internalAuth';
 import { presignController } from '../controllers/media.presign.controller';
 import { videoUploadController, assetStatusController } from '../controllers/media.video.controller';
 import { muxWebhookController } from '../controllers/media.webhook.controller';
+import { cleanupController } from '../controllers/media.cleanup.controller';
 
 const router = Router();
 
@@ -42,6 +44,15 @@ router.get('/asset/:uploadId', requireAuth, assetStatusController);
  * itself can call it.
  */
 router.post('/webhooks/mux', muxWebhookController);
+
+/**
+ * POST /v1/media/internal/cleanup
+ *
+ * Delete media a user removed/replaced — images from S3, videos from Mux.
+ * Service-to-service only (INTERNAL_SERVICE_TOKEN), called by users-service /
+ * events-service from their update/delete flows. Not a user-facing route.
+ */
+router.post('/internal/cleanup', requireInternal, cleanupController);
 
 // ============================================================
 // HEALTH CHECK
