@@ -15,6 +15,7 @@ import { mapComposerToEventDoc, buildComposerUpdate, isComposerPatch } from '../
 import { notifyFollowersOfPost } from '../services/followNotify.client';
 import { requestMediaCleanup, diffRemovedEventMedia, mediaRefs } from '../services/mediaCleanup.client';
 import { isCreativeLeadRole } from '../utils/posterRole';
+import { organizationName } from '../utils/organizer';
 import { escapeRegex } from '../utils/escapeRegex';
 import { expandCityAliases } from '../utils/cityAliases';
 
@@ -310,6 +311,10 @@ export const getEventById = async (req: Request, res: Response, next: NextFuncti
 
     // Enrich organizerSnapshot from the organizer's live profile (avatar / verified / role).
     const organizer: any = await User.findById(event.organizerId).select('displayName profileImageUrl role kycStatus averageRating').lean();
+    // Heal the brand name from the live `organizers` collection: the stored snapshot
+    // froze it at create time as '' (req.user never carries organizationName). Prefer
+    // live → stored → '' so the brand shows on detail reads without waiting on a backfill.
+    const freshOrgName = await organizationName(event.organizerId);
     if (organizer) {
       eventObj.organizerSnapshot = {
         ...(eventObj.organizerSnapshot || {}),
@@ -318,6 +323,7 @@ export const getEventById = async (req: Request, res: Response, next: NextFuncti
         verified: organizer.kycStatus === 'approved',
         role: organizer.role,
         rating: organizer.averageRating ?? eventObj.organizerSnapshot?.rating,
+        organizationName: freshOrgName || eventObj.organizerSnapshot?.organizationName || '',
       };
     }
 
@@ -368,6 +374,11 @@ export const createEvent = async (req: Request, res: Response, next: NextFunctio
     if (!userId) {
       return res.status(401).json({ meta: { status: 401, message: 'Not authorized' }, data: null, errors: [] });
     }
+
+    // Brand/org name lives on the Organizer doc (shared DB), not User/JWT — resolve
+    // it once from the `organizers` collection. '' (not a sentinel) when unset so the
+    // UI falls back to the host's name. Reused for the snapshot write + follower notif.
+    const resolvedOrgName = (await organizationName(userId)) || '';
 
     // Detect shape: new composer payload has `about`, `capacity`, `startsAt`, or `registrationMode`.
     // Legacy payload has `description` + `schedule` directly.
@@ -421,7 +432,7 @@ export const createEvent = async (req: Request, res: Response, next: NextFunctio
           kind: 'event',
           entityId: String(event._id),
           title: event.title,
-          actorName: followActorNameFromUser(user),
+          actorName: resolvedOrgName || followActorNameFromUser(user),
         });
       }
 
@@ -443,6 +454,9 @@ export const createEvent = async (req: Request, res: Response, next: NextFunctio
     // money-from-spot) and persists the v4 embedded fields (spots, offers,
     // registration{door,questions}, people, lineup, bring, included, …).
     const { doc, scheduleReminders } = mapComposerToEventDoc(b, user, String(userId));
+    // The sync mapper can only see req.user (no brand name); stamp the resolved
+    // organizers-collection name onto the snapshot before persisting.
+    if (doc.organizerSnapshot) doc.organizerSnapshot.organizationName = resolvedOrgName;
     const event = await Event.create(doc);
 
     // Composer publishes immediately as 'live' — schedule reminders when it has a real date.
@@ -458,7 +472,7 @@ export const createEvent = async (req: Request, res: Response, next: NextFunctio
         kind: 'event',
         entityId: String(event._id),
         title: event.title,
-        actorName: followActorNameFromUser(user),
+        actorName: resolvedOrgName || followActorNameFromUser(user),
       });
     }
 
@@ -645,12 +659,13 @@ export const publishEvent = async (req: Request, res: Response, next: NextFuncti
 
     // Notify the host's followers that a new event is live (Creative Leads only).
     if (!wasLive && isCreativeLeadRole((req as AuthRequest).user?.role)) {
+      const actorOrgName = await organizationName(event.organizerId);
       notifyFollowersOfPost({
         organizerId: String(event.organizerId),
         kind: 'event',
         entityId: String(event._id),
         title: event.title,
-        actorName: followActorNameFromUser((req as AuthRequest).user),
+        actorName: actorOrgName || followActorNameFromUser((req as AuthRequest).user),
       });
     }
 
