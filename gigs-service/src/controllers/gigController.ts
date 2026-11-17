@@ -8,6 +8,7 @@ import User from '../models/User';
 import { notificationEvents } from '../notifications/event.emitter';
 import { notifyFollowersOfPost } from '../services/followNotify.client';
 import { geocodeLocation } from '../utils/geocode';
+import { organizationName } from '../utils/organizer';
 import { normalizeRole, visiblePosterRolesFor, canApply, posterRoleFor } from '../utils/roleVisibility';
 import { artistSnapshotExtras } from '../utils/artistSnapshot';
 
@@ -297,9 +298,15 @@ export const getGigById = async (req: Request, res: Response, next: NextFunction
                 status: { $in: ['published', 'closed', 'expired'] },
             });
 
+            // Heal the brand name from the live `organizers` collection: the stored
+            // snapshot froze it at post time (and legacy posts stored the "TBD"
+            // sentinel). Prefer live → real stored name → "" (never "TBD", which the
+            // producer card would otherwise render literally as the brand).
+            const freshOrgName = await organizationName(organizer._id);
+            const storedOrgName = organizerSnapshot.organizationName;
             organizerSnapshot = {
                 displayName: organizer.displayName || organizerSnapshot.displayName,
-                organizationName: organizerSnapshot.organizationName, // Keep original or fetch if stored in User
+                organizationName: freshOrgName || (storedOrgName && storedOrgName !== 'TBD' ? storedOrgName : ''),
                 profileImageUrl: organizer.profileImageUrl || organizerSnapshot.profileImageUrl,
                 rating: organizer.cached?.averageRating || organizerSnapshot.rating,
                 testimonials: organizer.testimonials || organizerSnapshot.testimonials || [],
@@ -366,9 +373,14 @@ export const createGig = async (req: AuthRequest, res: Response, next: NextFunct
         const organizerId = req.user.id;
         // Three-role wall: stamp the poster's tier — decides who sees/applies to this gig.
         const posterRole = posterRoleFor(normalizeRole(req.user.role));
+        // The brand/organization name lives on the Organizer doc (shared DB), not
+        // on the User doc or in the JWT — so resolve it from the `organizers`
+        // collection. Empty string (not "TBD") when unset, so the UI falls back to
+        // displayName instead of rendering a sentinel as the brand.
+        const resolvedOrgName = await organizationName(organizerId);
         const organizerSnapshot = {
             displayName: req.user.displayName || req.user.name || 'Organizer',
-            organizationName: req.user.organizationName || 'TBD',
+            organizationName: resolvedOrgName || '',
             profileImageUrl: req.user.profileImageUrl || '',
             rating: 0, // Default or fetch
             testimonials: (req.user as any)?.testimonials || []
