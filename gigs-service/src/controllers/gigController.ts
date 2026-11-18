@@ -4,6 +4,7 @@ import Gig from '../models/Gig';
 import GigStats from '../models/GigStats';
 import GigApplication from '../models/GigApplication';
 import SavedGig from '../models/SavedGig';
+import GigComment from '../models/GigComment';
 import User from '../models/User';
 import { notificationEvents } from '../notifications/event.emitter';
 import { notifyFollowersOfPost } from '../services/followNotify.client';
@@ -11,6 +12,7 @@ import { geocodeLocation } from '../utils/geocode';
 import { organizationName } from '../utils/organizer';
 import { normalizeRole, visiblePosterRolesFor, canApply, posterRoleFor } from '../utils/roleVisibility';
 import { artistSnapshotExtras } from '../utils/artistSnapshot';
+import { tallyGigDiscussions } from '../utils/discussionTally';
 
 // Helper for standard response
 const sendResponse = (res: Response, status: number, data: any = null, message: string = 'OK', errors: any[] = []) => {
@@ -150,12 +152,26 @@ export const getOrganizerGigs = async (req: AuthRequest, res: Response, next: Ne
 
         const gigs = await Gig.find({ organizerId }).sort({ createdAt: -1 });
 
+        // Discussion signals for the "Your work" cards: one query for every comment on
+        // this organizer's gigs, tallied per gig (mirrors the client's buildThreads so
+        // the card and the gig page can't disagree). Every gig here shares one owner.
+        const gigIds = gigs.map((g) => g._id);
+        const comments = gigIds.length
+            ? await GigComment.find({ collectionType: 'gig', topicId: { $in: gigIds } })
+                  .select('topicId parentId authorId')
+                  .lean()
+            : [];
+        const discussionByGig = tallyGigDiscussions(comments as any[], organizerId);
+
         // Get stats for each gig
         const gigsWithStats = await Promise.all(gigs.map(async (gig) => {
             const stats = await GigStats.findOne({ gigId: gig._id });
+            const counts = discussionByGig.get(String(gig._id)) ?? { discussionCount: 0, waitingCount: 0 };
             return {
                 ...gig.toObject(),
-                stats: stats ? stats.toObject() : null
+                stats: stats ? stats.toObject() : null,
+                discussionCount: counts.discussionCount,
+                waitingCount: counts.waitingCount,
             };
         }));
 
