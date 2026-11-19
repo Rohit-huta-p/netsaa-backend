@@ -13,6 +13,7 @@ import { organizationName } from '../utils/organizer';
 import { normalizeRole, visiblePosterRolesFor, canApply, posterRoleFor } from '../utils/roleVisibility';
 import { artistSnapshotExtras } from '../utils/artistSnapshot';
 import { tallyGigDiscussions } from '../utils/discussionTally';
+import { isApplicationDeadlinePassed } from '../utils/deadline';
 
 // Helper for standard response
 const sendResponse = (res: Response, status: number, data: any = null, message: string = 'OK', errors: any[] = []) => {
@@ -484,8 +485,10 @@ export const applyToGig = async (req: AuthRequest, res: Response, next: NextFunc
             return sendResponse(res, 403, null, 'Your role cannot apply to this gig');
         }
 
-        // Check Deadline
-        if (gig.applicationDeadline && new Date() > new Date(gig.applicationDeadline)) {
+        // Check Deadline — a deadline is a calendar DAY; keep applications open
+        // through the end of that day Anywhere-on-Earth so no applicant's own
+        // local day is cut short (backstop for the client's per-viewer gate).
+        if (isApplicationDeadlinePassed(gig.applicationDeadline)) {
             await session.abortTransaction();
             session.endSession();
             return sendResponse(res, 400, null, 'Application deadline has passed');
