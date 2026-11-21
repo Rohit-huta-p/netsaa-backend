@@ -5,7 +5,7 @@
 import { env } from './config';
 
 import express, { Application, Request, Response, NextFunction } from 'express';
-import cors from 'cors';
+import cors, { CorsOptions } from 'cors';
 import helmet from 'helmet';
 import mongoose from 'mongoose';
 import mediaRoutes from './routes/media.routes';
@@ -20,8 +20,25 @@ const app: Application = express();
 app.use(helmet());
 
 // CORS
-const corsOptions = {
-    origin: env.corsOrigins,
+// Allow the configured CORS_ORIGINS plus our Cloudflare Pages project host and
+// its preview subdomains (<branch|commit>.<project>.pages.dev). Only our own
+// Pages project serves that host. Override with PAGES_PREVIEW_HOST.
+const PAGES_PREVIEW_HOST = process.env.PAGES_PREVIEW_HOST || 'netsaa-frontend.pages.dev';
+function isPagesPreviewOrigin(origin: string): boolean {
+    try {
+        const host = new URL(origin).hostname;
+        return host === PAGES_PREVIEW_HOST || host.endsWith(`.${PAGES_PREVIEW_HOST}`);
+    } catch {
+        return false;
+    }
+}
+const corsOptions: CorsOptions = {
+    origin: (origin, callback) => {
+        // env.corsOrigins is a string[] allow-list, or '*' (non-array) to allow all.
+        const allowList = Array.isArray(env.corsOrigins) ? env.corsOrigins : null;
+        if (!origin || allowList === null) return callback(null, true);
+        return callback(null, allowList.includes(origin) || isPagesPreviewOrigin(origin));
+    },
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
 };

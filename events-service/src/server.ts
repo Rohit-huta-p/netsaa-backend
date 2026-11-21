@@ -20,7 +20,30 @@ if (process.env.NODE_ENV !== 'test') {
     connectDB();
 }
 
-app.use(cors({ origin: ['http://localhost:8081', 'https://netsaa.onrender.com', 'https://netsaa.com', 'https://www.netsaa.com'], credentials: true, allowedHeaders: ['Content-Type', 'Authorization', 'Idempotency-Key'], exposedHeaders: ['Content-Type', 'Authorization'], methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'], optionsSuccessStatus: 200 }));
+// Allow our Cloudflare Pages project host + preview subdomains
+// (<branch|commit>.<project>.pages.dev). Only our own Pages project serves that
+// host, so reflecting it with credentials is safe. Override with PAGES_PREVIEW_HOST.
+const PAGES_PREVIEW_HOST = process.env.PAGES_PREVIEW_HOST || 'netsaa-frontend.pages.dev';
+function isPagesPreviewOrigin(origin: string): boolean {
+    try {
+        const host = new URL(origin).hostname;
+        return host === PAGES_PREVIEW_HOST || host.endsWith(`.${PAGES_PREVIEW_HOST}`);
+    } catch {
+        return false;
+    }
+}
+const CORS_ORIGINS = ['http://localhost:8081', 'https://netsaa.onrender.com', 'https://netsaa.com', 'https://www.netsaa.com'];
+app.use(cors({
+    origin: (origin, callback) => {
+        if (!origin) return callback(null, true);
+        return callback(null, CORS_ORIGINS.includes(origin) || isPagesPreviewOrigin(origin));
+    },
+    credentials: true,
+    allowedHeaders: ['Content-Type', 'Authorization', 'Idempotency-Key'],
+    exposedHeaders: ['Content-Type', 'Authorization'],
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+    optionsSuccessStatus: 200,
+}));
 
 // Webhook raw body mount MUST come before express.json() — signature verification requires
 // the exact bytes Razorpay signed; JSON.parse would alter them.
