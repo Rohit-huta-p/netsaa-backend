@@ -114,3 +114,15 @@ export const getMyWaitlistEntry = async (req: AuthRequest, res: Response) => {
   if (!entry) return res.status(404).json({ meta: { status: 404, message: 'Not on waitlist' }, data: null, errors: [] });
   return res.status(200).json({ meta: { status: 200, message: 'OK' }, data: entry, errors: [] });
 };
+
+// @route GET /v1/waitlist/mine — the caller's active waitlist entries across ALL events
+// (waiting + promoted), each with a light event summary. Powers the home "What you're in"
+// tab so a PROMOTED "seat open — confirm" offer surfaces without opening each event.
+export const myWaitlistEntries = async (req: AuthRequest, res: Response) => {
+  const userId = req.user?.id || req.user?._id;
+  const entries = await WaitlistEntry.find({ userId, status: { $in: ['waiting', 'promoted'] } })
+    .sort({ position: 1 })
+    .populate('eventId', 'title startsAt schedule location media registrationMode ticketPrice pricing status')
+    .lean();
+  return res.status(200).json({ meta: { status: 200, message: 'OK' }, data: entries, errors: [] });
+};

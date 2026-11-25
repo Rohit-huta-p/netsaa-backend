@@ -26,7 +26,7 @@ import { submitPayoutAccount, getMyPayoutAccount, updatePayoutAccount, verifyBan
 import { cancelMyRegistration } from '../controllers/registrationCancel';
 import { approveRegistration, declineRegistration } from '../controllers/registrationApproval';
 import { cancelEvent, cancelRegistrationByOrganizer } from '../controllers/eventCancel';
-import { joinWaitlist, leaveWaitlist, promoteWaitlist, confirmPromotion, getMyWaitlistEntry } from '../controllers/waitlist';
+import { joinWaitlist, leaveWaitlist, promoteWaitlist, confirmPromotion, getMyWaitlistEntry, myWaitlistEntries } from '../controllers/waitlist';
 import { getPreferences, updatePreferences, createAnnouncement } from '../controllers/notifications';
 import { getPublicRoster } from '../controllers/rosterPublic';
 import { addWalkup } from '../controllers/walkup';
@@ -93,6 +93,7 @@ router.route('/events/:id/waitlist/join').post(protect, joinWaitlist);
 router.route('/events/:id/waitlist/me').get(protect, getMyWaitlistEntry);
 router.route('/events/:id/waitlist').delete(protect, leaveWaitlist);
 router.route('/events/:id/waitlist/promote').post(protect, promoteWaitlist);
+router.route('/waitlist/mine').get(protect, myWaitlistEntries);
 router.route('/waitlist/:id/confirm').post(protect, confirmPromotion);
 
 // Payout account routes
