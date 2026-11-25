@@ -12,6 +12,7 @@ import { resolveSpot } from '../utils/eventSpots';
 import { buildRegistrationAnswers } from '../utils/registrationAnswers';
 import { consentFromRequest, recordEventRegistrationConsent } from '../utils/consent';
 import { confirmReservationPaid } from '../utils/confirmReservationPaid';
+import { paymentsMockEnabled } from '../services/payments/mockFlag';
 
 const RESERVATION_TTL_MS = 10 * 60 * 1000;
 
@@ -127,17 +128,19 @@ export const reserveTickets = async (req: AuthRequest, res: Response) => {
   }
 };
 
-// @desc    DEV-ONLY: confirm a reserved hold as paid without a real Cashfree charge.
+// @desc    Mock-mode: confirm a reserved hold as paid without a real Cashfree charge.
 // @route   POST /v1/reservations/:orderId/dev-confirm
 // @access  Private (attendee confirming their own hold)
 //
-// In CASHFREE_DEV_MODE the provider returns a fake `session_dev_…` payment session and no real
-// Cashfree order exists, so the checkout UI can't load and no webhook ever fires. This endpoint
-// stands in for that webhook: it runs the EXACT same confirmReservationPaid path (create-new and
-// pay-after-approval branches, ticket issue, price-locking) so the full registration completes
-// end-to-end. Gated on CASHFREE_DEV_MODE → a plain 404 in production, and it never touches money.
+// When the payments mock is ON (EVENTS_PAYMENTS_MOCK=1 in prod, or CASHFREE_DEV_MODE=1 in dev/CI)
+// the provider returns a fake `session_dev_…` payment session and no real Cashfree order exists,
+// so the checkout UI can't load and no webhook ever fires. This endpoint stands in for that
+// webhook: it runs the EXACT same confirmReservationPaid path (create-new and pay-after-approval
+// branches, ticket issue, price-locking) so the full registration completes end-to-end. It is a
+// DELIBERATE production mock gated by EVENTS_PAYMENTS_MOCK (→ a plain 404 whenever the mock is
+// OFF) and it NEVER touches money — no real order, charge, split or payout is created.
 export const devConfirmReservation = async (req: AuthRequest, res: Response) => {
-  if (process.env.CASHFREE_DEV_MODE !== '1') {
+  if (!paymentsMockEnabled()) {
     return res.status(404).json({ meta: { status: 404, message: 'Not found' }, data: null, errors: [] });
   }
   try {

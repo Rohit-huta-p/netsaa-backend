@@ -77,9 +77,10 @@ router.route('/users/me/saved-events').get(protect, getSavedEvents);
 // New Reservation & Payment flow
 router.route('/events/:id/reserve').post(protect, reserveTickets);
 router.route('/reservations/:id/cancel').post(protect, cancelReservation);
-// DEV-ONLY mock payment: confirm a hold as paid with no real Cashfree charge (gated on
-// CASHFREE_DEV_MODE in the controller → 404 in prod). :orderId is the reservation's
-// razorpayOrderId so the attendee register / retry / pay-after-approval flows all reach it.
+// Mock-mode payment: confirm a hold as paid with no real Cashfree charge. A deliberate prod
+// mock gated by EVENTS_PAYMENTS_MOCK (or CASHFREE_DEV_MODE) in the controller → 404 when the
+// mock is OFF. :orderId is the reservation's razorpayOrderId so the attendee register / retry /
+// pay-after-approval flows all reach it.
 router.route('/reservations/:orderId/dev-confirm').post(protect, devConfirmReservation);
 router.route('/events/:id/checkout').post(protect, createPaymentIntent);
 router.route('/events/:id/finalize').post(protect, finalizeRegistration);

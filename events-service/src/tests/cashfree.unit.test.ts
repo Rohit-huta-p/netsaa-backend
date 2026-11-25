@@ -97,4 +97,31 @@ describe('cashfree provider — pure logic', () => {
       jest.resetModules();
     });
   });
+
+  describe('EVENTS_PAYMENTS_MOCK (deliberate prod mock switch)', () => {
+    it('enables the mock through the real provider index with CASHFREE_DEV_MODE unset', async () => {
+      jest.resetModules();
+      const prevDev = process.env.CASHFREE_DEV_MODE;
+      const prevMock = process.env.EVENTS_PAYMENTS_MOCK;
+      delete process.env.CASHFREE_DEV_MODE;
+      process.env.EVENTS_PAYMENTS_MOCK = '1';
+
+      // Load through services/payments (the index) — the path controllers use. This also proves
+      // there is no import cycle via mockFlag: a cycle would crash on require, failing here.
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const mod = require('../services/payments');
+      const { paymentsMockEnabled } = require('../services/payments/mockFlag');
+      expect(paymentsMockEnabled()).toBe(true);
+      expect(mod.payments).toBeDefined();
+
+      // No creds set, yet a paid order still yields a fake dev session → no real charge.
+      const o = await mod.payments.createOrderWithSplit({ orderId: 'evt_mock', amountRupees: 100, customer: { id: 'u1', phone: '9' }, vendorId: 'u1', vendorAmountRupees: 90 });
+      expect(o.orderId).toBe('evt_mock');
+      expect(o.paymentSessionId).toMatch(/^session_dev_/);
+
+      if (prevDev === undefined) delete process.env.CASHFREE_DEV_MODE; else process.env.CASHFREE_DEV_MODE = prevDev;
+      if (prevMock === undefined) delete process.env.EVENTS_PAYMENTS_MOCK; else process.env.EVENTS_PAYMENTS_MOCK = prevMock;
+      jest.resetModules();
+    });
+  });
 });

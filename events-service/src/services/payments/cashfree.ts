@@ -16,11 +16,13 @@ import {
   PaymentProvider, VendorInput, OrderInput, RefundInput,
   VendorResult, OrderResult, RefundResult, toRupees2dp,
 } from './types';
+import { paymentsMockEnabled } from './mockFlag';
 
 const CF_ENV = (process.env.CASHFREE_ENV || 'sandbox').toLowerCase();
 const BASE = CF_ENV === 'production' ? 'https://api.cashfree.com/pg' : 'https://sandbox.cashfree.com/pg';
 const API_VERSION = process.env.CASHFREE_API_VERSION || '2026-01-01';
-const DEV = process.env.CASHFREE_DEV_MODE === '1';
+// Mock switch: CASHFREE_DEV_MODE=1 (dev/CI) or EVENTS_PAYMENTS_MOCK=1 (deliberate prod mock).
+const DEV = paymentsMockEnabled();
 
 function creds(): { id: string; secret: string } {
   const id = process.env.CASHFREE_APP_ID;

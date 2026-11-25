@@ -9,11 +9,13 @@
 //  - Bank: POST /verification/bank-account/sync { bank_account, ifsc, name?, phone? }
 
 import crypto from 'crypto';
+import { paymentsMockEnabled } from './mockFlag';
 
 const CF_ENV = (process.env.CASHFREE_ENV || 'sandbox').toLowerCase();
 const VRS_BASE = CF_ENV === 'production' ? 'https://api.cashfree.com/verification' : 'https://sandbox.cashfree.com/verification';
 const VRS_API_VERSION = process.env.CASHFREE_VRS_API_VERSION || '2024-12-01';
-const DEV = process.env.CASHFREE_DEV_MODE === '1';
+// Mock switch: CASHFREE_DEV_MODE=1 (dev/CI) or EVENTS_PAYMENTS_MOCK=1 (deliberate prod mock).
+const DEV = paymentsMockEnabled();
 
 function creds(): { id: string; secret: string } {
   const id = process.env.CASHFREE_APP_ID;
