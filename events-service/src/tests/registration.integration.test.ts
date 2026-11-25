@@ -28,7 +28,7 @@ async function makeFreeEvent(organizerId: any = new mongoose.Types.ObjectId()) {
     ticketPrice: 0,
     schedule: { startDate: new Date(Date.now() + 7 * 86400000), endDate: new Date(Date.now() + 8 * 86400000), totalDurationMinutes: 120, dayBreakdown: [] },
     location: { type: 'physical', city: 'Pune', state: 'MH', country: 'IN' },
-    maxParticipants: 24,
+    capacity: { total: 24 },
     status: 'live',
   });
 }
@@ -375,7 +375,7 @@ describe('GET /v1/organizers/me/events (derives organizer from auth)', () => {
       organizerId: userId, organizerSnapshot: { name: 'Me', organizationName: '' },
       pricingMode: 'fixed', ticketPrice: 0,
       schedule: { startDate: new Date(Date.now() + 7 * 86400000), endDate: new Date(Date.now() + 8 * 86400000), totalDurationMinutes: 120, dayBreakdown: [] },
-      location: { type: 'physical', city: 'Pune', state: 'MH', country: 'IN' }, maxParticipants: 10, status: 'live',
+      location: { type: 'physical', city: 'Pune', state: 'MH', country: 'IN' }, capacity: { total: 10 }, status: 'live',
     });
     const res = await request(app).get('/v1/organizers/me/events').set('Authorization', `Bearer ${token}`);
     expect(res.status).toBe(200);
@@ -389,7 +389,7 @@ describe('GET /v1/organizers/me/events (derives organizer from auth)', () => {
       organizerId: userId, organizerSnapshot: { name: 'Me', organizationName: '' },
       pricingMode: 'fixed', ticketPrice: 0,
       schedule: { startDate: new Date(Date.now() + 7 * 86400000), endDate: new Date(Date.now() + 8 * 86400000), totalDurationMinutes: 120, dayBreakdown: [] },
-      location: { type: 'physical', city: 'Pune', state: 'MH', country: 'IN' }, maxParticipants: 20, status: 'live',
+      location: { type: 'physical', city: 'Pune', state: 'MH', country: 'IN' }, capacity: { total: 20 }, status: 'live',
     });
     await request(app).post(`/v1/events/${ev._id}/register`)
       .set('Authorization', `Bearer ${token}`).set('Idempotency-Key', 'org-count-1')
@@ -447,7 +447,7 @@ describe('GET /v1/events/:id — organizer enrich', () => {
       organizerId: organizer._id, organizerSnapshot: { name: 'stale', organizationName: '' },
       pricingMode: 'fixed', ticketPrice: 0,
       schedule: { startDate: new Date(Date.now() + 7 * 86400000), endDate: new Date(Date.now() + 8 * 86400000), totalDurationMinutes: 120, dayBreakdown: [] },
-      location: { type: 'physical', city: 'Pune', state: 'MH', country: 'IN' }, maxParticipants: 10, status: 'live',
+      location: { type: 'physical', city: 'Pune', state: 'MH', country: 'IN' }, capacity: { total: 10 }, status: 'live',
     });
     const res = await request(app).get(`/v1/events/${event._id}`);
     expect(res.body.data.organizerSnapshot.name).toBe('Saswati Sen');
@@ -463,7 +463,7 @@ describe('POST /v1/events/:id/register — capacity enforcement', () => {
       organizerId: new mongoose.Types.ObjectId(), organizerSnapshot: { name: 'S', organizationName: '' },
       pricingMode: 'fixed', ticketPrice: 0,
       schedule: { startDate: new Date(Date.now() + 7 * 86400000), endDate: new Date(Date.now() + 8 * 86400000), totalDurationMinutes: 120, dayBreakdown: [] },
-      location: { type: 'physical', city: 'Pune', state: 'MH', country: 'IN' }, maxParticipants: 1, status: 'live', allowWaitlist: true,
+      location: { type: 'physical', city: 'Pune', state: 'MH', country: 'IN' }, capacity: { total: 1 }, status: 'live', allowWaitlist: true,
     });
     const a = jwt.sign({ id: new mongoose.Types.ObjectId().toString(), role: 'artist' }, process.env.JWT_SECRET!);
     const b = jwt.sign({ id: new mongoose.Types.ObjectId().toString(), role: 'artist' }, process.env.JWT_SECRET!);

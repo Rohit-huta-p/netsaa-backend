@@ -80,7 +80,6 @@ export interface IEvent extends Document {
   };
 
   registrationDeadline?: Date;
-  maxParticipants: number;
   allowWaitlist: boolean;
   waitlistAutoPromote: boolean;            // Q1 · per-event flag · default false (manual approval)
 
@@ -291,7 +290,6 @@ const eventSchema = new Schema<IEvent>(
     },
 
     registrationDeadline: { type: Date },
-    maxParticipants: { type: Number, default: 0 },
     allowWaitlist: { type: Boolean, default: false },
     waitlistAutoPromote: { type: Boolean, default: false },
 

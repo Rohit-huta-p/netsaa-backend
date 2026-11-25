@@ -23,13 +23,12 @@ const base = (over: any = {}) => ({
 });
 
 describe('mapComposerToEventDoc — derivation rules', () => {
-  it('derives capacity/maxParticipants from the SUM of spot capacities (count-on-read)', () => {
+  it('derives capacity.total from the SUM of spot capacities (count-on-read)', () => {
     const { doc } = mapComposerToEventDoc(base({
       spots: [{ name: 'Dancer', capacity: 20, price: 0 }, { name: 'Observer', capacity: 10, price: 0 }],
       capacity: { total: 999 }, // client hint — must be ignored
     }), USER, UID);
     expect(doc.capacity.total).toBe(30);
-    expect(doc.maxParticipants).toBe(30);
   });
 
   it('free event → ticketPrice 0 regardless of spot prices', () => {

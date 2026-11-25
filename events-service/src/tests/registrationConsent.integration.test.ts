@@ -24,7 +24,7 @@ async function makeFreeEvent() {
     pricingMode: 'fixed', ticketPrice: 0,
     schedule: { startDate: new Date(Date.now() + 7 * 86400000), endDate: new Date(Date.now() + 8 * 86400000), totalDurationMinutes: 120, dayBreakdown: [] },
     location: { type: 'physical', city: 'Pune', state: 'MH', country: 'IN' },
-    maxParticipants: 24, status: 'live',
+    capacity: { total: 24 }, status: 'live',
   });
 }
 
@@ -41,7 +41,7 @@ async function makePaidEvent() {
     pricingMode: 'fixed', ticketPrice: 4500,
     schedule: { startDate: new Date(Date.now() + 7 * 86400000), endDate: new Date(Date.now() + 8 * 86400000), totalDurationMinutes: 120, dayBreakdown: [] },
     location: { type: 'physical', city: 'Pune', state: 'MH', country: 'IN' },
-    maxParticipants: 24, status: 'live',
+    capacity: { total: 24 }, status: 'live',
   });
 }
 

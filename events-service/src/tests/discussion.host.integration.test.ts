@@ -16,7 +16,7 @@ async function hostedEvent(over: any = {}) {
     organizerId, organizerSnapshot: { name: 'S', organizationName: 'Sawai' },
     pricingMode: 'fixed', ticketPrice: 0, discussionVisibility: 'attendees_only',
     schedule: { startDate: new Date(Date.now() + 7 * 86400000), endDate: new Date(Date.now() + 8 * 86400000), totalDurationMinutes: 120, dayBreakdown: [] },
-    location: { type: 'physical', city: 'Pune', state: 'MH', country: 'IN' }, maxParticipants: 24, status: 'live',
+    location: { type: 'physical', city: 'Pune', state: 'MH', country: 'IN' }, capacity: { total: 24 }, status: 'live',
     ...over,
   });
   return { e, organizerId, orgToken: tokenFor(organizerId) };

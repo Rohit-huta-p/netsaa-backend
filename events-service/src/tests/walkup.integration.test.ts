@@ -16,7 +16,7 @@ async function makeEvent(over: any = {}) {
     pricingMode: 'fixed', ticketPrice: 0,
     schedule: { startDate: new Date(), endDate: new Date(Date.now() + 7_200_000), totalDurationMinutes: 120, dayBreakdown: [] },
     location: { type: 'physical', city: 'Pune', state: 'MH', country: 'IN' },
-    maxParticipants: 24, status: 'live', walkupsAllowed: true, maxGuestsPerRegistration: 5,
+    capacity: { total: 24 }, status: 'live', walkupsAllowed: true, maxGuestsPerRegistration: 5,
     ...over,
   });
   const orgToken = jwt.sign({ id: organizerId, role: 'artist' }, process.env.JWT_SECRET!);
@@ -87,7 +87,7 @@ describe('POST /v1/events/:id/walkup', () => {
   });
 
   it('409 when capacity is full', async () => {
-    const { e, orgToken } = await makeEvent({ maxParticipants: 1 });
+    const { e, orgToken } = await makeEvent({ capacity: { total: 1 } });
     await EventRegistration.create({ eventId: e._id, userId: new mongoose.Types.ObjectId(), quantity: 1, status: 'registered', idempotencyKey: 'fill-1', source: 'standard', visibility: 'public' });
     const res = await request(app).post(`/v1/events/${e._id}/walkup`).set('Authorization', `Bearer ${orgToken}`).send({ fullName: 'N', phone: '+910000000000', quantity: 1, payment: 'free' });
     expect(res.status).toBe(409);

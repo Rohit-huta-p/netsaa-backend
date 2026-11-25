@@ -16,7 +16,7 @@ async function fullEvent(over: any = {}) {
     pricingMode: 'fixed', ticketPrice: 4500,
     schedule: { startDate: new Date(Date.now() + 7 * 86400000), endDate: new Date(Date.now() + 8 * 86400000), totalDurationMinutes: 120, dayBreakdown: [] },
     location: { type: 'physical', city: 'Pune', state: 'MH', country: 'IN' },
-    maxParticipants: 1, status: 'live', allowWaitlist: true, ...over,
+    capacity: { total: 1 }, status: 'live', allowWaitlist: true, ...over,
   });
   await EventRegistration.create({ eventId: event._id, userId: new mongoose.Types.ObjectId(), quantity: 1, status: 'registered', idempotencyKey: `fill-${event._id}`, source: 'standard', visibility: 'public' });
   return event;
@@ -42,7 +42,7 @@ describe('POST /v1/events/:id/waitlist/join', () => {
       pricingMode: 'fixed', ticketPrice: 4500,
       schedule: { startDate: new Date(Date.now() + 7 * 86400000), endDate: new Date(Date.now() + 8 * 86400000), totalDurationMinutes: 120, dayBreakdown: [] },
       location: { type: 'physical', city: 'Pune', state: 'MH', country: 'IN' },
-      maxParticipants: 10, status: 'live', allowWaitlist: true,
+      capacity: { total: 10 }, status: 'live', allowWaitlist: true,
     });
     const res = await request(app).post(`/v1/events/${event._id}/waitlist/join`)
       .set('Authorization', `Bearer ${tokenFor(new mongoose.Types.ObjectId().toString())}`)

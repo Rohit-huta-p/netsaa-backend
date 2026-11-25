@@ -4,7 +4,9 @@ import EventRegistration from '../models/EventRegistration';
 import WaitlistEntry from '../models/WaitlistEntry';
 import EventNotification from '../models/EventNotification';
 
-/** Seats remaining = capacity − sum(quantity of active registrations) − held promotions. */
+/** Seats remaining = capacity.total − sum(quantity of active registrations) − held promotions.
+ *  capacity.total is the single source of truth for an event's cap (derived from the sum of
+ *  spots[].capacity by the composer mapper); the UI's withLiveCapacity reads the same field. */
 export async function slotsLeftForEvent(eventId: any): Promise<number> {
   const event = await Event.findById(eventId);
   if (!event) return 0;
@@ -22,7 +24,7 @@ export async function slotsLeftForEvent(eventId: any): Promise<number> {
     { $group: { _id: null, seats: { $sum: '$quantity' } } },
   ]);
   const reserved = held[0]?.seats ?? 0;
-  return Math.max(0, (event.maxParticipants || 0) - taken - reserved);
+  return Math.max(0, (event.capacity?.total ?? 0) - taken - reserved);
 }
 
 /** Seats remaining for ONE spot/tier = spot.capacity − sum(quantity of active regs

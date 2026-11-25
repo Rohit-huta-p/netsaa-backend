@@ -42,14 +42,13 @@ describe('buildComposerUpdate — only touches provided fields', () => {
 });
 
 describe('buildComposerUpdate — derived capacity & money', () => {
-  it('spots change → capacity.total, maxParticipants and ticketPrice recomputed', () => {
+  it('spots change → capacity.total and ticketPrice recomputed', () => {
     const set = buildComposerUpdate({
       registrationMode: 'paid_ticket',
       spots: [{ name: 'Front', capacity: 10, price: 1500 }, { name: 'Back', capacity: 5, price: 900 }],
       offers: [],
     }, existing());
     expect(set['capacity.total']).toBe(15);
-    expect(set.maxParticipants).toBe(15);
     expect(set.ticketPrice).toBe(900); // lowest paid spot
   });
 
@@ -67,11 +66,10 @@ describe('buildComposerUpdate — derived capacity & money', () => {
     expect(set.ticketPrice).toBe(600);
   });
 
-  it('no-spot event → a direct capacity edit still updates maxParticipants', () => {
+  it('no-spot event → a direct capacity edit still updates capacity.total', () => {
     const noSpots = { ...existing(), spots: [] };
     const set = buildComposerUpdate({ about: 'x', capacity: { total: 40 } }, noSpots);
     expect(set['capacity.total']).toBe(40);
-    expect(set.maxParticipants).toBe(40);
   });
 });
 

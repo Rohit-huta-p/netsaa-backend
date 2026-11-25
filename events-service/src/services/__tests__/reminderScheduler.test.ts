@@ -10,7 +10,7 @@ async function liveEvent(over: any = {}) {
     pricingMode: 'fixed', ticketPrice: 0,
     schedule: { startDate: new Date(Date.now() + 8 * 86400000), endDate: new Date(Date.now() + 9 * 86400000), totalDurationMinutes: 120, dayBreakdown: [] },
     location: { type: 'physical', city: 'Pune', state: 'MH', country: 'IN' },
-    maxParticipants: 24, status: 'live', ...over,
+    capacity: { total: 24 }, status: 'live', ...over,
   });
 }
 

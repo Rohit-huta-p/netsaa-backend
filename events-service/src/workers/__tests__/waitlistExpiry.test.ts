@@ -10,7 +10,7 @@ async function evt() {
     pricingMode: 'fixed', ticketPrice: 0,
     schedule: { startDate: new Date(Date.now() + 7 * 86400000), endDate: new Date(Date.now() + 8 * 86400000), totalDurationMinutes: 120, dayBreakdown: [] },
     location: { type: 'physical', city: 'Pune', state: 'MH', country: 'IN' },
-    maxParticipants: 1, status: 'live', allowWaitlist: true, waitlistAutoPromote: true,
+    capacity: { total: 1 }, status: 'live', allowWaitlist: true, waitlistAutoPromote: true,
   });
 }
 
