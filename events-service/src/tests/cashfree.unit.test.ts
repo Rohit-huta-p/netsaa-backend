@@ -74,7 +74,7 @@ describe('cashfree provider — pure logic', () => {
   });
 
   describe('CASHFREE_DEV_MODE', () => {
-    it('fakes vendor + order + refund + signature with no network/creds', async () => {
+    it('fakes vendor + order + refund with no network/creds; still verifies webhook signatures', async () => {
       jest.resetModules();
       const prev = process.env.CASHFREE_DEV_MODE;
       process.env.CASHFREE_DEV_MODE = '1';
@@ -89,7 +89,10 @@ describe('cashfree provider — pure logic', () => {
       expect(o.orderId).toBe('evt_1');
       expect(o.paymentSessionId).toMatch(/^session_dev_/);
 
-      expect(dev.verifyWebhookSignature('any', 'any', 'any')).toBe(true);
+      // Signature verification is NEVER bypassed, even in mock mode (be6a1c5): a bogus
+      // signature is rejected. This matters now that the mock is a prod switch — the webhook
+      // must not accept unsigned calls. Valid-signature acceptance is covered above.
+      expect(dev.verifyWebhookSignature('any', 'any', 'any')).toBe(false);
       const r = await dev.createRefund({ orderId: 'evt_1', amountRupees: 50, refundId: 'rf_1' });
       expect(r.status).toBe('SUCCESS');
 
