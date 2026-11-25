@@ -4,9 +4,7 @@ import EventRegistration from '../models/EventRegistration';
 import WaitlistEntry from '../models/WaitlistEntry';
 import EventNotification from '../models/EventNotification';
 
-export const PROMOTION_WINDOW_MS = 30 * 60 * 1000;
-
-/** Seats remaining = capacity − sum(quantity of active registrations). */
+/** Seats remaining = capacity − sum(quantity of active registrations) − held promotions. */
 export async function slotsLeftForEvent(eventId: any): Promise<number> {
   const event = await Event.findById(eventId);
   if (!event) return 0;
@@ -16,7 +14,15 @@ export async function slotsLeftForEvent(eventId: any): Promise<number> {
     { $group: { _id: null, seats: { $sum: '$quantity' } } },
   ]);
   const taken = agg[0]?.seats ?? 0;
-  return Math.max(0, (event.maxParticipants || 0) - taken);
+  // A PROMOTED waitlist entry holds its seat — the offer stands until the event ends,
+  // so it counts against capacity. Without this the host could re-promote the same seat
+  // (oversell) and the "Promote" button would never disable. Freed on confirm/decline.
+  const held = await WaitlistEntry.aggregate([
+    { $match: { eventId: event._id, status: 'promoted' } },
+    { $group: { _id: null, seats: { $sum: '$quantity' } } },
+  ]);
+  const reserved = held[0]?.seats ?? 0;
+  return Math.max(0, (event.maxParticipants || 0) - taken - reserved);
 }
 
 /** Seats remaining for ONE spot/tier = spot.capacity − sum(quantity of active regs
@@ -37,14 +43,18 @@ export async function nextPosition(eventId: any): Promise<number> {
   return (last?.position ?? 0) + 1;
 }
 
-/** Promote a specific entry into a 30-min confirm window. */
-export async function promoteEntry(entry: any): Promise<any> {
+/** Promote an entry: hold the seat and offer it until the event ends — no short timer.
+ *  The waitlister already opted in, so they confirm whenever (up to the event). The seat
+ *  is held via slotsLeftForEvent until they confirm, decline, or the event passes. */
+export async function promoteEntry(entry: any, event?: any): Promise<any> {
+  const ev = event ?? (await Event.findById(entry.eventId));
+  const endsAt = ev?.schedule?.endDate ?? ev?.endsAt ?? ev?.startsAt;
   entry.status = 'promoted';
   entry.promotedAt = new Date();
-  entry.promotionExpiresAt = new Date(Date.now() + PROMOTION_WINDOW_MS);
+  entry.promotionExpiresAt = endsAt ? new Date(endsAt) : undefined;
   await entry.save();
   try {
-    await EventNotification.create({ eventId: entry.eventId, kind: 'waitlist_promoted', channels: ['push', 'email'], audience: 'custom', customAudienceUserIds: [entry.userId], body: 'A seat opened for your waitlisted event — confirm within 30 minutes.', scheduledAt: new Date(), status: 'queued' });
+    await EventNotification.create({ eventId: entry.eventId, kind: 'waitlist_promoted', channels: ['push', 'email'], audience: 'custom', customAudienceUserIds: [entry.userId], body: 'A seat opened for your waitlisted event — it’s yours. Confirm anytime before the event to claim it.', scheduledAt: new Date(), status: 'queued' });
   } catch { /* non-fatal */ }
   return entry;
 }
@@ -57,5 +67,5 @@ export async function promoteFromWaitlist(eventId: any): Promise<any | null> {
   if ((await slotsLeftForEvent(eventId)) <= 0) return null;
   const top = await WaitlistEntry.findOne({ eventId, status: 'waiting' }).sort({ position: 1 });
   if (!top) return null;
-  return promoteEntry(top);
+  return promoteEntry(top, event);
 }
