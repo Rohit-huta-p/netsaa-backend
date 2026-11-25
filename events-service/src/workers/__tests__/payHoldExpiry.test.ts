@@ -7,14 +7,14 @@ import { slotsLeftForEvent } from '../../services/waitlistService';
 import { sweepLapsedPayHolds } from '../payHoldExpiryWorker';
 
 // A paid, single-seat event (ticketPrice > 0 is what makes an approval a *paid* hold).
-async function paidEvent(maxParticipants = 1) {
+async function paidEvent(cap = 1) {
   return Event.create({
     title: 'Kathak Intensive', description: 'x', eventType: 'workshop', category: 'dance',
     organizerId: new mongoose.Types.ObjectId(), organizerSnapshot: { name: 'S', organizationName: 'Sawai' },
     pricingMode: 'fixed', ticketPrice: 500,
     schedule: { startDate: new Date(Date.now() + 7 * 86400000), endDate: new Date(Date.now() + 8 * 86400000), totalDurationMinutes: 120, dayBreakdown: [] },
     location: { type: 'physical', city: 'Pune', state: 'MH', country: 'IN' },
-    maxParticipants, status: 'live',
+    capacity: { total: cap }, status: 'live',
   });
 }
 

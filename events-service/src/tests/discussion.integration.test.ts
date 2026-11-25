@@ -14,7 +14,7 @@ async function event(visibility: 'public' | 'attendees_only') {
     organizerId: new mongoose.Types.ObjectId(), organizerSnapshot: { name: 'S', organizationName: 'Sawai' },
     pricingMode: 'fixed', ticketPrice: 0, discussionVisibility: visibility,
     schedule: { startDate: new Date(Date.now() + 7 * 86400000), endDate: new Date(Date.now() + 8 * 86400000), totalDurationMinutes: 120, dayBreakdown: [] },
-    location: { type: 'physical', city: 'Pune', state: 'MH', country: 'IN' }, maxParticipants: 24, status: 'live',
+    location: { type: 'physical', city: 'Pune', state: 'MH', country: 'IN' }, capacity: { total: 24 }, status: 'live',
   });
 }
 

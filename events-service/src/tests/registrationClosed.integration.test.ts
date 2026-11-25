@@ -33,7 +33,6 @@ async function makeLiveEvent(overrides: Record<string, unknown> = {}) {
       dayBreakdown: [],
     },
     location: { type: 'physical', city: 'Bhubaneswar', state: 'OD', country: 'IN' },
-    maxParticipants: 30,
     status: 'live',
     capacity: { total: 30, registeredCount: 0 },
     ...overrides,

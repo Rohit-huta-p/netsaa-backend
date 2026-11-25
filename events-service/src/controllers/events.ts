@@ -259,10 +259,10 @@ async function seatsByEvent(eventIds: any[]): Promise<Record<string, number>> {
   return map;
 }
 
-/** Overlay the live registeredCount (+ backfill total from maxParticipants for legacy docs). */
+/** Overlay the live registeredCount onto capacity.total (the stored cap). */
 function withLiveCapacity(eventObj: any, registeredCount: number): any {
   eventObj.capacity = {
-    total: eventObj.capacity?.total ?? eventObj.maxParticipants ?? 0,
+    total: eventObj.capacity?.total ?? 0,
     registeredCount,
   };
   // Frontend reads event.pricing.{amount,refundPolicy}; the model stores ticketPrice (scalar)
@@ -390,8 +390,13 @@ export const createEvent = async (req: Request, res: Response, next: NextFunctio
 
     if (!isNew) {
       // ── LEGACY passthrough — keep old behavior for existing tests/callers ──
-      const { ticketTypes, ...eventData } = b;
+      // Legacy callers set the cap via `maxParticipants`; map it onto capacity.total
+      // (the single source of truth) since the field itself is retired. A body with
+      // `capacity` takes the new-composer path above, so here the only cap source is
+      // maxParticipants.
+      const { ticketTypes, maxParticipants: legacyMax, ...eventData } = b;
       const pricingMode = eventData.pricingMode || 'fixed';
+      const legacyCapTotal = Number(legacyMax) || 0;
 
       let event: any;
 
@@ -401,6 +406,7 @@ export const createEvent = async (req: Request, res: Response, next: NextFunctio
           organizerId: eventData.organizerId || userId,
           pricingMode: 'fixed',
           ticketPrice: eventData.ticketPrice || 0,
+          capacity: { total: legacyCapTotal, registeredCount: 0 },
         });
       } else if (pricingMode === 'ticketed') {
         if (!ticketTypes || !Array.isArray(ticketTypes) || ticketTypes.length === 0) {
@@ -411,7 +417,7 @@ export const createEvent = async (req: Request, res: Response, next: NextFunctio
           organizerId: eventData.organizerId || userId,
           pricingMode: 'ticketed',
           ticketPrice: 0,
-          maxParticipants: 0,
+          capacity: { total: 0, registeredCount: 0 },
         });
         const ticketsToCreate = ticketTypes.map((t: any) => ({
           ...t,
@@ -450,7 +456,7 @@ export const createEvent = async (req: Request, res: Response, next: NextFunctio
     }
 
     // Mapping lives in a pure, unit-tested module (see services/composerMapping.ts).
-    // It derives capacity/maxParticipants and ticketPrice from spots[] (count-on-read,
+    // It derives capacity.total and ticketPrice from spots[] (count-on-read,
     // money-from-spot) and persists the v4 embedded fields (spots, offers,
     // registration{door,questions}, people, lineup, bring, included, …).
     const { doc, scheduleReminders } = mapComposerToEventDoc(b, user, String(userId));
@@ -727,7 +733,7 @@ export const getSavedEvents = async (req: AuthRequest, res: Response, next: Next
     const userId = req.user.id;
 
     const savedEvents = await SavedEvent.find({ userId })
-      .populate('eventId', 'title schedule location category eventType ticketPrice pricingMode maxParticipants status organizerSnapshot')
+      .populate('eventId', 'title schedule location category eventType ticketPrice pricingMode capacity status organizerSnapshot')
       .sort({ savedAt: -1 })
       .lean();
 

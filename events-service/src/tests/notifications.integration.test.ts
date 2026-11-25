@@ -36,7 +36,7 @@ describe('POST /v1/events/:id/register → enqueues confirmation notification', 
       organizerId: new mongoose.Types.ObjectId(), organizerSnapshot: { name: 'Saswati', organizationName: 'Sawai' },
       pricingMode: 'fixed', ticketPrice: 0,
       schedule: { startDate: new Date(Date.now() + 7 * 86400000), endDate: new Date(Date.now() + 8 * 86400000), totalDurationMinutes: 120, dayBreakdown: [] },
-      location: { type: 'physical', city: 'Pune', state: 'MH', country: 'IN' }, maxParticipants: 24, status: 'live',
+      location: { type: 'physical', city: 'Pune', state: 'MH', country: 'IN' }, capacity: { total: 24 }, status: 'live',
     });
   }
 
@@ -62,7 +62,7 @@ describe('POST /v1/events/:id/notifications (announcement)', () => {
       organizerId: orgId, organizerSnapshot: { name: 'S', organizationName: 'Sawai' },
       pricingMode: 'fixed', ticketPrice: 0,
       schedule: { startDate: new Date(Date.now() + 7 * 86400000), endDate: new Date(Date.now() + 8 * 86400000), totalDurationMinutes: 120, dayBreakdown: [] },
-      location: { type: 'physical', city: 'Pune', state: 'MH', country: 'IN' }, maxParticipants: 24, status: 'live',
+      location: { type: 'physical', city: 'Pune', state: 'MH', country: 'IN' }, capacity: { total: 24 }, status: 'live',
     });
   }
 

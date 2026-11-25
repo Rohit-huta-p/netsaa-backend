@@ -11,7 +11,7 @@ async function makeEvent(over: any = {}) {
     pricingMode: 'fixed', ticketPrice: 4500,
     schedule: { startDate: new Date(Date.now() + 7 * 86400000), endDate: new Date(Date.now() + 8 * 86400000), totalDurationMinutes: 120, dayBreakdown: [] },
     location: { type: 'physical', city: 'Pune', state: 'MH', country: 'IN' },
-    maxParticipants: 2, status: 'live', allowWaitlist: true, ...over,
+    capacity: { total: 2 }, status: 'live', allowWaitlist: true, ...over,
   });
 }
 async function reg(eventId: any, seats = 1, status = 'registered') {
@@ -30,6 +30,17 @@ describe('waitlistService', () => {
     expect(await slotsLeftForEvent(e._id)).toBe(0);
   });
 
+  it('capacity.total is the single source of truth for the cap (regression: A9 waitlist join)', async () => {
+    // Bharatanatyam-Foundations shape: cap 3, three seats taken → full. Pre-fix the
+    // guard read a separate `maxParticipants` field that could drift from capacity.total
+    // (a seed set total:3 but maxParticipants:8), so the join endpoint saw free seats and
+    // 409'd ("register instead") an event the UI showed as full. capacity.total is now
+    // the only cap the guard reads.
+    const e = await makeEvent({ capacity: { total: 3 } });
+    await reg(e._id, 1); await reg(e._id, 1); await reg(e._id, 1);
+    expect(await slotsLeftForEvent(e._id)).toBe(0); // full → waitlist join allowed, register blocked
+  });
+
   it('cancelled registrations do not count against capacity', async () => {
     const e = await makeEvent();
     await reg(e._id, 1, 'cancelled');
@@ -37,17 +48,17 @@ describe('waitlistService', () => {
   });
 
   it('a PROMOTED waitlist entry holds its seat against capacity (a WAITING one does not)', async () => {
-    const held = await makeEvent({ maxParticipants: 1 });
+    const held = await makeEvent({ capacity: { total: 1 } });
     await WaitlistEntry.create({ eventId: held._id, userId: new mongoose.Types.ObjectId(), position: 1, quantity: 1, status: 'promoted', attendeeSnapshot: { fullName: 'A', phone: '+910000000000' } });
     expect(await slotsLeftForEvent(held._id)).toBe(0); // promoted hold reserves the seat
 
-    const open = await makeEvent({ maxParticipants: 1 });
+    const open = await makeEvent({ capacity: { total: 1 } });
     await wait(open._id, 1); // status 'waiting'
     expect(await slotsLeftForEvent(open._id)).toBe(1); // a waiting entry holds nothing
   });
 
   it('promoteFromWaitlist sets the confirm window to the event end (no short timer)', async () => {
-    const e = await makeEvent({ maxParticipants: 1, waitlistAutoPromote: true });
+    const e = await makeEvent({ capacity: { total: 1 }, waitlistAutoPromote: true });
     await wait(e._id, 1);
     const promoted = await promoteFromWaitlist(e._id);
     expect(new Date(promoted?.promotionExpiresAt).getTime()).toBe(new Date(e.schedule.endDate).getTime());
@@ -61,7 +72,7 @@ describe('waitlistService', () => {
   });
 
   it('promoteFromWaitlist promotes the top entry when auto-promote is on and a seat is free', async () => {
-    const e = await makeEvent({ maxParticipants: 1, waitlistAutoPromote: true });
+    const e = await makeEvent({ capacity: { total: 1 }, waitlistAutoPromote: true });
     await wait(e._id, 1);
     const promoted = await promoteFromWaitlist(e._id);
     expect(promoted?.status).toBe('promoted');
@@ -69,13 +80,13 @@ describe('waitlistService', () => {
   });
 
   it('promoteFromWaitlist returns null in manual mode (organizer approves)', async () => {
-    const e = await makeEvent({ maxParticipants: 1, waitlistAutoPromote: false });
+    const e = await makeEvent({ capacity: { total: 1 }, waitlistAutoPromote: false });
     await wait(e._id, 1);
     expect(await promoteFromWaitlist(e._id)).toBeNull();
   });
 
   it('promoteFromWaitlist returns null when no seat is free', async () => {
-    const e = await makeEvent({ maxParticipants: 1, waitlistAutoPromote: true });
+    const e = await makeEvent({ capacity: { total: 1 }, waitlistAutoPromote: true });
     await reg(e._id, 1); // fills the only seat
     await wait(e._id, 1);
     expect(await promoteFromWaitlist(e._id)).toBeNull();

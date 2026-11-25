@@ -31,7 +31,6 @@ async function makeOwnerEvent(overrides: Record<string, unknown> = {}) {
       dayBreakdown: [],
     },
     location: { type: 'physical', city: 'Chennai', state: 'TN', country: 'IN' },
-    maxParticipants: 30,
     status: 'live',
     visibility: 'public',
     capacity: { total: 30, registeredCount: 0 },

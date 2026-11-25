@@ -32,7 +32,7 @@ async function addPayout() {
   });
 }
 
-async function makePaidGuestListEvent(maxParticipants = 20, withPayout = true) {
+async function makePaidGuestListEvent(cap = 20, withPayout = true) {
   if (withPayout) await addPayout();
   return Event.create({
     title: 'Paid Audition', description: 'x', eventType: 'audition', category: 'dance',
@@ -40,7 +40,7 @@ async function makePaidGuestListEvent(maxParticipants = 20, withPayout = true) {
     pricingMode: 'fixed', ticketPrice: 4500,
     schedule: { startDate: new Date(Date.now() + 7 * 86400000), endDate: new Date(Date.now() + 8 * 86400000), totalDurationMinutes: 120, dayBreakdown: [] },
     location: { type: 'physical', city: 'Pune', state: 'MH', country: 'IN' },
-    maxParticipants, status: 'live',
+    capacity: { total: cap }, status: 'live',
     registration: { door: 'guest_list', questions: [] },
   });
 }
@@ -139,7 +139,7 @@ describe('Pay-after-approval (gap e)', () => {
       pricingMode: 'fixed', ticketPrice: 0,
       schedule: { startDate: new Date(Date.now() + 7 * 86400000), endDate: new Date(Date.now() + 8 * 86400000), totalDurationMinutes: 120, dayBreakdown: [] },
       location: { type: 'physical', city: 'Pune', state: 'MH', country: 'IN' },
-      maxParticipants: 20, status: 'live',
+      capacity: { total: 20 }, status: 'live',
       registration: { door: 'guest_list', questions: [] },
     });
     const reg = await reqJoin(event._id, tok(), 'paa-free');

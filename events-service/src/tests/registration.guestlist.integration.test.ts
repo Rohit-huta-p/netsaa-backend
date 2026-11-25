@@ -13,14 +13,14 @@ const hostToken = jwt.sign({ id: organizerId.toString(), role: 'artist' }, proce
 const tok = (id = new mongoose.Types.ObjectId().toString()) => jwt.sign({ id, role: 'artist' }, process.env.JWT_SECRET!);
 const aToken = tok();
 
-async function makeGuestListEvent(maxParticipants = 10, questions: any[] = []) {
+async function makeGuestListEvent(cap = 10, questions: any[] = []) {
   return Event.create({
     title: 'Invite-Only Intensive', description: 'x', eventType: 'workshop', category: 'dance',
     organizerId, organizerSnapshot: { name: 'S', organizationName: '' },
     pricingMode: 'fixed', ticketPrice: 0,
     schedule: { startDate: new Date(Date.now() + 7 * 86400000), endDate: new Date(Date.now() + 8 * 86400000), totalDurationMinutes: 120, dayBreakdown: [] },
     location: { type: 'physical', city: 'Pune', state: 'MH', country: 'IN' },
-    maxParticipants, status: 'live',
+    capacity: { total: cap }, status: 'live',
     registration: { door: 'guest_list', questions },
   });
 }
@@ -139,7 +139,7 @@ describe('Open-door registration is unchanged (back-compat)', () => {
       pricingMode: 'fixed', ticketPrice: 0,
       schedule: { startDate: new Date(Date.now() + 7 * 86400000), endDate: new Date(Date.now() + 8 * 86400000), totalDurationMinutes: 120, dayBreakdown: [] },
       location: { type: 'physical', city: 'Pune', state: 'MH', country: 'IN' },
-      maxParticipants: 10, status: 'live',
+      capacity: { total: 10 }, status: 'live',
       registration: { door: 'open', questions: [] },
     });
     const res = await reqJoin(event._id, aToken, 'open-1');

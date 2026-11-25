@@ -8,8 +8,8 @@
  *
  * Rules enforced here (create AND update):
  *  - count-on-read seats (E5): capacity is the CAP, never a counter. capacity.total
- *    / maxParticipants are derived from the SUM of spot capacities, not trusted
- *    from the client's capacity.total (a hint only).
+ *    is derived from the SUM of spot capacities, not trusted from the client's
+ *    capacity.total (a hint only). It is the single source of truth for the cap.
  *  - money reads the spot (E1): ticketPrice is derived from the lowest paid spot
  *    price, never trusted blindly from the client.
  *  - required sub-fields are guarded: incomplete people/spots/offers/questions/
@@ -246,7 +246,6 @@ export function mapComposerToEventDoc(b: any, user: any, userId: string): Compos
     registrationMode: b.registrationMode || 'free_rsvp',
     ticketPrice,
     capacity: { total: capacityTotal, registeredCount: 0 },
-    maxParticipants: capacityTotal,
 
     startsAt: sched.startDate,
     timeTbd,
@@ -316,7 +315,7 @@ const cleanSkillLevel = (v: any): string[] =>
 
 /**
  * Build a $set for a v4 composer (one-form) PATCH. Only touches fields present in
- * the body, re-derives capacity/maxParticipants/ticketPrice whenever spots or the
+ * the body, re-derives capacity.total/ticketPrice whenever spots or the
  * free/paid mode change, recomputes schedule when any date field changes, and
  * MERGES location so an unspecified field is never clobbered. Never writes the
  * protected fields (status, organizerId, organizerSnapshot, publishedAt, pricingMode).
@@ -382,7 +381,7 @@ export function buildComposerUpdate(b: any, existing: any): Record<string, any> 
   if (has('registrationMode')) set.registrationMode = b.registrationMode;
 
   // spots → persist with stable ids (preserves existing spot _ids on edit → no
-  // churn under live registrations); recompute capacity/maxParticipants/ticketPrice.
+  // churn under live registrations); recompute capacity.total/ticketPrice.
   let spotRefMap: Map<string, Types.ObjectId> | undefined;
   if (has('spots')) {
     const built = buildSpots(b.spots);
@@ -396,13 +395,11 @@ export function buildComposerUpdate(b: any, existing: any): Record<string, any> 
     const isPaid = mode === 'paid_ticket';
     const cap = spots.length ? spots.reduce((n: number, s: any) => n + (s.capacity || 0), 0) : num(existing?.capacity?.total);
     set['capacity.total'] = cap;
-    set.maxParticipants = cap;
     set.ticketPrice = deriveTicketPrice(spots, isPaid, b.pricing?.amount, num(existing?.ticketPrice));
   } else if (has('capacity') && !(existing?.spots?.length)) {
     // no spot model on this event → allow a direct capacity edit
     const cap = Number(b.capacity?.total) || 0;
     set['capacity.total'] = cap;
-    set.maxParticipants = cap;
   }
 
   // offers (paid only; cleared when free) — linked to the spot the host picked

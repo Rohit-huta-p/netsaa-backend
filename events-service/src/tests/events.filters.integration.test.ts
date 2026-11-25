@@ -26,7 +26,7 @@ function makeEvent(over: Record<string, any> = {}) {
     },
     startsAt: new Date(Date.now() + 7 * DAY),
     location: { type: 'physical', kind: 'in_person', city: 'Pune', state: 'MH', country: 'IN' },
-    maxParticipants: 24,
+    capacity: { total: 24 },
     status: 'live',
     ...over,
   });

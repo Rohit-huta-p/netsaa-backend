@@ -10,7 +10,7 @@ describe('v4 schema scaffolding — the model stores the new fields', () => {
       organizerId: new mongoose.Types.ObjectId(), organizerSnapshot: { name: 'S', organizationName: 'Sawai' },
       pricingMode: 'fixed', ticketPrice: 4500,
       schedule: { startDate: new Date(), endDate: new Date(Date.now() + 3600000), totalDurationMinutes: 60, dayBreakdown: [] },
-      location: { type: 'physical' }, maxParticipants: 24, status: 'draft',
+      location: { type: 'physical' }, capacity: { total: 24 }, status: 'draft',
       eventTypeLabel: 'Open call', otherArtistTypes: ['Director'], openToAll: false,
       languages: ['hi', 'en'], timeTbd: false, coverFit: 'whole',
       people: [{ displayName: 'Meera K.', role: 'Casting director', invite: { status: 'invited' } }],
@@ -48,7 +48,7 @@ describe('v4 schema scaffolding — the model stores the new fields', () => {
       organizerId: new mongoose.Types.ObjectId(), organizerSnapshot: { name: 'S', organizationName: 'x' },
       pricingMode: 'fixed', ticketPrice: 0,
       schedule: { startDate: new Date(), endDate: new Date(), totalDurationMinutes: 60, dayBreakdown: [] },
-      location: { type: 'physical' }, maxParticipants: 1, status: 'draft',
+      location: { type: 'physical' }, capacity: { total: 1 }, status: 'draft',
     } as any)).rejects.toBeTruthy();
   });
 });

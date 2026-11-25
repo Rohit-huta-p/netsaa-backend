@@ -80,7 +80,7 @@ describe('POST /v1/events — new composer (EventDoc) payload shape', () => {
     const doc: any = await Event.findById(id);
     expect(doc.description).toBe('An introductory Kathak session for anyone curious about classical dance.'); // about → description (legacy/backend)
     expect(doc.about).toBe('An introductory Kathak session for anyone curious about classical dance.'); // also persisted under new name (detail UI reads event.about)
-    expect(doc.maxParticipants).toBe(20);                 // capacity.total → maxParticipants
+    expect(doc.capacity.total).toBe(20);                 // capacity.total (derived from spots)
     expect(doc.schedule.totalDurationMinutes).toBe(120);  // h2 → 120
     expect(new Date(doc.schedule.startDate).toISOString()).toBe('2026-07-14T18:30:00.000Z');
     expect(doc.schedule.endDate.getTime()).toBe(new Date('2026-07-14T18:30:00.000Z').getTime() + 120 * 60000);

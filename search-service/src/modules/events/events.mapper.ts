@@ -16,7 +16,7 @@ export const mapEventToSearchResult = (doc: any): EventSearchResultDTO => {
         coverImage: doc.thumbnailUrl || doc.coverImage,
         ticketPrice: doc.ticketPrice,
         eventType: doc.eventType,
-        attendeesCount: doc.maxParticipants,
+        attendeesCount: doc.capacity?.total ?? 0,
         rating: doc.organizerSnapshot?.rating || 4.9, // Defaulting as per user request snippet "event.rating || 4.9"
         schedule: doc.schedule,
         location: doc.location,

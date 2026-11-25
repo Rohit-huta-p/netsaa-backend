@@ -28,7 +28,7 @@ async function makeFreeMultiSpot(spots: any[]) {
     pricingMode: 'fixed', ticketPrice: 0,
     schedule: { startDate: new Date(Date.now() + 7 * 86400000), endDate: new Date(Date.now() + 8 * 86400000), totalDurationMinutes: 120, dayBreakdown: [] },
     location: { type: 'physical', city: 'Pune', state: 'MH', country: 'IN' },
-    maxParticipants: spots.reduce((n, s) => n + s.capacity, 0), status: 'live', allowWaitlist: true,
+    capacity: { total: spots.reduce((n, s) => n + s.capacity, 0) }, status: 'live', allowWaitlist: true,
     spots,
   });
 }
@@ -45,7 +45,7 @@ async function makePaidMultiSpot() {
     pricingMode: 'fixed', ticketPrice: 3000, // lowest paid spot
     schedule: { startDate: new Date(Date.now() + 7 * 86400000), endDate: new Date(Date.now() + 8 * 86400000), totalDurationMinutes: 120, dayBreakdown: [] },
     location: { type: 'physical', city: 'Pune', state: 'MH', country: 'IN' },
-    maxParticipants: 15, status: 'live',
+    capacity: { total: 15 }, status: 'live',
     spots: [{ name: 'Standard', capacity: 10, price: 3000 }, { name: 'Front Row', capacity: 5, price: 5000 }],
   });
 }
