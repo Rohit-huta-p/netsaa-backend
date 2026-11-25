@@ -36,6 +36,23 @@ describe('waitlistService', () => {
     expect(await slotsLeftForEvent(e._id)).toBe(2);
   });
 
+  it('a PROMOTED waitlist entry holds its seat against capacity (a WAITING one does not)', async () => {
+    const held = await makeEvent({ maxParticipants: 1 });
+    await WaitlistEntry.create({ eventId: held._id, userId: new mongoose.Types.ObjectId(), position: 1, quantity: 1, status: 'promoted', attendeeSnapshot: { fullName: 'A', phone: '+910000000000' } });
+    expect(await slotsLeftForEvent(held._id)).toBe(0); // promoted hold reserves the seat
+
+    const open = await makeEvent({ maxParticipants: 1 });
+    await wait(open._id, 1); // status 'waiting'
+    expect(await slotsLeftForEvent(open._id)).toBe(1); // a waiting entry holds nothing
+  });
+
+  it('promoteFromWaitlist sets the confirm window to the event end (no short timer)', async () => {
+    const e = await makeEvent({ maxParticipants: 1, waitlistAutoPromote: true });
+    await wait(e._id, 1);
+    const promoted = await promoteFromWaitlist(e._id);
+    expect(new Date(promoted?.promotionExpiresAt).getTime()).toBe(new Date(e.schedule.endDate).getTime());
+  });
+
   it('nextPosition increments per event', async () => {
     const e = await makeEvent();
     expect(await nextPosition(e._id)).toBe(1);

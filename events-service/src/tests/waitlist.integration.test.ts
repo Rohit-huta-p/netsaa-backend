@@ -132,3 +132,27 @@ describe('GET /v1/events/:id/waitlist/me', () => {
     expect(other.status).toBe(404);
   });
 });
+
+describe('DELETE /v1/events/:id/waitlist — declining a promotion', () => {
+  it('frees the held seat and auto-promotes the next waiter', async () => {
+    const event = await fullEvent({ waitlistAutoPromote: true });
+    const u1 = new mongoose.Types.ObjectId().toString();
+    const join1 = await request(app).post(`/v1/events/${event._id}/waitlist/join`).set('Authorization', `Bearer ${tokenFor(u1)}`)
+      .send({ quantity: 1, attendeeSnapshot: { fullName: 'A', phone: '+910000000001' } });
+    const u2 = new mongoose.Types.ObjectId().toString();
+    await request(app).post(`/v1/events/${event._id}/waitlist/join`).set('Authorization', `Bearer ${tokenFor(u2)}`)
+      .send({ quantity: 1, attendeeSnapshot: { fullName: 'B', phone: '+910000000002' } });
+
+    // holder cancels → #1 auto-promoted (holds the seat)
+    const holder = await EventRegistration.findOne({ eventId: event._id, status: 'registered' });
+    const holderToken = jwt.sign({ id: holder!.userId!.toString(), role: 'artist' }, process.env.JWT_SECRET!);
+    await request(app).post(`/v1/registrations/${holder!._id}/cancel`).set('Authorization', `Bearer ${holderToken}`).send({ reason: 'x' });
+    expect((await WaitlistEntry.findById(join1.body.data.entryId))?.status).toBe('promoted');
+
+    // #1 declines → their seat frees → #2 is auto-promoted
+    const res = await request(app).delete(`/v1/events/${event._id}/waitlist`).set('Authorization', `Bearer ${tokenFor(u1)}`);
+    expect(res.status).toBe(200);
+    expect((await WaitlistEntry.findById(join1.body.data.entryId))?.status).toBe('declined');
+    expect((await WaitlistEntry.findOne({ eventId: event._id, userId: u2 }))?.status).toBe('promoted');
+  });
+});

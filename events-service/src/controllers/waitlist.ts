@@ -44,8 +44,12 @@ export const leaveWaitlist = async (req: AuthRequest, res: Response) => {
   const userId = req.user?.id || req.user?._id;
   const entry = await WaitlistEntry.findOne({ eventId: req.params.id, userId });
   if (!entry) return res.status(404).json({ meta: { status: 404, message: 'Not on the waitlist' }, data: null, errors: [] });
+  const wasPromoted = entry.status === 'promoted';
   entry.status = 'declined';
   await entry.save();
+  // A promoted invitee declining frees the held seat → hand the offer to the next in
+  // line (auto-promote events only; manual events wait for the host to promote again).
+  if (wasPromoted) { try { await promoteFromWaitlist(entry.eventId); } catch { /* non-fatal */ } }
   return res.status(200).json({ meta: { status: 200, message: 'Left the waitlist' }, data: { status: 'declined' }, errors: [] });
 };
 
@@ -59,7 +63,7 @@ export const promoteWaitlist = async (req: AuthRequest, res: Response) => {
   if ((await slotsLeftForEvent(event._id)) <= 0) return res.status(409).json({ meta: { status: 409, message: 'No free seat' }, data: null, errors: [] });
   const top = await WaitlistEntry.findOne({ eventId: event._id, status: 'waiting' }).sort({ position: 1 });
   if (!top) return res.status(404).json({ meta: { status: 404, message: 'Waitlist empty' }, data: null, errors: [] });
-  await promoteEntry(top);
+  await promoteEntry(top, event);
   return res.status(200).json({ meta: { status: 200, message: 'Promoted' }, data: { entryId: top._id }, errors: [] });
 };
 
