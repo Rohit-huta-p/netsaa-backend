@@ -25,9 +25,12 @@ export interface IUserPayoutAccount extends Document {
     // Masked at rest · raw values never persisted
     panMasked: string;                 // 'ABCDE****F'
     accountHolderName: string;
-    bankLast4: string;                 // '****1234'
-    bankName: string;                  // resolved from IFSC
-    ifsc: string;
+    // Payout destination — UPI-first. Either a UPI VPA or a bank account, never both.
+    payoutMethod: 'upi' | 'bank';
+    upiVpaMasked?: string;             // 'ro***@okhdfc'  (UPI path)
+    bankLast4?: string;                // '****1234'      (bank path)
+    bankName?: string;                 // resolved from IFSC
+    ifsc?: string;
     gstin?: string;                    // optional
 
     rejectionReason?: string;
@@ -59,9 +62,11 @@ const userPayoutAccountSchema = new Schema<IUserPayoutAccount>(
 
         panMasked: { type: String, required: true },
         accountHolderName: { type: String, required: true },
-        bankLast4: { type: String, required: true },
-        bankName: { type: String, required: true },
-        ifsc: { type: String, required: true },
+        payoutMethod: { type: String, enum: ['upi', 'bank'], default: 'bank' },
+        upiVpaMasked: { type: String },
+        bankLast4: { type: String },
+        bankName: { type: String },
+        ifsc: { type: String },
         gstin: { type: String },
 
         rejectionReason: { type: String },

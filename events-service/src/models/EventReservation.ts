@@ -20,7 +20,12 @@ export interface IEventReservation extends Document {
     userId: mongoose.Types.ObjectId;
     quantity: number;
     answers?: IReservationAnswer[];
+    // Attendee names/phones captured at reserve time so the paid flow can name the ticket + roster
+    // (webhook creates the Registration, where no request body exists). Mirrors the free-RSVP path.
+    attendees?: Array<{ fullName: string; phone: string; email?: string }>;
     totalAmount: number;             // in rupees (legacy)
+    unitPriceRupees?: number;        // per-ticket price charged — locks the applied offer through capture
+    appliedOffer?: { name: string; unitRupees: number; baseUnitRupees: number; audience: 'everyone' | 'group' };
     status: 'reserved' | 'paid' | 'expired' | 'released';
     expiresAt: Date;
     razorpayOrderId?: string;        // provider order id (Cashfree order_id / legacy Razorpay order) — webhook lookup key
@@ -40,6 +45,17 @@ const reservationAnswerSchema = new Schema(
     { _id: false }
 );
 
+// Mirrors EventRegistration's attendeeInfoSchema (fullName + phone), so held names copy straight
+// onto the Registration at capture. Entries are sanitized in reserveTickets before they land here.
+const reservationAttendeeSchema = new Schema(
+    {
+        fullName: { type: String, required: true },
+        phone: { type: String, required: true },
+        email: { type: String },
+    },
+    { _id: false }
+);
+
 const eventReservationSchema = new Schema<IEventReservation>(
     {
         eventId: { type: Schema.Types.ObjectId, ref: 'Event', required: true },
@@ -49,7 +65,18 @@ const eventReservationSchema = new Schema<IEventReservation>(
         userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
         quantity: { type: Number, required: true },
         answers: { type: [reservationAnswerSchema], default: undefined },
+        attendees: { type: [reservationAttendeeSchema], default: undefined },
         totalAmount: { type: Number, required: true },
+        unitPriceRupees: { type: Number },
+        appliedOffer: {
+            type: new Schema({
+                name: { type: String, required: true },
+                unitRupees: { type: Number, required: true },
+                baseUnitRupees: { type: Number, required: true },
+                audience: { type: String, enum: ['everyone', 'group'] },
+            }, { _id: false }),
+            default: undefined,
+        },
         status: {
             type: String,
             enum: ['reserved', 'paid', 'expired', 'released'],

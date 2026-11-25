@@ -5,6 +5,13 @@ import { maskPan } from '../services/razorpay';
 import { payments } from '../services/payments';
 import { verifyBankAccount, verifyVpa, isNameMatchAcceptable } from '../services/payments/cashfreeVerification';
 
+/** Mask a UPI VPA for at-rest storage: keep the first 2 chars + domain. 'rohit@okhdfc' → 'ro***@okhdfc'. */
+function maskVpa(vpa: string): string {
+  const [name, domain] = vpa.split('@');
+  if (!domain) return '***';
+  return `${name.slice(0, 2)}${'*'.repeat(Math.max(1, name.length - 2))}@${domain}`;
+}
+
 // @desc Submit payout account → create Cashfree Easy Split vendor (real KYC status)
 // @route POST /v1/payouts/account
 // @access Private
@@ -12,32 +19,53 @@ export const submitPayoutAccount = async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.id || req.user?._id;
     const { businessType, pan, accountHolderName, bankAccount, ifsc, gstin, email } = req.body;
+    const vpa: string | undefined = typeof req.body.vpa === 'string' ? req.body.vpa.trim() : undefined;
 
-    if (!businessType || !pan || !bankAccount || !ifsc || !accountHolderName) {
+    // UPI-first: a payout destination is EITHER a UPI VPA or a bank account (never both).
+    // Honor an explicit `method`, else infer from what was supplied (vpa → upi).
+    const method: 'upi' | 'bank' =
+      req.body.method === 'bank' ? 'bank' : req.body.method === 'upi' ? 'upi' : vpa ? 'upi' : 'bank';
+    const hasDestination = method === 'upi' ? !!vpa : !!(bankAccount && ifsc);
+
+    if (!businessType || !pan || !accountHolderName || !hasDestination) {
       return res.status(400).json({ meta: { status: 400, message: 'Missing required fields' }, data: null, errors: [] });
     }
 
     // Stable vendor id = the organizer's userId. On re-submit, refresh the existing
-    // vendor's status instead of re-creating it (bank-detail changes are the Sprint 2.5
-    // re-verify path). createVendor/getVendorStatus return the REAL mapped Cashfree
-    // status — no more hard-coded 'verified'. pending_kyc/rejected now actually fire.
+    // vendor's status instead of re-creating it. createVendor/getVendorStatus return the
+    // REAL mapped Cashfree status — no hard-coded 'verified'; pending_kyc/rejected fire.
+    // The Easy Split vendor is created from a VPA (UPI) or bank + IFSC — never both.
     const existing = await UserPayoutAccount.findOne({ userId });
     const vendor = existing?.linkedAccountId
       ? await payments.getVendorStatus(existing.linkedAccountId)
-      : await payments.createVendor({ vendorId: String(userId), name: accountHolderName, email, pan, businessType, bankAccount, ifsc });
+      : await payments.createVendor(
+          method === 'upi'
+            ? { vendorId: String(userId), name: accountHolderName, email, pan, businessType, vpa }
+            : { vendorId: String(userId), name: accountHolderName, email, pan, businessType, bankAccount, ifsc },
+        );
 
     const status = vendor.status;
+
+    // Clear the OTHER method's destination fields so a bank↔UPI switch leaves no stale data.
+    const unset = method === 'upi'
+      ? { bankLast4: '', bankName: '', ifsc: '' }
+      : { upiVpaMasked: '' };
 
     const doc = await UserPayoutAccount.findOneAndUpdate(
       { userId },
       {
-        userId, provider: 'cashfree', linkedAccountId: vendor.vendorId, status, businessType,
-        panMasked: maskPan(pan), accountHolderName,
-        bankLast4: bankAccount.slice(-4), bankName: 'Resolved from IFSC', ifsc,
-        ...(gstin ? { gstin } : {}),
-        ...(status === 'rejected' && vendor.raw ? { rejectionReason: vendor.raw } : {}),
-        submittedAt: new Date(),
-        ...(status === 'verified' ? { verifiedAt: new Date() } : {}),
+        $set: {
+          userId, provider: 'cashfree', linkedAccountId: vendor.vendorId, status, businessType,
+          panMasked: maskPan(pan), accountHolderName, payoutMethod: method,
+          ...(method === 'upi'
+            ? { upiVpaMasked: maskVpa(vpa as string) }
+            : { bankLast4: (bankAccount as string).slice(-4), bankName: 'Resolved from IFSC', ifsc }),
+          ...(gstin ? { gstin } : {}),
+          ...(status === 'rejected' && vendor.raw ? { rejectionReason: vendor.raw } : {}),
+          submittedAt: new Date(),
+          ...(status === 'verified' ? { verifiedAt: new Date() } : {}),
+        },
+        $unset: unset,
       },
       { upsert: true, new: true, setDefaultsOnInsert: true },
     );

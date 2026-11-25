@@ -8,6 +8,8 @@ import EventNotification from '../models/EventNotification';
 import UserPayoutAccount from '../models/UserPayoutAccount';
 import { payments, paiseToRupees, providerOrderId } from '../services/payments';
 import { computeFeesPaise } from '../utils/eventFees';
+import { resolveEffectivePrice } from '../services/offerPricing';
+import { seatsUsedByOffer } from '../services/offerAvailability';
 import { generateTicketCode, generateBackupCode } from '../utils/ticketCode';
 import { slotsLeftForEvent, seatsLeftForSpot } from '../services/waitlistService';
 
@@ -63,8 +65,11 @@ export async function doApprove(registration: IEventRegistration, event: IEvent)
     return { code: 409, message: registration.spotId ? 'This option is full' : 'Event is full' };
   }
 
-  const spot = registration.spotId ? (event.spots ?? []).find((s: any) => String(s._id) === String(registration.spotId)) : undefined;
-  const unitPriceRupees = spot ? (spot.price || 0) : (event.ticketPrice || 0);
+  // Best active offer the attendee qualifies for (Early-bird / group), else the base price —
+  // resolved here and locked on the pay-after-approval hold so capture charges the same.
+  const offerUsage = await seatsUsedByOffer(event._id);
+  const effective = resolveEffectivePrice(event, { spotId: registration.spotId, seats: qty, seatsUsedByOffer: offerUsage });
+  const unitPriceRupees = effective.unitRupees;
 
   if (unitPriceRupees > 0) {
     // Organizer must be verified to receive the Route transfer.
@@ -88,6 +93,7 @@ export async function doApprove(registration: IEventRegistration, event: IEvent)
       });
       reservation = await EventReservation.create({
         eventId: event._id, userId: registration.userId, quantity: qty, spotId: registration.spotId,
+        unitPriceRupees, appliedOffer: effective.appliedOffer,
         answers: registration.answers, registrationId: registration._id,
         totalAmount: fees.customerPaysPaise / 100, status: 'reserved',
         expiresAt: new Date(Date.now() + PAY_AFTER_APPROVAL_TTL_MS), razorpayOrderId: orderId, paymentSessionId, idempotencyKey,
