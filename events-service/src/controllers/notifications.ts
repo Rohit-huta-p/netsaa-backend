@@ -3,6 +3,8 @@ import { AuthRequest } from '../middleware/auth';
 import UserNotificationPreference, { DEFAULT_PREFERENCES } from '../models/UserNotificationPreference';
 import Event from '../models/Event';
 import EventNotification from '../models/EventNotification';
+import { resolveAudience } from '../services/notificationDispatch';
+import { notifyEventAnnouncement } from '../services/eventAnnounce.client';
 
 export const getPreferences = async (req: AuthRequest, res: Response) => {
   const userId = req.user?.id || req.user?._id;
@@ -49,5 +51,43 @@ export const createAnnouncement = async (req: AuthRequest, res: Response) => {
     eventId: event._id, kind: 'announcement', channels, audience, subject, body: body.slice(0, 1000),
     scheduledAt: new Date(), status: 'queued', initiatedBy: userId,
   });
-  return res.status(201).json({ meta: { status: 201, message: 'Announcement queued' }, data: { notificationId: row._id }, errors: [] });
+
+  // Deliver in-app via the users-service bell pipeline — the one channel that
+  // works end-to-end today (push/email/SMS are still platform-wide stubs). This
+  // service owns the audience, so it resolves recipients here and hands the list
+  // to users-service. Best-effort: a delivery failure never fails the host's
+  // request, but we report the outcome honestly so the UI doesn't claim "Sent"
+  // when nothing went out (e.g. INTERNAL_SERVICE_TOKEN unset in dev).
+  let delivered = false;
+  let notified = 0;
+  let reason: string | undefined;
+  try {
+    const recipientIds = await resolveAudience(row);
+    const outcome = await notifyEventAnnouncement({
+      announcementId: String(row._id),
+      organizerId: String(userId),
+      eventId: String(event._id),
+      eventTitle: event.title,
+      message: body.trim(),
+      recipientIds,
+    });
+    delivered = outcome.ok;
+    notified = outcome.notified;
+    reason = outcome.reason; // undefined when delivered; lets the UI choose honest copy
+    if (outcome.ok) {
+      row.status = 'sent';
+      row.sentAt = new Date();
+      row.sentCount = notified;
+      await row.save();
+    }
+  } catch (err: any) {
+    reason = 'network';
+    console.warn('[createAnnouncement] in-app fan-out failed:', err?.message || err);
+  }
+
+  return res.status(201).json({
+    meta: { status: 201, message: delivered ? 'Announcement sent' : 'Announcement saved' },
+    data: { notificationId: row._id, delivered, notified, reason },
+    errors: [],
+  });
 };

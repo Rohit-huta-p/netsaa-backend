@@ -219,6 +219,30 @@ export interface EventUpdatedEvent extends BaseNotificationEvent {
     };
 }
 
+/**
+ * Emitted when a host broadcasts an announcement to their event's attendees.
+ *
+ * Fanned out ONE EVENT PER RECIPIENT by the caller (the internal endpoint), each
+ * with its own idempotency key `event.announcement:{announcementId}:{recipientId}`.
+ * This is deliberate: the worker applies a single event's key to every payload it
+ * produces, so a chunk-style fan-out (one event → N payloads) would collapse all N
+ * onto one row under the unique idempotencyKey index. One event per recipient keeps
+ * each attendee's notification distinct while staying idempotent on retry.
+ *
+ * Triggers notification to: one attendee (recipientId)
+ * Notification subtype: event.announcement
+ */
+export interface EventAnnouncementEvent extends BaseNotificationEvent {
+    eventName: 'event.announcement';
+    payload: {
+        eventId: Types.ObjectId;          // Event document ID (deep-link target)
+        recipientId: Types.ObjectId;      // Attendee who receives this notification
+        organizerId: Types.ObjectId;      // Host who sent it (shown as actor)
+        eventTitle: string;               // Event title (notification title / context)
+        message: string;                  // The host's announcement text (notification body)
+    };
+}
+
 // ============================================================================
 // PAYMENT EVENTS
 // ============================================================================
@@ -361,6 +385,7 @@ export type NotificationEvent =
     | EventReservationExpiringEvent
     | EventCancelledEvent
     | EventUpdatedEvent
+    | EventAnnouncementEvent
     | PaymentCompletedEvent
     | PaymentFailedEvent
     | ContractSentEvent
@@ -399,6 +424,7 @@ export const NotificationEventNames = {
     EVENT_RESERVATION_EXPIRING: 'event.reservation.expiring' as const,
     EVENT_CANCELLED: 'event.cancelled' as const,
     EVENT_UPDATED: 'event.updated' as const,
+    EVENT_ANNOUNCEMENT: 'event.announcement' as const,
     PAYMENT_COMPLETED: 'payment.completed' as const,
     PAYMENT_FAILED: 'payment.failed' as const,
     CONTRACT_SENT: 'contract.sent' as const,

@@ -18,7 +18,12 @@ export function prefCategoryForKind(kind: string): Category | null {
   return 'reminders';
 }
 
-async function resolveAudience(notification: any): Promise<string[]> {
+/**
+ * Resolve an announcement's audience selector to the recipient user-ids.
+ * Exported so the in-app bell path (createAnnouncement → users-service) can reuse
+ * the exact same audience rules the (legacy) push/email/SMS dispatcher uses.
+ */
+export async function resolveAudience(notification: any): Promise<string[]> {
   const { eventId, audience, customAudienceUserIds } = notification;
   if (audience === 'custom') return (customAudienceUserIds || []).map((id: any) => id.toString());
   if (audience === 'waitlisted') {

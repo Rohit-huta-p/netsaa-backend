@@ -281,6 +281,39 @@ class NotificationEventEmitter {
     }
 
     /**
+     * Helper to emit event.announcement — a host broadcast to ONE attendee. The
+     * caller loops the resolved audience and calls this once per recipient, so the
+     * idempotency key is stable per (announcement, recipient): re-sending the same
+     * announcement row never duplicates, yet every attendee gets their own row (a
+     * shared key would collapse them under the unique idempotencyKey index).
+     *
+     * Note: we build the key by hand (no timestamp) rather than via
+     * generateIdempotencyKey, so a BullMQ retry of the same recipient dedups.
+     */
+    emitEventAnnouncement(payload: {
+        announcementId: string;   // the EventNotification row id — makes the key unique per send
+        recipientId: string;
+        organizerId: string;
+        eventId: string;
+        eventTitle: string;
+        message: string;
+    }): void {
+        const event: NotificationEvent = {
+            eventName: 'event.announcement',
+            idempotencyKey: `event.announcement:${payload.announcementId}:${payload.recipientId}`,
+            payload: {
+                eventId: payload.eventId as any,
+                recipientId: payload.recipientId as any,
+                organizerId: payload.organizerId as any,
+                eventTitle: payload.eventTitle,
+                message: payload.message,
+            },
+        };
+
+        this.emit(event);
+    }
+
+    /**
      * Helper to emit follow.started event (someone started following a user/org).
      */
     emitFollowStarted(payload: {
