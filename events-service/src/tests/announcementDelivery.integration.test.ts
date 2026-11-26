@@ -88,6 +88,7 @@ describe('POST /v1/events/:id/notifications → in-app delivery wiring', () => {
 
     expect(res.status).toBe(201);
     expect(res.body.data.delivered).toBe(false);
+    expect(res.body.data.reason).toBe('no_token'); // surfaced so the UI can give honest, reason-specific copy
 
     const row = await EventNotification.findOne({ eventId: event._id, kind: 'announcement' });
     expect(row?.status).toBe('queued'); // NOT 'sent' — we never claim delivery that didn't happen

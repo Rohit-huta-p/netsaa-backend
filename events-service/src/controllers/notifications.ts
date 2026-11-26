@@ -60,6 +60,7 @@ export const createAnnouncement = async (req: AuthRequest, res: Response) => {
   // when nothing went out (e.g. INTERNAL_SERVICE_TOKEN unset in dev).
   let delivered = false;
   let notified = 0;
+  let reason: string | undefined;
   try {
     const recipientIds = await resolveAudience(row);
     const outcome = await notifyEventAnnouncement({
@@ -72,6 +73,7 @@ export const createAnnouncement = async (req: AuthRequest, res: Response) => {
     });
     delivered = outcome.ok;
     notified = outcome.notified;
+    reason = outcome.reason; // undefined when delivered; lets the UI choose honest copy
     if (outcome.ok) {
       row.status = 'sent';
       row.sentAt = new Date();
@@ -79,12 +81,13 @@ export const createAnnouncement = async (req: AuthRequest, res: Response) => {
       await row.save();
     }
   } catch (err: any) {
+    reason = 'network';
     console.warn('[createAnnouncement] in-app fan-out failed:', err?.message || err);
   }
 
   return res.status(201).json({
     meta: { status: 201, message: delivered ? 'Announcement sent' : 'Announcement saved' },
-    data: { notificationId: row._id, delivered, notified },
+    data: { notificationId: row._id, delivered, notified, reason },
     errors: [],
   });
 };
