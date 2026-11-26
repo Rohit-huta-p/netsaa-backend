@@ -87,3 +87,53 @@ export async function enqueueEvent(req: Request, res: Response): Promise<void> {
         res.status(500).json({ error: 'INTERNAL_ERROR' });
     }
 }
+
+/**
+ * Event-announcement fan-out. Called by events-service when a host broadcasts an
+ * announcement to their attendees. events-service owns the audience (event
+ * registrations / waitlist), so it resolves the recipient user-ids and posts them
+ * here; this endpoint emits ONE `event.announcement` event per recipient (each
+ * with its own idempotency key), which the worker turns into one in-app
+ * notification per attendee.
+ *
+ * Contract (POST /internal/notifications/event-announcement, requireServiceToken):
+ *   { announcementId, organizerId, eventId, eventTitle, message, recipientIds: string[] }
+ *
+ * Best-effort for the caller (events-service treats it as fire-and-forget).
+ * 202 { notified } reports how many recipients were emitted (deduped).
+ */
+export async function notifyEventAnnouncement(req: Request, res: Response): Promise<void> {
+    try {
+        const { announcementId, organizerId, eventId, eventTitle, message, recipientIds } = req.body || {};
+
+        if (!announcementId || !organizerId || !eventId || !message || !Array.isArray(recipientIds)) {
+            res.status(400).json({
+                error: 'BAD_REQUEST',
+                message: 'announcementId, organizerId, eventId, message and recipientIds[] are required',
+            });
+            return;
+        }
+
+        // Dedupe + drop falsy ids so the emitted count is honest and no attendee
+        // is notified twice for one announcement.
+        const recipients = Array.from(new Set(
+            (recipientIds as any[]).filter(Boolean).map((id) => String(id))
+        ));
+
+        for (const recipientId of recipients) {
+            notificationEvents.emitEventAnnouncement({
+                announcementId: String(announcementId),
+                recipientId,
+                organizerId: String(organizerId),
+                eventId: String(eventId),
+                eventTitle: typeof eventTitle === 'string' ? eventTitle : '',
+                message: String(message),
+            });
+        }
+
+        res.status(202).json({ ok: true, notified: recipients.length });
+    } catch (err: any) {
+        console.error('[internalNotifications] notifyEventAnnouncement failed:', err?.message || err);
+        res.status(500).json({ error: 'INTERNAL_ERROR' });
+    }
+}

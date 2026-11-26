@@ -1,7 +1,7 @@
 import express from 'express';
 import { requireServiceToken } from '../middleware/serviceAuth';
 import { attachMedia } from '../controllers/internalMedia';
-import { notifyFolloweePosted, enqueueEvent } from '../controllers/internalNotifications';
+import { notifyFolloweePosted, enqueueEvent, notifyEventAnnouncement } from '../controllers/internalNotifications';
 
 const router = express.Router();
 
@@ -14,5 +14,9 @@ router.post('/notifications/followee-posted', requireServiceToken, notifyFollowe
 // Generic notification enqueue: called by any backend service that cannot import
 // the BullMQ queue directly (gigs-service, events-service, etc.).
 router.post('/notifications/enqueue', requireServiceToken, enqueueEvent);
+
+// Event-announcement fan-out: a host broadcast a message to their attendees.
+// events-service resolves the audience and posts the recipient ids here.
+router.post('/notifications/event-announcement', requireServiceToken, notifyEventAnnouncement);
 
 export default router;

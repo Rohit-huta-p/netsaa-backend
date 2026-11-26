@@ -63,6 +63,7 @@ export const EventSubtype = {
     REMINDER: 'event.reminder',                           // Event is coming up soon
     UPDATED: 'event.updated',                             // Event details changed
     POSTED_BY_FOLLOWED: 'event.posted.by_followed',       // Follower: someone you follow posted an event
+    ANNOUNCEMENT: 'event.announcement',                   // Host broadcast a message to attendees
 } as const;
 
 // Payment-related notifications

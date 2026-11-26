@@ -29,6 +29,7 @@ import {
     EventReservationExpiringEvent,
     EventCancelledEvent,
     EventUpdatedEvent,
+    EventAnnouncementEvent,
     PaymentCompletedEvent,
     PaymentFailedEvent,
     ContractSentEvent,
@@ -95,6 +96,8 @@ class NotificationFactory {
                 return this.createEventCancelled(event);
             case 'event.updated':
                 return this.createEventUpdated(event);
+            case 'event.announcement':
+                return this.createEventAnnouncement(event);
             case 'payment.completed':
                 return this.createPaymentCompleted(event);
             case 'payment.failed':
@@ -415,6 +418,37 @@ class NotificationFactory {
                 sms: false,
             },
         }));
+    }
+
+    /**
+     * A host broadcast an announcement to one attendee. One payload per event
+     * (the caller emits one event per recipient — see EventAnnouncementEvent).
+     * The event title leads (which event this is about); the host's message is
+     * the body; the host is the actor so the live card shows their name/avatar.
+     */
+    private createEventAnnouncement(event: EventAnnouncementEvent): NotificationPayload[] {
+        return [{
+            userId: event.payload.recipientId,
+            actorId: event.payload.organizerId,
+            type: NotificationType.EVENT,
+            subtype: EventSubtype.ANNOUNCEMENT,
+            title: event.payload.eventTitle || 'Event announcement',
+            body: event.payload.message,
+            entityType: 'event',
+            entityId: event.payload.eventId,
+            data: {
+                route: 'event-details',
+                params: {
+                    eventId: event.payload.eventId.toString(),
+                },
+            },
+            channel: {
+                inApp: true,
+                push: true,
+                email: false,
+                sms: false,
+            },
+        }];
     }
 
     // ============================================================================
