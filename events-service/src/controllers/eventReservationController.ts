@@ -7,7 +7,7 @@ import { payments, paiseToRupees, providerOrderId } from '../services/payments';
 import { computeFeesPaise } from '../utils/eventFees';
 import { resolveEffectivePrice } from '../services/offerPricing';
 import { seatsUsedByOffer } from '../services/offerAvailability';
-import { slotsLeftForEvent, seatsLeftForSpot } from '../services/waitlistService';
+import { slotsLeftForEvent, seatsLeftForSpot, waitlistEnabled } from '../services/waitlistService';
 import { resolveSpot } from '../utils/eventSpots';
 import { buildRegistrationAnswers } from '../utils/registrationAnswers';
 import { consentFromRequest, recordEventRegistrationConsent } from '../utils/consent';
@@ -74,12 +74,12 @@ export const reserveTickets = async (req: AuthRequest, res: Response) => {
     if (spotRes.spot) {
       const spotLeft = await seatsLeftForSpot(event, spotRes.spot._id);
       if (spotLeft < quantity) {
-        return res.status(409).json({ meta: { status: 409, message: 'This option is full' }, data: { full: true, spotId: String(spotRes.spot._id), waitlistAvailable: !!event.allowWaitlist }, errors: [] });
+        return res.status(409).json({ meta: { status: 409, message: 'This option is full' }, data: { full: true, spotId: String(spotRes.spot._id), waitlistAvailable: waitlistEnabled() && !!event.allowWaitlist }, errors: [] });
       }
     } else {
       const slotsLeft = await slotsLeftForEvent(event._id);
       if (slotsLeft < quantity) {
-        return res.status(409).json({ meta: { status: 409, message: 'Event is full' }, data: { full: true, waitlistAvailable: !!event.allowWaitlist }, errors: [] });
+        return res.status(409).json({ meta: { status: 409, message: 'Event is full' }, data: { full: true, waitlistAvailable: waitlistEnabled() && !!event.allowWaitlist }, errors: [] });
       }
     }
 

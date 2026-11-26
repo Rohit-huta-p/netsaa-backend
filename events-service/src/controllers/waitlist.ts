@@ -3,13 +3,14 @@ import { AuthRequest } from '../middleware/auth';
 import Event from '../models/Event';
 import WaitlistEntry from '../models/WaitlistEntry';
 import EventRegistration from '../models/EventRegistration';
-import { slotsLeftForEvent, nextPosition, promoteEntry, promoteFromWaitlist } from '../services/waitlistService';
+import { slotsLeftForEvent, nextPosition, promoteEntry, promoteFromWaitlist, waitlistEnabled } from '../services/waitlistService';
 import { generateTicketCode, generateBackupCode } from '../utils/ticketCode';
 import EventTicket from '../models/EventTicket';
 
 // @route POST /v1/events/:id/waitlist/join
 export const joinWaitlist = async (req: AuthRequest, res: Response) => {
   try {
+    if (!waitlistEnabled()) return res.status(409).json({ meta: { status: 409, message: 'Waitlist is disabled' }, data: null, errors: [] });
     const userId = req.user?.id || req.user?._id;
     const event = await Event.findById(req.params.id);
     if (!event) return res.status(404).json({ meta: { status: 404, message: 'Event not found' }, data: null, errors: [] });
@@ -55,6 +56,7 @@ export const leaveWaitlist = async (req: AuthRequest, res: Response) => {
 
 // @route POST /v1/events/:id/waitlist/promote  (organizer manual approve — promotes top waiting entry)
 export const promoteWaitlist = async (req: AuthRequest, res: Response) => {
+  if (!waitlistEnabled()) return res.status(409).json({ meta: { status: 409, message: 'Waitlist is disabled' }, data: null, errors: [] });
   const event = await Event.findById(req.params.id);
   if (!event) return res.status(404).json({ meta: { status: 404, message: 'Event not found' }, data: null, errors: [] });
   if (event.organizerId.toString() !== String(req.user?.id || req.user?._id)) {
@@ -105,6 +107,8 @@ export const confirmPromotion = async (req: AuthRequest, res: Response) => {
 
 // @route GET /v1/events/:id/waitlist/me — the caller's active entry (waiting/promoted), powers the CTA + promoted banner
 export const getMyWaitlistEntry = async (req: AuthRequest, res: Response) => {
+  // Disabled → behave as "not on a waitlist" so the CTA falls back to Sold out / Reserve.
+  if (!waitlistEnabled()) return res.status(404).json({ meta: { status: 404, message: 'Not on waitlist' }, data: null, errors: [] });
   const userId = req.user?.id || req.user?._id;
   const entry = await WaitlistEntry.findOne({
     eventId: req.params.id,
@@ -119,6 +123,8 @@ export const getMyWaitlistEntry = async (req: AuthRequest, res: Response) => {
 // (waiting + promoted), each with a light event summary. Powers the home "What you're in"
 // tab so a PROMOTED "seat open — confirm" offer surfaces without opening each event.
 export const myWaitlistEntries = async (req: AuthRequest, res: Response) => {
+  // Disabled → no active waitlist entries surface on the home "What you're in" tab.
+  if (!waitlistEnabled()) return res.status(200).json({ meta: { status: 200, message: 'OK' }, data: [], errors: [] });
   const userId = req.user?.id || req.user?._id;
   const entries = await WaitlistEntry.find({ userId, status: { $in: ['waiting', 'promoted'] } })
     .sort({ position: 1 })

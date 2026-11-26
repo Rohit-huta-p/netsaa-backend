@@ -11,7 +11,7 @@ import { buildApplication } from '../utils/registrationApplication';
 import { consentFromRequest, recordEventRegistrationConsent } from '../utils/consent';
 import { doApprove, doDecline } from './registrationApproval';
 import { generateTicketCode, generateBackupCode } from '../utils/ticketCode';
-import { slotsLeftForEvent, seatsLeftForSpot } from '../services/waitlistService';
+import { slotsLeftForEvent, seatsLeftForSpot, waitlistEnabled } from '../services/waitlistService';
 import EventNotification from '../models/EventNotification';
 import WaitlistEntry from '../models/WaitlistEntry';
 
@@ -71,7 +71,7 @@ export const registerForEvent = async (req: Request, res: Response, next: NextFu
         if (!requiresApproval) {
             const slotsLeft = await slotsLeftForEvent(event._id);
             if (slotsLeft < quantity) {
-                return res.status(409).json({ meta: { status: 409, message: 'Event is full' }, data: { full: true, waitlistAvailable: !!event.allowWaitlist }, errors: [{ message: 'No seats left' }] });
+                return res.status(409).json({ meta: { status: 409, message: 'Event is full' }, data: { full: true, waitlistAvailable: waitlistEnabled() && !!event.allowWaitlist }, errors: [{ message: 'No seats left' }] });
             }
         }
 
@@ -95,7 +95,7 @@ export const registerForEvent = async (req: Request, res: Response, next: NextFu
             if (spotRes.spot) {
                 const spotLeft = await seatsLeftForSpot(event, spotRes.spot._id);
                 if (spotLeft < quantity) {
-                    return res.status(409).json({ meta: { status: 409, message: 'This option is full' }, data: { full: true, spotId: String(spotRes.spot._id), waitlistAvailable: !!event.allowWaitlist }, errors: [{ message: 'No seats left for this spot' }] });
+                    return res.status(409).json({ meta: { status: 409, message: 'This option is full' }, data: { full: true, spotId: String(spotRes.spot._id), waitlistAvailable: waitlistEnabled() && !!event.allowWaitlist }, errors: [{ message: 'No seats left for this spot' }] });
                 }
             }
         }
@@ -445,7 +445,10 @@ export const getEventRoster = async (req: Request, res: Response) => {
         // is a separate collection. Host sees phone per the DPDP consent (A4).
         const [regs, waitlist] = await Promise.all([
             EventRegistration.find({ eventId }).populate('userId', 'displayName').sort({ registeredAt: -1 }).lean(),
-            WaitlistEntry.find({ eventId, status: { $in: ['waiting', 'promoted'] } }).populate('userId', 'displayName').sort({ position: 1 }).lean(),
+            // Waitlist disabled → empty bucket + zero count (the host hub hides the tab).
+            waitlistEnabled()
+                ? WaitlistEntry.find({ eventId, status: { $in: ['waiting', 'promoted'] } }).populate('userId', 'displayName').sort({ position: 1 }).lean()
+                : Promise.resolve([] as any[]),
         ]);
 
         const toRow = (r: any) => ({
