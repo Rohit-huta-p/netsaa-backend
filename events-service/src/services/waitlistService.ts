@@ -4,6 +4,21 @@ import EventRegistration from '../models/EventRegistration';
 import WaitlistEntry from '../models/WaitlistEntry';
 import EventNotification from '../models/EventNotification';
 
+/**
+ * Master kill-switch for the event-waitlist concept (MVP default: OFF).
+ *
+ * Read at CALL time, never at module load, so test suites can opt in with
+ * EVENTS_WAITLIST_ENABLED=1 (set in src/tests/setup.ts) without import-order flakiness —
+ * the same timing trap that bit cashfree.unit.test.ts. Default OFF means every READER
+ * (join/promote, the `waitlistAvailable` register/reserve flags, the roster waitlist
+ * bucket, and the event serializer's allowWaitlist) behaves as if waitlist is disabled,
+ * regardless of an event's stored allowWaitlist. No data is migrated, so this is fully
+ * reversible: set EVENTS_WAITLIST_ENABLED=1 to bring the feature back.
+ */
+export function waitlistEnabled(): boolean {
+  return process.env.EVENTS_WAITLIST_ENABLED === '1';
+}
+
 /** Seats remaining = capacity.total − sum(quantity of active registrations) − held promotions.
  *  capacity.total is the single source of truth for an event's cap (derived from the sum of
  *  spots[].capacity by the composer mapper); the UI's withLiveCapacity reads the same field. */
@@ -64,6 +79,7 @@ export async function promoteEntry(entry: any, event?: any): Promise<any> {
 /** AUTO path: promote the top waiting entry iff a seat is free AND the event auto-promotes.
  *  Manual-mode events return null — the organizer drives promotion explicitly. */
 export async function promoteFromWaitlist(eventId: any): Promise<any | null> {
+  if (!waitlistEnabled()) return null;
   const event = await Event.findById(eventId);
   if (!event || !event.allowWaitlist || !event.waitlistAutoPromote) return null;
   if ((await slotsLeftForEvent(eventId)) <= 0) return null;

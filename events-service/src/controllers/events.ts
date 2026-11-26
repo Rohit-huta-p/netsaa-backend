@@ -12,6 +12,7 @@ import EventStats from '../models/EventStats';
 import { shouldRevealMeetingLink } from '../utils/meetingLinkReveal';
 import { scheduleEventReminders } from '../services/reminderScheduler';
 import { mapComposerToEventDoc, buildComposerUpdate, isComposerPatch } from '../services/composerMapping';
+import { waitlistEnabled } from '../services/waitlistService';
 import { notifyFollowersOfPost } from '../services/followNotify.client';
 import { requestMediaCleanup, diffRemovedEventMedia, mediaRefs } from '../services/mediaCleanup.client';
 import { isCreativeLeadRole } from '../utils/posterRole';
@@ -273,6 +274,9 @@ function withLiveCapacity(eventObj: any, registeredCount: number): any {
     refundPolicy: eventObj.cancellationPolicy ? 'custom' : 'flex_24h',
     refundCustomNote: eventObj.cancellationPolicy?.notes,
   };
+  // Waitlist disabled (MVP) → never advertise it to the client, even for legacy events
+  // whose stored allowWaitlist is still true. Reversible via EVENTS_WAITLIST_ENABLED.
+  if (!waitlistEnabled()) eventObj.allowWaitlist = false;
   return eventObj;
 }
 
